@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.agent-backups/
+*.log
+.env
+.env.local
