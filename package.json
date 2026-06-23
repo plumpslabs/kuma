@@ -6,10 +6,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "kuma": "./dist/index.js"
+    "kuma": "dist/index.js"
   },
   "files": [
-    "dist/"
+    "dist/",
+    "prompts/"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --clean --out-dir dist",
@@ -48,5 +49,13 @@
     "codebuff",
     "plugin-orchestrator"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farhank15/kuma.git"
+  },
+  "bugs": {
+    "url": "https://github.com/farhank15/kuma/issues"
+  },
+  "homepage": "https://github.com/farhank15/kuma#readme",
   "license": "MIT"
 }

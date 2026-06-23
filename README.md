@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/kuma.png" alt="Kuma Logo" width="250" />
+<img src="https://raw.githubusercontent.com/farhank15/kuma/main/public/kuma.png" alt="Kuma Logo" width="250" />
 
 # 🧬 Kuma
 
