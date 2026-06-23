@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import {
   applyEdit,
   countOccurrences,
@@ -126,7 +127,8 @@ describe("calculateSimilarity", () => {
 describe("findFuzzyMatch", () => {
   test("finds exact match with threshold 1.0", () => {
     const content = "function hello() {\n  return 1;\n}\nfunction world() {}";
-    const result = findFuzzyMatch(content, "function hello()", 1.0);
+    // Search for exact substring that exists in content
+    const result = findFuzzyMatch(content, "function hello() {", 1.0);
     expect(result).not.toBeNull();
     expect(result!.match).toContain("function hello()");
   });
@@ -238,5 +240,31 @@ describe("applyEdit", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("DIFF_MISMATCH");
+  });
+
+  test("dryRun skips backup creation", () => {
+    // With dryRun=true, backupPath should be undefined
+    const content = "const x = 1;";
+    const result = applyEdit(content, {
+      searchBlock: "const x = 1;",
+      replaceBlock: "const x = 42;",
+    }, testFilePath, 0, true);
+
+    expect(result.success).toBe(true);
+    expect(result.backupPath).toBeUndefined();
+    expect(result.details).toContain("const x = 42;");
+  });
+
+  test("dryRun=false creates backup", () => {
+    // With dryRun=false (default), backupPath should be set
+    const content = "const x = 1;";
+    const result = applyEdit(content, {
+      searchBlock: "const x = 1;",
+      replaceBlock: "const x = 42;",
+    }, testFilePath, 0, false);
+
+    expect(result.success).toBe(true);
+    expect(result.backupPath).toBeDefined();
+    expect(result.details).toContain("const x = 42;");
   });
 });

@@ -10,6 +10,7 @@ import { sessionMemory } from "../engine/sessionMemory.js";
 interface CodeReviewerParams {
   files: string[];
   focus?: "correctness" | "conventions" | "security" | "performance";
+  customCriteria?: string;
 }
 
 interface ReviewIssue {
@@ -21,7 +22,7 @@ interface ReviewIssue {
 }
 
 export async function handleCodeReviewer(params: CodeReviewerParams): Promise<string> {
-  const { files, focus = "correctness" } = params;
+  const { files, focus = "correctness", customCriteria } = params;
 
   const allIssues: ReviewIssue[] = [];
   let filesReviewed = 0;
@@ -90,7 +91,7 @@ export async function handleCodeReviewer(params: CodeReviewerParams): Promise<st
     errors: allIssues.filter((i) => i.severity === "error").length,
   });
 
-  return formatReviewOutput(allIssues, filesReviewed, files.length, focus);
+  return formatReviewOutput(allIssues, filesReviewed, files.length, focus, customCriteria);
 }
 
 // ============================================================
@@ -363,7 +364,8 @@ function formatReviewOutput(
   issues: ReviewIssue[],
   filesReviewed: number,
   totalFiles: number,
-  focus: string
+  focus: string,
+  customCriteria?: string
 ): string {
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
@@ -371,6 +373,7 @@ function formatReviewOutput(
 
   const lines: string[] = [
     `🔍 **Code Review — Focus: ${focus}**`,
+    ...(customCriteria ? [`📋 **Custom Criteria:** ${customCriteria}`] : []),
     `📁 ${filesReviewed}/${totalFiles} files reviewed`,
     `🔴 ${errors.length} errors | 🟡 ${warnings.length} warnings | 🔵 ${infos.length} info`,
     "",

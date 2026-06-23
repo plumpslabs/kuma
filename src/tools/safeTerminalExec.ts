@@ -43,7 +43,7 @@ const DANGEROUS_PATTERNS = [
 ];
 
 export async function handleSafeTerminalExec(params: TerminalExecParams): Promise<string> {
-  const { task, customCommand, timeout = 30 } = params;
+  const { task, customCommand, timeout = 60 } = params;
 
   // Validate task
   if (task === "custom" && !customCommand) {
@@ -216,7 +216,7 @@ function formatTimeoutResult(command: string, timeout: number): string {
     "",
     "Saran:",
     "  - Cek kode untuk infinite loop",
-    "  - Tambah timeout lebih besar (max 120s)",
+    "  - Tambah timeout lebih besar (max 180s)",
     "  - Jalankan di terminal manual untuk test",
   ].join("\n");
 }

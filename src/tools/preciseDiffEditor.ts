@@ -18,6 +18,7 @@ interface DiffEdit {
 interface DiffEditorParams {
   filePath: string;
   edits: DiffEdit[];
+  dryRun?: boolean;
 }
 
 interface DiffResult {
@@ -30,7 +31,7 @@ interface DiffResult {
 }
 
 export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise<string> {
-  const { filePath, edits } = params;
+  const { filePath, edits, dryRun = false } = params;
 
   // Validate path
   const validation = validateFilePath(filePath);
@@ -52,25 +53,28 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
   }
 
   try {
-    let currentContent = fs.readFileSync(resolvedPath, "utf-8");
+    const originalContent = fs.readFileSync(resolvedPath, "utf-8");
+    let currentContent = originalContent;
     const results: DiffResult[] = [];
 
     for (let i = 0; i < edits.length; i++) {
       const edit = edits[i];
-      const result = applyEdit(currentContent, edit, resolvedPath, i);
+      const result = applyEdit(currentContent, edit, resolvedPath, i, dryRun);
 
       if (result.success) {
-        // Write file after successful edit
-        fs.writeFileSync(resolvedPath, result.details!, "utf-8");
+        if (!dryRun) {
+          // Write file after successful edit
+          fs.writeFileSync(resolvedPath, result.details!, "utf-8");
 
-        // Record to session memory
-        sessionMemory.recordToolCall("precise_diff_editor", {
-          filePath,
-          editIndex: i,
-          success: true,
-          matched: result.matched,
-        });
-        sessionMemory.addModifiedFile(filePath);
+          // Record to session memory
+          sessionMemory.recordToolCall("precise_diff_editor", {
+            filePath,
+            editIndex: i,
+            success: true,
+            matched: result.matched,
+          });
+          sessionMemory.addModifiedFile(filePath);
+        }
 
         // Chain: use updated content for next edit in batch
         currentContent = result.details!;
@@ -79,7 +83,10 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
       results.push(result);
     }
 
-    // Format output
+    // Format output (diff preview for dryRun)
+    if (dryRun) {
+      return formatDryRunResult(results, filePath, originalContent);
+    }
     return formatDiffResult(results, filePath);
   } catch (err) {
     return `Error saat mengedit file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
@@ -91,7 +98,8 @@ export function applyEdit(
   content: string,
   edit: DiffEdit,
   filePath: string,
-  editIndex: number
+  editIndex: number,
+  dryRun: boolean = false
 ): DiffResult {
   const { searchBlock, replaceBlock, allowMultiple = false, fuzzyThreshold = 0.85 } = edit;
 
@@ -99,8 +107,8 @@ export function applyEdit(
   const exactCount = countOccurrences(content, searchBlock);
 
   if (exactCount > 0) {
-    // Backup dulu
-    const backupPath = createBackup(filePath);
+    // Backup (skip in dry run)
+    const backupPath = dryRun ? undefined : createBackup(filePath);
 
     // Apply replacement
     const newContent: string = allowMultiple
@@ -116,13 +124,27 @@ export function applyEdit(
     };
   }
 
-  // Step 2: Normalize whitespace and retry
-  const normalizedSearch = normalizeWhitespace(searchBlock);
-  const normalizedContent = normalizeWhitespace(content);
+  // Step 2: Normalize whitespace per line and retry
+  // Uses line-level normalization to preserve line count (unlike normalizeWhitespace which collapses blank lines)
+  const normSearchLines = normalizeLines(searchBlock);
+  const normContentLines = normalizeLines(content);
 
-  if (normalizedContent.includes(normalizedSearch)) {
-    const backupPath = createBackup(filePath);
-    const newContent = content.replace(normalizedSearch, replaceBlock);
+  // Find matching block by normalized lines
+  const matchIndex = normContentLines.findIndex((_, i) =>
+    i + normSearchLines.length <= normContentLines.length &&
+    normContentLines.slice(i, i + normSearchLines.length).every((line, j) => line === normSearchLines[j])
+  );
+
+  if (matchIndex >= 0) {
+    const backupPath = dryRun ? undefined : createBackup(filePath);
+    const origLines = content.split("\n");
+    const replaceLines = replaceBlock.split("\n");
+    const newLines = [
+      ...origLines.slice(0, matchIndex),
+      ...replaceLines,
+      ...origLines.slice(matchIndex + normSearchLines.length),
+    ];
+    const newContent = newLines.join("\n");
 
     return {
       success: true,
@@ -136,7 +158,7 @@ export function applyEdit(
   // Step 3: Fuzzy match
   const fuzzyResult = findFuzzyMatch(content, searchBlock, fuzzyThreshold);
   if (fuzzyResult) {
-    const backupPath = createBackup(filePath);
+    const backupPath = dryRun ? undefined : createBackup(filePath);
     const newContent = content.replace(fuzzyResult.match, replaceBlock);
 
     return {
@@ -163,6 +185,7 @@ export function applyEdit(
 
 /** @internal exported for testing */
 export function countOccurrences(content: string, search: string): number {
+  if (search === "") return 0;
   let count = 0;
   let pos = 0;
   while (true) {
@@ -179,14 +202,23 @@ export function replaceAll(content: string, search: string, replace: string): st
   return content.split(search).join(replace);
 }
 
+/**
+ * Per-line whitespace normalization that preserves line count.
+ * Unlike normalizeWhitespace, this doesn't collapse blank lines or trim trailing \n,
+ * so line indices stay consistent for mapping back to original content.
+ */
+function normalizeLines(text: string): string[] {
+  return text.split("\n").map((line) => line.trim().replace(/[ \t]+/g, " "));
+}
+
 /** @internal exported for testing */
 export function normalizeWhitespace(text: string): string {
   return text
     .replace(/\r\n/g, "\n")       // Normalize line endings
     .replace(/[ \t]+/g, " ")       // Collapse multiple spaces/tabs
-    .replace(/^\s+/gm, "")         // Trim leading whitespace per line
-    .replace(/\s+$/gm, "")         // Trim trailing whitespace per line
-    .replace(/\n{3,}/g, "\n\n")    // Collapse multiple blank lines
+    .replace(/\n{3,}/g, "\n\n")    // Collapse multiple blank lines FIRST (before trim)
+    .replace(/^[ \t]+/gm, "")      // Trim leading spaces/tabs only (not newlines)
+    .replace(/[ \t]+$/gm, "")      // Trim trailing spaces/tabs only (not newlines)
     .trim();
 }
 
@@ -199,12 +231,19 @@ export function findFuzzyMatch(
   const searchLines = search.split("\n").filter((l) => l.trim());
   const contentLines = content.split("\n");
 
+  if (searchLines.length === 0) return null;
+
+  // Pre-compute normalized versions for whitespace-resistant similarity comparison
+  const normalizedSearch = normalizeLines(search).join("\n");
+
   let bestMatch: string | null = null;
   let bestSimilarity = 0;
 
   for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
     const candidate = contentLines.slice(i, i + searchLines.length).join("\n");
-    const similarity = calculateSimilarity(search, candidate);
+    // Normalize whitespace so indentation/spacing differences don't penalize similarity
+    const normalizedCandidate = normalizeLines(candidate).join("\n");
+    const similarity = calculateSimilarity(normalizedSearch, normalizedCandidate);
 
     if (similarity > bestSimilarity) {
       bestSimilarity = similarity;
@@ -308,6 +347,99 @@ function createBackup(filePath: string): string {
   fs.copyFileSync(filePath, backupPath);
 
   return backupPath;
+}
+
+function formatDryRunResult(results: DiffResult[], filePath: string, originalContent: string): string {
+  const lines: string[] = [
+    `🔍 **DRY RUN** — ${filePath}`,
+    `⚠️ File tidak diubah (dryRun=true). Berikut preview perubahan dari ${results.length} edit:`,
+    "",
+  ];
+
+  // Track cumulative state to show net change per edit
+  let prevContent = originalContent;
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+
+    if (r.success) {
+      lines.push(`**Edit #${i + 1}:** ✅ Matched: ${r.matched}x`);
+
+      // Compute a simple unified diff
+      const prevLines = prevContent.split("\n");
+      const newLines = r.details!.split("\n");
+
+      // Find first differing line
+      let diffStart = 0;
+      while (diffStart < prevLines.length && diffStart < newLines.length &&
+             prevLines[diffStart] === newLines[diffStart]) {
+        diffStart++;
+      }
+
+      // Find last differing line (from end)
+      let pEnd = prevLines.length - 1;
+      let nEnd = newLines.length - 1;
+      while (pEnd > diffStart && nEnd > diffStart &&
+             prevLines[pEnd] === newLines[nEnd]) {
+        pEnd--;
+        nEnd--;
+      }
+
+      lines.push("```diff");
+
+      if (diffStart > pEnd && diffStart > nEnd) {
+        // No actual changes shown (edge case)
+        lines.push("  (no visible change)");
+      } else {
+        // Show context lines around changes
+        const contextStart = Math.max(0, diffStart - 1);
+        const contextEnd = Math.min(newLines.length, nEnd + 2);
+
+        // Show context before + deleted lines
+        if (diffStart <= pEnd) {
+          for (let j = contextStart; j <= pEnd; j++) {
+            if (j < diffStart) {
+              lines.push(`  ${prevLines[j]}`); // context before
+            } else {
+              lines.push(`- ${prevLines[j]}`);
+            }
+          }
+        }
+
+        // Show added lines + context after
+        if (diffStart <= nEnd) {
+          for (let j = diffStart; j < contextEnd && j < newLines.length; j++) {
+            if (j <= nEnd) {
+              lines.push(`+ ${newLines[j]}`);
+            } else {
+              lines.push(`  ${newLines[j]}`); // context after
+            }
+          }
+        }
+      }
+      lines.push("```");
+      lines.push("");
+
+      // Update cumulative state for next edit
+      prevContent = r.details!;
+    } else {
+      lines.push(`**Edit #${i + 1}:** ❌ ${r.error}`, "");
+    }
+  }
+
+  // Summary: lines added/removed (use prevContent, which is the final cumulative state)
+  const finalLines = prevContent.split("\n");
+  const origLineCount = originalContent.split("\n").length;
+  const diff = finalLines.length - origLineCount;
+  const sign = diff >= 0 ? "+" : "";
+  lines.push(`📊 **Net perubahan:** ${sign}${diff} baris (${origLineCount} → ${finalLines.length})`);
+
+  lines.push(
+    "",
+    `💡 **Hilangkan dryRun** atau set \`dryRun: false\` untuk menulis perubahan ke file.`,
+  );
+
+  return lines.join("\n");
 }
 
 function formatDiffResult(results: DiffResult[], filePath: string): string {

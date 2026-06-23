@@ -1,14 +1,22 @@
+import { jest } from '@jest/globals';
 import { SessionMemory } from "../src/engine/sessionMemory.js";
 
 let mem: SessionMemory;
 
 beforeEach(() => {
+  // Suppress console.error (MCP uses stderr for logging, but test output should be clean)
+  jest.spyOn(console, "error").mockImplementation(() => {});
+
   // Create fresh instance for each test
   mem = new SessionMemory();
   mem.init({
     projectRoot: "/test/project",
     startTime: 1000000,
   });
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 describe("SessionMemory", () => {

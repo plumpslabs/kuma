@@ -101,6 +101,22 @@ npm start
 
 ### Integrate with Your AI Client
 
+Semua client pake config yang sama, tinggal ganti path-nya:
+
+```json
+{
+  "mcpServers": {
+    "universal-agent-core": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/kuma/dist/index.js"]
+    }
+  }
+}
+```
+
+> 💡 **Untuk project ini**, absolute path-nya:
+> `/home/mawa/My_File/Development/kuma/dist/index.js`
+
 <details>
 <summary><b>🔵 Claude Code</b></summary>
 
@@ -111,7 +127,7 @@ Add to your `~/.claude/settings.json` or project `.claude/settings.json`:
   "mcpServers": {
     "universal-agent-core": {
       "command": "node",
-      "args": ["/absolute/path/to/universal-agent-core/dist/index.js"]
+      "args": ["/home/mawa/My_File/Development/kuma/dist/index.js"]
     }
   }
 }

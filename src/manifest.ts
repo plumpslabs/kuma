@@ -14,6 +14,14 @@ import { handleProjectConventions } from "./agents/projectConventions.js";
 import { injectMandates } from "./engine/mandateInjector.js";
 import { getSessionMemory } from "./engine/sessionMemory.js";
 
+// LSP Tools
+import {
+  handleFindReferences,
+  handleGoToDefinition,
+  handleRenameSymbol,
+  handleGetTypeInfo,
+} from "./tools/lspTools.js";
+
 // ============================================================
 // MANIFEST — MCP Tool Registry
 // ============================================================
@@ -108,6 +116,7 @@ export function registerAllTools(server: McpServer): void {
         allowMultiple: z.boolean().optional().default(false).describe("Allow multiple replacements"),
         fuzzyThreshold: z.number().min(0).max(1).optional().default(0.85).describe("Fuzzy match threshold (0.0-1.0)"),
       })).min(1).max(10).describe("Array of edits (max 10)"),
+      dryRun: z.boolean().optional().default(false).describe("Preview changes without writing to disk (returns diff preview)"),
     },
     async (params) => {
       try {
@@ -161,7 +170,7 @@ export function registerAllTools(server: McpServer): void {
     {
       task: z.enum(["test", "build", "lint", "typecheck", "custom"]).describe("Task to execute"),
       customCommand: z.string().optional().describe("Custom command (only if task='custom')"),
-      timeout: z.number().min(5).max(120).optional().default(30).describe("Timeout in seconds"),
+      timeout: z.number().min(5).max(180).optional().default(60).describe("Timeout in seconds (default: 60s, max: 180s)"),
     },
     async (params) => {
       try {
@@ -187,6 +196,7 @@ export function registerAllTools(server: McpServer): void {
     {
       files: z.array(z.string().min(1)).min(1).max(10).describe("Files to review"),
       focus: z.enum(["correctness", "conventions", "security", "performance"]).optional().default("correctness").describe("Review focus"),
+      customCriteria: z.string().optional().describe("Custom review criteria/rules to check (e.g. 'Ensure all API endpoints follow RESTful standards')"),
     },
     async (params) => {
       try {
@@ -272,5 +282,110 @@ export function registerAllTools(server: McpServer): void {
     }
   );
 
-  console.error("[Manifest] Registered 10 tools.");
+  // ============================================================
+  // 11. find_references
+  // ============================================================
+  server.tool(
+    "find_references",
+    "Finds all semantic references to a symbol (variable, function, class, interface, etc.) across the entire project. Uses TypeScript Language Server for accurate results - unlike smart_grep which only does text matching.",
+    {
+      filePath: z.string().min(1).describe("Path to the file containing the symbol"),
+      line: z.number().min(0).describe("Line number (0-indexed)"),
+      character: z.number().min(0).describe("Character position (0-indexed)"),
+    },
+    async (params) => {
+      try {
+        const result = await handleFindReferences(params);
+        return {
+          content: [{ type: "text", text: result }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error in find_references: ${err}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ============================================================
+  // 12. go_to_definition
+  // ============================================================
+  server.tool(
+    "go_to_definition",
+    "Navigate to the definition of a symbol at a given position. Returns file path, line number, and surrounding context.",
+    {
+      filePath: z.string().min(1).describe("Path to the file containing the symbol"),
+      line: z.number().min(0).describe("Line number (0-indexed)"),
+      character: z.number().min(0).describe("Character position (0-indexed)"),
+    },
+    async (params) => {
+      try {
+        const result = await handleGoToDefinition(params);
+        return {
+          content: [{ type: "text", text: result }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error in go_to_definition: ${err}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ============================================================
+  // 13. rename_symbol
+  // ============================================================
+  server.tool(
+    "rename_symbol",
+    "Renames a symbol across all files in the project (global rename). Uses TypeScript Language Server to find and update all references. Applied changes are written directly to files. Use dryRun: false on precise_diff_editor if you want preview first.",
+    {
+      filePath: z.string().min(1).describe("Path to the file containing the symbol to rename"),
+      line: z.number().min(0).describe("Line number (0-indexed) where the symbol is"),
+      character: z.number().min(0).describe("Character position (0-indexed) where the symbol is"),
+      newName: z.string().min(1).describe("New name for the symbol"),
+    },
+    async (params) => {
+      try {
+        const result = await handleRenameSymbol(params);
+        return {
+          content: [{ type: "text", text: result }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error in rename_symbol: ${err}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ============================================================
+  // 14. get_type_info
+  // ============================================================
+  server.tool(
+    "get_type_info",
+    "Returns TypeScript type information for a symbol at a given position. Shows inferred types, interface shapes, and type definitions (like hover in IDE).",
+    {
+      filePath: z.string().min(1).describe("Path to the file"),
+      line: z.number().min(0).describe("Line number (0-indexed)"),
+      character: z.number().min(0).describe("Character position (0-indexed)"),
+    },
+    async (params) => {
+      try {
+        const result = await handleGetTypeInfo(params);
+        return {
+          content: [{ type: "text", text: result }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error in get_type_info: ${err}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  console.error("[Manifest] Registered 14 tools.");
 }
