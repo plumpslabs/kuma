@@ -4,7 +4,7 @@
 
 # Kuma
 
-**The MCP that questions the code before writing it.**
+**Zero-setup safety toolkit for AI coding agents.**
 
 [![npm](https://img.shields.io/npm/v/@farhan22/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@farhan22/kuma)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -31,7 +31,7 @@ Add to your MCP client config:
 }
 ```
 
-That's it. Your AI agent now has access to all 12 tools.
+**30 detik.** Gak perlu install database, gak perlu config API key, gak perlu setup 5 MCP server beda. Langsung jalan.
 
 <details>
 <summary><b>Where does this config go?</b></summary>
@@ -47,86 +47,103 @@ That's it. Your AI agent now has access to all 12 tools.
 
 ---
 
-## Tools
+## Kuma's Promise
+
+**Kuma is built for one thing: making sure AI agents don't break your project.**
+
+Every tool in Kuma has a safety net built-in — not as an afterthought, but as a core design principle. Here's what Kuma guarantees:
+
+| # | When this happens... | Kuma does this... |
+|---|---|---|
+| 1 | LSP server is not installed | **Falls back to regex** — never hard fails |
+| 2 | An edit breaks something | **Rollback to any version** — versioned backups |
+| 3 | AI loops on a test failure | **Circuit breaker stops it** — prevents infinite retries |
+| 4 | A file path doesn't resolve | **Shows where it looked** — CWD vs project root |
+| 5 | A command is dangerous | **Blocks it** — `rm -rf`, `git push --force`, `curl \| bash` |
+
+Most tools make AI smarter. **Kuma makes AI not break things.**
+
+---
+
+## Tools (16)
+
+### 🔍 Context — Understand the codebase
 
 | Tool | Description |
 |------|-------------|
-| `smart_grep` | Narrow down to the specific code you need. Returns filename, line number, and 3 lines of context. |
-| `smart_file_picker` | Read files with chunking: `full`, `smart` (signatures only), `outline` (exports only). Saves token budget. |
-| `precise_diff_editor` | Search-and-replace with exact → whitespace → fuzzy fallback. Auto-backup before every edit. Use `action: "rollback"` to undo. |
-| `batch_file_writer` | Create up to 15 files in one call. Warns when creating too many — asks if each is necessary. |
-| `execute_safe_test` | Run `test`/`build`/`lint`/`typecheck` with timeout, circuit breaker, and process tree kill. |
-| `code_reviewer` | Senior-level static analysis. Supports focus modes: correctness, conventions, security, performance, and **over-engineering**. |
-| `project_conventions` | Auto-detect framework, test runner, package manager, import aliases. Know your stack before you code. |
-| `get_session_memory` | Session state tracker. Accepts `{ topic }` to load specific memory files (architecture, conventions, known-issues, decisions, glossary). |
-| `lsp_query` | Go-to-definition, find references, get type info, or **rename symbols** via TypeScript Language Server. Falls back to regex when LSP is unavailable. |
+| `smart_grep` | Search code with regex. Returns filename, line, and context. Caches results. |
+| `smart_file_picker` | Read files with smart chunking: `full` (entire file), `smart` (signatures + tail), `outline` (exports only). |
+| `project_structure` | Tree view of project layout. Depth control, folder-only mode, include/exclude patterns. |
 | `git_log` | Structured commit history with optional file filter. |
-| `kuma_reflect` | **Reflection tool** — checks if you're on track, detects drift (edits without tests, loops, unresolved failures), and suggests the next action. |
+| `git_diff` | Structured diff output. Supports staged/unstaged, file filter, ref ranges. |
+| `lsp_query` | Go-to-definition, find references, get type info, or rename symbols via TypeScript Language Server. **Falls back to regex when LSP unavailable.** |
+| `project_conventions` | Auto-detect framework, test runner, package manager, import aliases, **monorepo workspaces**. |
+
+### ✏️ Execution — Make changes safely
+
+| Tool | Description |
+|------|-------------|
+| `precise_diff_editor` | Search-and-replace with exact → whitespace → fuzzy fallback. **Auto-backup before every edit.** Use `action: "rollback"` to undo. |
+| `batch_file_writer` | Create up to 15 files in one call. Validates paths before writing. |
+| `static_analysis` | Run ESLint / TypeScript / Prettier / Ruff and **parse output into structured results.** Auto-detects tools from project config. |
+
+### 🧪 Validation — Verify before breaking
+
+| Tool | Description |
+|------|-------------|
+| `execute_safe_test` | Run `test`/`build`/`lint`/`typecheck` with **timeout, circuit breaker, and process tree kill.** |
+| `code_reviewer` | Senior-level static analysis. Focus modes: correctness, conventions, security, performance, and **over-engineering detection.** |
+
+### 🧠 Memory — Know what happened
+
+| Tool | Description |
+|------|-------------|
+| `get_session_memory` | Session state tracker. Shows modified files, unresolved failures, tool history. Load specific memory topics with `{ topic }`. |
+| `search_session_memory` | **Keyword search** across tool calls, memory files, errors, modified files, and dependency graph. |
 | `write_memory` | Persist project knowledge (decisions, glossary) to `.kuma/memories/`. Append, prepend, or overwrite. |
-
-### Safety
-
-- **Sandboxed** — all file operations locked to project directory, path traversal blocked
-- **Auto-backup** — `.agent-backups/<timestamp>/` snapshot before every edit
-- **Circuit breaker** — stops after 3 identical failures to prevent loops
-- **Command whitelist** — only `test`, `build`, `lint`, `typecheck`, and explicit custom commands
-- **Dangerous pattern blocking** — `rm -rf`, `git push --force`, `npm publish` blocked by default
+| `kuma_reflect` | **Reflection tool** — checks if you're on track, detects drift (edits without tests, loops, unresolved failures), and suggests the next action. |
 
 ---
 
-## Philosophy
+## Safety
 
-Kuma is built around a simple ladder that runs before every action:
-
-1. **Does this code need to exist?**
-2. **Does the standard library or an installed dependency already cover it?**
-3. **Is there a one-liner that does the same thing?**
-4. **Only then, write it.**
-
-Most tools generate more code. Kuma generates **less**.
-
-Three things no other MCP does:
-- A reviewer that catches **over-engineering** (`code_reviewer` with `focus: "over-engineering"`)
-- A reflector that catches **drift** (`kuma_reflect` — edits without tests, tool-call loops, unresolved failures)
-- A memory that **survives sessions** like an IDE (`get_session_memory` with topic filter, auto-generated architecture/conventions/known-issues)
+| Feature | What it does |
+|---------|-------------|
+| **Sandboxed** | All file operations locked to project directory. Path traversal blocked. System dirs protected. |
+| **Auto-backup** | `.agent-backups/<timestamp>/` snapshot before every edit. Rollback to any version. |
+| **Circuit breaker** | Stops after 3 identical failures. Prevents AI loops. |
+| **Timeout** | All commands have configurable timeout (max 180s). Process tree kill on timeout. |
+| **Command whitelist** | Only `test`, `build`, `lint`, `typecheck`, and explicit custom commands. |
+| **Dangerous pattern blocking** | `rm -rf`, `git push --force`, `npm publish`, `curl \| bash` blocked by default. |
+| **LSP graceful degradation** | When TypeScript Language Server is not installed, LSP tools **fall back to regex** instead of hard failing. |
 
 ---
 
-## Development
+## What Makes Kuma Unique
 
-```bash
-git clone https://github.com/farhank15/kuma.git
-cd kuma
-npm install
-npm run build
-```
+- **Workflow combo** — `project_conventions + smart_grep + smart_file_picker + precise_diff_editor + execute_safe_test + code_reviewer` as a seamless pipeline.
+- **Safety is default, not optional** — Rollback, circuit breaker, sandbox, timeout, dangerous pattern blocking are built into every tool.
+- **Graceful degradation** — When dependencies are missing (LSP, linters), Kuma falls back instead of crashing.
+- **Over-engineering detection** — `code_reviewer` with `focus: "over-engineering"` catches unnecessary abstractions.
+- **Drift detection** — `kuma_reflect` catches edits without tests, tool-call loops, unresolved failures.
+- **Persistent memory** — Knowledge survives across sessions via `.kuma/memories/`. Auto-generates architecture & conventions docs.
+- **Monorepo awareness** — Detects workspaces, scans `apps/*`, `packages/*`, `services/*`, and pnpm/yarn/npm workspaces.
 
-```bash
-npm test           # run all tests (136 tests, 9 suites)
-npm run typecheck  # type checking
-npm run dev        # watch mode
-```
+---
 
-To use your local build instead of npm:
+## Kuma's DNA
 
-```json
-{
-  "mcpServers": {
-    "kuma": {
-      "command": "node",
-      "args": ["/path/to/kuma/dist/index.js"]
-    }
-  }
-}
-```
+1. **Zero setup, zero friction** — Built-in tools that work without config. No DB, no API key.
+2. **Safety first** — Every tool has a safety net: timeout, circuit breaker, rollback, sandbox.
+3. **Graceful degradation, not crash** — Every tool has a fallback before it fails. LSP unavailable? Regex. File not found? Show resolved paths. Diff mismatch? Whitespace→fuzzy retry. Test fails? Circuit breaker stops the loop.
+4. **Opinionated workflow** — Tools designed to be used together: `conventions → grep → pick → diff → test → review`.
+5. **Minimal surface** — 16 focused tools. Each tool has one job and does it well. No overlap, no confusion.
 
 ---
 
 ## Contributing
 
-1. Fork → branch → commit → PR
-2. All new features **must** include tests
-3. All code **must** pass `npm run typecheck`
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 

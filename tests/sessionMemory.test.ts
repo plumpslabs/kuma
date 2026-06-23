@@ -229,6 +229,161 @@ describe("SessionMemory", () => {
     });
   });
   // ============================================================
+  // MEMORY SEARCH (keyword search)
+  // ============================================================
+  describe("searchMemory", () => {
+    test("returns empty for empty memory", () => {
+      const results = mem.searchMemory("anything");
+      expect(results).toEqual([]);
+    });
+
+    test("finds tool calls by tool name", () => {
+      mem.recordToolCall("smart_grep", { query: "auth" });
+      mem.recordToolCall("smart_file_picker", { filePath: "test.ts" });
+
+      const results = mem.searchMemory("smart_grep");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("tool:smart_grep");
+    });
+
+    test("finds tool calls by param content", () => {
+      mem.recordToolCall("smart_grep", { query: "authentication" });
+
+      const results = mem.searchMemory("authentication");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("tool:smart_grep");
+      expect(results[0].content).toContain("authentication");
+    });
+
+    test("finds search results by query string", () => {
+      mem.addSearchResult("authenticate", ["src/auth.ts"]);
+
+      const results = mem.searchMemory("authenticate");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("search");
+    });
+
+    test("finds search results by file path", () => {
+      mem.addSearchResult("login", ["src/auth.ts", "src/middleware.ts"]);
+
+      const results = mem.searchMemory("middleware");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("search");
+    });
+
+    test("finds modified files by path", () => {
+      mem.addModifiedFile("src/auth.ts");
+
+      const results = mem.searchMemory("auth");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("file:modified");
+    });
+
+    test("finds created files", () => {
+      mem.addCreatedFile("src/newFile.ts");
+
+      const results = mem.searchMemory("newFile");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("file:created");
+    });
+
+    test("finds failed files by error message", () => {
+      mem.addFailedFile("typecheck", "Type error in auth.ts:15");
+
+      const results = mem.searchMemory("Type error");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toContain("failure");
+      expect(results[0].content).toContain("UNRESOLVED");
+    });
+
+    test("finds failed files by task name", () => {
+      mem.addFailedFile("typecheck", "Type error in auth.ts:15");
+
+      const results = mem.searchMemory("typecheck");
+      expect(results).toHaveLength(1);
+    });
+
+    test("multi-source search returns combined results", () => {
+      mem.recordToolCall("smart_grep", { query: "auth test" });
+      mem.addModifiedFile("src/auth.ts");
+      mem.addSearchResult("auth_test", ["src/auth.ts"]);
+
+      const results = mem.searchMemory("auth");
+      expect(results.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test("search is case-insensitive", () => {
+      mem.recordToolCall("FindUser", { query: "User" });
+
+      const results = mem.searchMemory("finduser");
+      expect(results).toHaveLength(1);
+    });
+
+    test("respects limit parameter", () => {
+      for (let i = 0; i < 10; i++) {
+        mem.recordToolCall("tool_" + i, {});
+      }
+
+      const results = mem.searchMemory("tool", 3);
+      expect(results).toHaveLength(3);
+    });
+
+    test("returns all matching tool calls regardless of timestamp ordering", () => {
+      mem.recordToolCall("tool_first", { seq: 1 });
+      mem.recordToolCall("tool_second", { seq: 2 });
+      mem.recordToolCall("tool_third", { seq: 3 });
+
+      const results = mem.searchMemory("tool");
+      expect(results.length).toBe(3);
+      // All three should be found regardless of sort order
+      expect(results.some(r => r.content.includes("tool_first"))).toBe(true);
+      expect(results.some(r => r.content.includes("tool_third"))).toBe(true);
+    });
+
+    test("returns empty for non-matching query", () => {
+      mem.recordToolCall("smart_grep", { query: "user" });
+      mem.addModifiedFile("src/user.ts");
+
+      const results = mem.searchMemory("nonexistent_pattern_xyz");
+      expect(results).toEqual([]);
+    });
+  });
+
+  // ============================================================
+  // SEARCH SESSION MEMORY (exported function wrapper)
+  // ============================================================
+  describe("searchSessionMemory formatting", () => {
+    test("searchMemory returns correctly typed results", () => {
+      mem.recordToolCall("smart_grep", { query: "test-query" });
+
+      const results = mem.searchMemory("test-query");
+      expect(results).toHaveLength(1);
+      expect(results[0]).toHaveProperty("type");
+      expect(results[0]).toHaveProperty("content");
+      // timestamp is optional, but tool calls have it
+      expect(results[0].timestamp).toBeDefined();
+    });
+
+    test("searchMemory returns tool calls with correct structure", () => {
+      mem.recordToolCall("my_tool", { key: "value" });
+
+      const results = mem.searchMemory("my_tool");
+      expect(results[0].type).toBe("tool:my_tool");
+      expect(results[0].content).toContain("my_tool");
+      expect(results[0].content).toContain("value");
+    });
+
+    test("searchMemory finds dependency graph entries", () => {
+      mem.addDependency("src/auth.ts", "src/user.ts");
+
+      const results = mem.searchMemory("auth.ts");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("dependency");
+      expect(results[0].content).toContain("user.ts");
+    });
+  });
+
+  // ============================================================
   // MIGRATION (session.json → memory.json)
   // ============================================================
   describe("migration", () => {

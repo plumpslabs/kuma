@@ -9,9 +9,12 @@ import { handleSafeTerminalExec } from "./tools/safeTerminalExec.js";
 import { handleCodeReviewer } from "./agents/codeReviewer.js";
 import { handleProjectConventions } from "./agents/projectConventions.js";
 import { handleGitLog } from "./tools/gitLog.js";
+import { handleGitDiff } from "./tools/gitDiff.js";
+import { handleProjectStructure } from "./tools/projectStructure.js";
+import { handleStaticAnalysis } from "./tools/staticAnalysis.js";
 import { handleReflect } from "./tools/kumaReflect.js";
 
-import { getSessionMemory, handleWriteMemory, MemoryTopic } from "./engine/sessionMemory.js";
+import { getSessionMemory, handleWriteMemory, searchSessionMemory, MemoryTopic } from "./engine/sessionMemory.js";
 
 import { handleLspQuery } from "./tools/lspTools.js";
 
@@ -253,5 +256,84 @@ export function registerAllTools(server: McpServer): void {
     }
   );
 
-  console.error("[Manifest] Registered 12 tools.");
+  // 13. git_diff
+  server.tool(
+    "git_diff",
+    "Shows structured git diff output (staged or unstaged). Supports file filter, ref ranges, and context line control.",
+    {
+      filePath: z.string().optional().describe("Filter diff to a specific file"),
+      staged: z.boolean().optional().default(false).describe("Show staged changes (--cached)"),
+      contextLines: z.number().min(1).max(20).optional().default(3).describe("Number of context lines per chunk"),
+      baseRef: z.string().optional().describe("Base git ref for comparing (e.g. main, HEAD~1)"),
+      targetRef: z.string().optional().describe("Target git ref (defaults to HEAD if baseRef is set)"),
+    },
+    async (params) => {
+      try {
+        const result = await handleGitDiff(params);
+        return { content: [{ type: "text", text: result }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error in git_diff: ${err}` }], isError: true };
+      }
+    }
+  );
+
+  // 14. project_structure
+  server.tool(
+    "project_structure",
+    "Displays a tree view of the project's directory layout. Helps AI understand where files live before reading or editing.",
+    {
+      depth: z.number().min(1).max(6).optional().default(3).describe("Max directory depth to show (1-6)"),
+      folderOnly: z.boolean().optional().default(false).describe("Show folders only (no files)"),
+      includePattern: z.string().optional().describe("Only show items containing this string"),
+      excludePattern: z.string().optional().describe("Exclude items containing this string"),
+    },
+    async (params) => {
+      try {
+        const result = await handleProjectStructure(params);
+        return { content: [{ type: "text", text: result }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error in project_structure: ${err}` }], isError: true };
+      }
+    }
+  );
+
+  // 15. search_session_memory
+  server.tool(
+    "search_session_memory",
+    "Search through session memory by keyword. Covers tool call history, memory files, errors, modified files, and search results.",
+    {
+      query: z.string().min(1).describe("Keyword to search for in session memory"),
+      limit: z.number().min(1).max(100).optional().default(20).describe("Maximum results to return"),
+    },
+    async (params) => {
+      try {
+        const result = searchSessionMemory(params);
+        return { content: [{ type: "text", text: result }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error in search_session_memory: ${err}` }], isError: true };
+      }
+    }
+  );
+
+  // 16. static_analysis
+  server.tool(
+    "static_analysis",
+    "Runs available linters/checkers (ESLint, TypeScript, Prettier, Ruff) and parses output into structured results. Auto-detects tools from project config.",
+    {
+      tool: z.enum(["eslint", "tsc", "prettier", "ruff", "all"]).optional().default("all").describe("Which tool to run (default: auto-detect all available)"),
+      files: z.array(z.string()).optional().describe("Specific files to check (default: whole project)"),
+      autoFix: z.boolean().optional().default(false).describe("Auto-fix fixable issues (eslint --fix, prettier --write)"),
+      timeout: z.number().min(5).max(180).optional().default(60).describe("Timeout in seconds per tool"),
+    },
+    async (params) => {
+      try {
+        const result = await handleStaticAnalysis(params);
+        return { content: [{ type: "text", text: result }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error in static_analysis: ${err}` }], isError: true };
+      }
+    }
+  );
+
+  console.error("[Manifest] Registered 16 tools.");
 }

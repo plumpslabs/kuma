@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { validateFilePath } from "../utils/pathValidator.js";
+import path from "node:path";
+import { validateFilePath, getProjectRoot } from "../utils/pathValidator.js";
 import { truncateToTokenLimit } from "../utils/tokenCounter.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
@@ -23,21 +24,39 @@ export async function handleSmartFilePicker(params: SmartFilePickerParams): Prom
   // Path validation
   const validation = validateFilePath(filePath);
   if (!validation.valid) {
-    return `Error: ${validation.error.message}`;
+    return "Error: " + validation.error.message;
   }
 
   const resolvedPath = validation.resolvedPath;
 
   // Check file exists
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File not found: "${filePath}".\nTry smart_grep first to locate the correct file.`;
+    const projectRoot = getProjectRoot();
+
+    let suggestion: string;
+    if (!path.isAbsolute(filePath)) {
+      const cwdPath = path.resolve(process.cwd(), filePath);
+      suggestion =
+        "Path resolved to: " + resolvedPath + "\n" +
+        "CWD: " + process.cwd() + "\n" +
+        "Project root: " + projectRoot + "\n" +
+        "Hint: Try path relative to project root, or relative to CWD (" + cwdPath + ")\n" +
+        "Try smart_grep first to locate the correct file.";
+    } else {
+      suggestion = "File does not exist. Try smart_grep to locate it.";
+    }
+
+    return "Error: File not found: \"" + filePath + "\".\n" + suggestion;
   }
 
   const stat = fs.statSync(resolvedPath);
 
   // Check file size
   if (stat.size > MAX_FILE_SIZE) {
-    return `Error: File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB). Max 1MB.\nUse smart_grep to find specific content instead.`;
+    return (
+      "Error: File too large (" + (stat.size / 1024 / 1024).toFixed(1) + "MB). Max 1MB.\n" +
+      "Use smart_grep to find specific content instead."
+    );
   }
 
   try {
@@ -70,7 +89,7 @@ export async function handleSmartFilePicker(params: SmartFilePickerParams): Prom
         return formatOutput(filePath, lines.slice(0, CHUNK_THRESHOLD), 1, totalLines, true);
     }
   } catch (err) {
-    return `Error reading file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
+    return "Error reading file \"" + filePath + "\": " + (err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -82,9 +101,11 @@ function formatOutput(
   truncated: boolean
 ): string {
   const header = [
-    `📄 File: ${filePath}`,
-    `📏 ${totalLines} total lines`,
-    truncated ? `⚠️ Showing ${lines.length} lines (file >${CHUNK_THRESHOLD} lines). Use startLine/endLine for a specific range.` : "",
+    "File: " + filePath,
+    totalLines + " total lines",
+    truncated
+      ? "Showing " + lines.length + " lines (file >" + CHUNK_THRESHOLD + " lines). Use startLine/endLine for a specific range."
+      : "",
     "",
   ]
     .filter(Boolean)
@@ -93,11 +114,11 @@ function formatOutput(
   const body = lines
     .map((line, i) => {
       const lineNum = startLine + i;
-      return `${String(lineNum).padStart(4, " ")} | ${line}`;
+      return String(lineNum).padStart(4, " ") + " | " + line;
     })
     .join("\n");
 
-  const full = `${header}\n${body}`;
+  const full = header + "\n" + body;
 
   // Limit total output (anti token explosion)
   return truncateToTokenLimit(full, 2000);
@@ -144,18 +165,18 @@ async function handleOutlineStrategy(
   }
 
   const result = [
-    `📄 File: ${filePath}`,
-    `📏 ${totalLines} total lines (OUTLINE MODE — signatures & imports only)`,
+    "File: " + filePath,
+    totalLines + " total lines (OUTLINE MODE - signatures and imports only)",
     "",
-    "📥 Imports:",
-    ...importLines.slice(0, 30).map((l) => `  ${l.substring(0, 150)}`),
-    importLines.length > 30 ? `  ...and ${importLines.length - 30} more imports` : "",
+    "Imports:",
+    ...importLines.slice(0, 30).map((l) => "  " + l.substring(0, 150)),
+    importLines.length > 30 ? "  ...and " + (importLines.length - 30) + " more imports" : "",
     "",
-    "📤 Exports & Declarations:",
-    ...exportLines.map((e) => `  [L${e.line}] ${e.text}`),
+    "Exports & Declarations:",
+    ...exportLines.map((e) => "  [L" + e.line + "] " + e.text),
     "",
-    `💡 Pass startLine/endLine to read a specific range.`,
-    `💡 Or use chunkStrategy: "full" to read the entire file.`,
+    "Pass startLine/endLine to read a specific range.",
+    "Or use chunkStrategy: \"full\" to read the entire file.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -184,7 +205,7 @@ async function handleSmartStrategy(
   // Function/class signatures from the middle
   if (headerEnd < tailStart) {
     smartLines.push({ line: -1, text: "" });
-    smartLines.push({ line: -1, text: `  ... ${tailStart - headerEnd} lines hidden ...` });
+    smartLines.push({ line: -1, text: "  ... " + (tailStart - headerEnd) + " lines hidden ..." });
     smartLines.push({ line: -1, text: "" });
   }
 
@@ -204,21 +225,21 @@ async function handleSmartStrategy(
   }
 
   const header = [
-    `📄 File: ${filePath}`,
-    `📏 ${totalLines} total lines (SMART MODE — header + signatures + tail)`,
-    `💡 Pass startLine/endLine to read a specific range.`,
-    `💡 Or use chunkStrategy: "full" to read the entire file.`,
+    "File: " + filePath,
+    totalLines + " total lines (SMART MODE - header + signatures + tail)",
+    "Pass startLine/endLine to read a specific range.",
+    "Or use chunkStrategy: \"full\" to read the entire file.",
     "",
   ].join("\n");
 
   const body = smartLines
     .map((s) => {
       if (s.line === -1) return s.text;
-      return `${String(s.line).padStart(4, " ")} | ${s.text}`;
+      return String(s.line).padStart(4, " ") + " | " + s.text;
     })
     .join("\n");
 
-  const full = `${header}\n${body}`;
+  const full = header + "\n" + body;
   return truncateToTokenLimit(full, 3000);
 }
 

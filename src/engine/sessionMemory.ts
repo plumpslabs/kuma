@@ -385,6 +385,118 @@ export class SessionMemory {
     this.writeMemoryFile("conventions", this.generateConventionsMd());
   }
 
+  // ============================================================
+  // KEYWORD SEARCH — Search session memory content
+  // ============================================================
+
+  /**
+   * Search through tool call history, memory files, search results,
+   * errors, and file modifications for a keyword.
+   */
+  searchMemory(query: string, limit: number = 20): Array<{ type: string; content: string; timestamp?: number }> {
+    this.ensureInit();
+    const results: Array<{ type: string; content: string; timestamp?: number }> = [];
+    const q = query.toLowerCase();
+
+    // 1. Search tool call history
+    for (const call of this.state.toolCalls) {
+      const paramStr = JSON.stringify(call.params);
+      if (
+        call.toolName.toLowerCase().includes(q) ||
+        paramStr.toLowerCase().includes(q)
+      ) {
+        results.push({
+          type: `tool:${call.toolName}`,
+          content: `${call.toolName}(${JSON.stringify(call.params).substring(0, 200)})`,
+          timestamp: call.timestamp,
+        });
+      }
+    }
+
+    // 2. Search search results history (query → file paths)
+    for (const [queryStr, files] of this.state.searchResults) {
+      if (queryStr.toLowerCase().includes(q) || files.some(f => f.toLowerCase().includes(q))) {
+        results.push({
+          type: "search",
+          content: `Query: "${queryStr}" → ${files.slice(0, 5).join(", ")}${files.length > 5 ? ` (+${files.length - 5} more)` : ""}`,
+        });
+      }
+    }
+
+    // 3. Search modified files
+    for (const [, mod] of this.state.modifiedFiles) {
+      if (mod.filePath.toLowerCase().includes(q)) {
+        results.push({
+          type: `file:${mod.status}`,
+          content: `${mod.status.toUpperCase()}: ${mod.filePath}`,
+          timestamp: mod.modifiedAt,
+        });
+      }
+    }
+
+    // 4. Search failed files / error messages
+    for (const [task, failures] of this.state.failedFiles) {
+      for (const f of failures) {
+        if (
+          task.toLowerCase().includes(q) ||
+          f.error.toLowerCase().includes(q)
+        ) {
+          results.push({
+            type: `failure:${task}`,
+            content: `[${f.resolved ? "RESOLVED" : "UNRESOLVED"}] ${task}: ${f.error.substring(0, 200)}`,
+            timestamp: f.timestamp,
+          });
+        }
+      }
+    }
+
+    // 5. Search dependency graph (files as keys)
+    for (const [file, deps] of this.state.dependencyGraph) {
+      if (file.toLowerCase().includes(q)) {
+        results.push({
+          type: "dependency",
+          content: `${file} depends on: ${deps.join(", ")}`,
+        });
+      }
+    }
+
+    // 6. Search memory files (.kuma/memories/*.md)
+    const memoriesDir = this.memoriesDir();
+    if (fs.existsSync(memoriesDir)) {
+      try {
+        const files = fs.readdirSync(memoriesDir);
+        for (const file of files) {
+          if (!file.endsWith(".md")) continue;
+          const filePath = path.join(memoriesDir, file);
+          try {
+            const content = fs.readFileSync(filePath, "utf-8");
+            const lines = content.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].toLowerCase().includes(q)) {
+                const topicName = file.replace(/\.md$/, "");
+                results.push({
+                  type: `memory:${topicName}`,
+                  content: `[${topicName}] L${i + 1}: ${lines[i].trim().substring(0, 150)}`,
+                });
+                if (results.filter(r => r.type.startsWith("memory")).length >= 5) break;
+              }
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // Sort by timestamp (most recent first) where available
+    results.sort((a, b) => {
+      if (a.timestamp && b.timestamp) return b.timestamp - a.timestamp;
+      if (a.timestamp) return -1;
+      if (b.timestamp) return 1;
+      return 0;
+    });
+
+    return results.slice(0, limit);
+  }
+
   pruneMemory(): void {
     this.ensureInit();
     this.state.toolCalls = this.state.toolCalls.slice(-3);
@@ -500,6 +612,36 @@ export const sessionMemory = new SessionMemory();
 // Function for MCP tool
 export function getSessionMemory(topic?: MemoryTopic): Record<string, unknown> {
   return sessionMemory.getSummary(topic);
+}
+
+export function searchSessionMemory(params: { query: string; limit?: number }): string {
+  const { query, limit = 20 } = params;
+  sessionMemory.recordToolCall("search_session_memory", { query, limit });
+  const results = sessionMemory.searchMemory(query, limit);
+
+  if (results.length === 0) {
+    return `🔍 **Search Memory** — No results for "${query}".`;
+  }
+
+  const lines: string[] = [
+    `🔍 **Search Memory** — ${results.length} results for "${query}"`,
+    "",
+  ];
+
+  for (const r of results) {
+    const icon = r.type.startsWith("tool:") ? "🛠️" :
+                 r.type.startsWith("file:") ? (r.type.includes("created") ? "✨" : "📝") :
+                 r.type.startsWith("failure") ? "❌" :
+                 r.type.startsWith("memory") ? "🧠" :
+                 r.type === "search" ? "🔎" :
+                 r.type === "dependency" ? "🔗" :
+                 "📄";
+    const timeStr = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : "";
+    lines.push(`${icon} ${timeStr ? `[${timeStr}] ` : ""}${r.content}`);
+  }
+
+  lines.push("", `💡 Use get_session_memory({topic: "..."}) to load a specific memory topic.`);
+  return lines.join("\n");
 }
 
 export function handleWriteMemory(params: { topic: MemoryTopic; content: string; mode?: "append" | "prepend" | "overwrite" }): string {

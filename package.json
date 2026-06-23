@@ -1,7 +1,7 @@
 {
   "name": "@farhan22/kuma",
-  "version": "2.0.0",
-  "description": "Mega-Plugin Orchestrator MCP Server — Universal AI Agent for any MCP-compatible client (Claude Code, Codex, Gemini, Cursor)",
+  "version": "2.0.1",
+  "description": "Zero-setup safety toolkit for AI coding agents. MCP server with code review, git analysis, file editing, session memory, and static analysis — works with Claude Code, Cursor, Gemini CLI.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,8 +9,7 @@
     "kuma": "dist/index.js"
   },
   "files": [
-    "dist/",
-    "prompts/"
+    "dist/"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --clean --out-dir dist",
@@ -24,29 +23,38 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",
     "fast-glob": "^3.3.2",
-    "typescript": "^5.9.3",
-    "typescript-language-server": "^5.3.0",
     "zod": "^3.24.0"
+  },
+  "optionalDependencies": {
+    "typescript-language-server": "^5.3.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^22.0.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
-    "ts-node": "^10.9.2",
-    "tsup": "^8.3.0"
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
-    "ai-agent",
-    "coding-agent",
+    "ai",
+    "llm",
+    "claude",
     "claude-code",
-    "codebuff",
-    "plugin-orchestrator"
+    "cursor",
+    "coding-agent",
+    "agentic",
+    "developer-tools",
+    "code-review",
+    "static-analysis",
+    "git-diff",
+    "cli"
   ],
   "repository": {
     "type": "git",

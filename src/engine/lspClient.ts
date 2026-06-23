@@ -124,7 +124,8 @@ class LSPClient {
 
     // Handle spawn errors (e.g., binary not found)
     this.process.on("error", (err) => {
-      console.error(`[LSP] Process error: ${err.message}`);
+      console.error(`[LSP] Process error: ${err.message}. LSP features will fallback to regex.`);
+      this._isAvailable = false;
       this.process = null;
       this.initialized = false;
       this.initPromise = null;

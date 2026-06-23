@@ -13,63 +13,6 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * Token budget tracker for the session
- */
-export class TokenBudgetTracker {
-  private totalTokensUsed = 0;
-  private readonly maxTokens: number;
-  private readonly warningThreshold: number; // 70%
-  private readonly criticalThreshold: number; // 90%
-
-  constructor(maxTokens = 128_000) {
-    this.maxTokens = maxTokens;
-    this.warningThreshold = maxTokens * 0.7;
-    this.criticalThreshold = maxTokens * 0.9;
-  }
-
-  add(text: string): void {
-    this.totalTokensUsed += estimateTokens(text);
-  }
-
-  get usage(): number {
-    return this.totalTokensUsed;
-  }
-
-  get remaining(): number {
-    return this.maxTokens - this.totalTokensUsed;
-  }
-
-  get percentage(): number {
-    return (this.totalTokensUsed / this.maxTokens) * 100;
-  }
-
-  get status(): "ok" | "warning" | "critical" | "exhausted" {
-    if (this.totalTokensUsed >= this.maxTokens) return "exhausted";
-    if (this.totalTokensUsed >= this.criticalThreshold) return "critical";
-    if (this.totalTokensUsed >= this.warningThreshold) return "warning";
-    return "ok";
-  }
-
-  get summary(): string {
-    const pct = this.percentage.toFixed(1);
-    switch (this.status) {
-      case "ok":
-        return `📊 Token: ${pct}% used (${this.remaining.toLocaleString()} remaining)`;
-      case "warning":
-        return `⚠️ Token: ${pct}% used — approaching limit (${this.remaining.toLocaleString()} remaining)`;
-      case "critical":
-        return `🔴 Token: ${pct}% used — CRITICAL (${this.remaining.toLocaleString()} remaining)`;
-      case "exhausted":
-        return `🚫 Token budget EXHAUSTED. Consider pruning context.`;
-    }
-  }
-
-  reset(): void {
-    this.totalTokensUsed = 0;
-  }
-}
-
-/**
  * Format text with token limit.
  * Useful for tool output that needs to be limited.
  */

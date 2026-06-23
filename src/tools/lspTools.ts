@@ -1,5 +1,6 @@
 import { lspClient } from "../engine/lspClient.js";
 import { validateFilePath, getProjectRoot } from "../utils/pathValidator.js";
+import { sessionMemory } from "../engine/sessionMemory.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -36,18 +37,17 @@ export async function handleFindReferences(params: LSPFindParams): Promise<strin
   const resolvedPath = validation.resolvedPath;
   if (!fs.existsSync(resolvedPath)) {
     return `Error: File not found: "${filePath}".`;
-  }
-
-  // LSP fallback to regex grep
-  if (!lspClient.isAvailable()) {
-    const symbolName = extractSymbolAtPosition(resolvedPath, line, character);
-    if (!symbolName) {
-      return `⚠️ LSP unavailable and cannot read symbol at that position for fallback grep.
+  }    // LSP fallback to regex grep
+    if (!lspClient.isAvailable()) {
+      sessionMemory.recordToolCall("lsp_query", { action: "refs", filePath, line, character, fallback: "regex" });
+      const symbolName = extractSymbolAtPosition(resolvedPath, line, character);
+      if (!symbolName) {
+        return `⚠️ LSP unavailable and cannot read symbol at that position for fallback grep.
 
 💡 Install typescript-language-server: npm install typescript-language-server --save-dev`;
+      }
+      return fallbackGrepReferences(symbolName, resolvedPath, line, character);
     }
-    return fallbackGrepReferences(symbolName, resolvedPath, line, character);
-  }
 
   try {
     const references = await lspClient.findReferences(resolvedPath, line, character);
@@ -120,6 +120,7 @@ export async function handleGoToDefinition(params: LSPFindParams): Promise<strin
 
   // LSP fallback to regex
   if (!lspClient.isAvailable()) {
+    sessionMemory.recordToolCall("lsp_query", { action: "def", filePath, line, character, fallback: "regex" });
     const symbolName = extractSymbolAtPosition(resolvedPath, line, character);
     if (!symbolName) {
       return `⚠️ LSP unavailable and cannot read symbol at that position for fallback.
@@ -191,6 +192,7 @@ export async function handleRenameSymbol(params: LSPRenameParams): Promise<strin
 
   // LSP fallback: rename requires LSP server for accurate refactoring
   if (!lspClient.isAvailable()) {
+    sessionMemory.recordToolCall("lsp_query", { action: "rename", filePath, line, character, newName, fallback: "none" });
     return `⚠️ **Rename Symbol** unavailable without LSP server.
 Rename requires typescript-language-server to track references across all files.
 💡 Install: npm install typescript-language-server --save-dev
@@ -282,14 +284,52 @@ export async function handleGetTypeInfo(params: LSPFindParams): Promise<string> 
     return `Error: File not found: "${filePath}".`;
   }
 
-  // LSP fallback: type info requires LSP server
+  // LSP fallback: read the file and show line content
   if (!lspClient.isAvailable()) {
-    return `⚠️ **Type Info** unavailable without LSP server.
+    sessionMemory.recordToolCall("lsp_query", { action: "type", filePath, line, character, fallback: "line-context" });
+    try {
+      const fileContent = fs.readFileSync(resolvedPath, "utf-8");
+      const fileLines = fileContent.split("\n");
+      const targetLine = fileLines[line];
+      if (!targetLine) {
+        return `⚠️ **Type Info** — Line ${line + 1} does not exist in "${filePath}".`;
+      }
+      const symbolName = extractSymbolAtPosition(resolvedPath, line, character);
+      const projectRoot = getProjectRoot();
+      const relPath = path.relative(projectRoot, resolvedPath);
 
-Type info requires typescript-language-server for semantic analysis.
-💡 Install: npm install typescript-language-server --save-dev
+      // Show context around the position (3 lines before, 3 lines after)
+      const contextStart = Math.max(0, line - 3);
+      const contextEnd = Math.min(fileLines.length, line + 4);
+      const contextLines: string[] = [];
+      for (let i = contextStart; i < contextEnd; i++) {
+        const prefix = i === line ? "→" : " ";
+        const marker = i === line && symbolName ? " ".repeat(character) + "^".repeat(Math.min(symbolName.length, 20)) : "";
+        contextLines.push(`${prefix} L${i + 1}: ${fileLines[i].replace(/\t/g, " ")}`);
+        if (marker) {
+          contextLines.push(`  ${marker}`);
+        }
+      }
 
-Meanwhile, use smart_grep or read the file directly to understand code structure.`;
+      const resultLines: string[] = [
+        `📋 **Type Info** (fallback — LSP unavailable)`,
+        `📄 \`${relPath}:${line + 1}:${character + 1}\``,
+        symbolName ? `🔤 **Symbol:** \`${symbolName}\`` : `⚠️ Could not extract symbol at this position.`,
+        "",
+        "📎 Context:",
+        "```",
+        ...contextLines,
+        "```",
+        "",
+        `⚠️ Full type info requires typescript-language-server.`,
+        `💡 Install: npm install typescript-language-server --save-dev`,
+        `💡 Use smart_grep or smart_file_picker to read the file for more context.`,
+      ];
+
+      return resultLines.join("\n");
+    } catch (err) {
+      return `⚠️ **Type Info** unavailable without LSP server, and could not read file for fallback: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   try {
