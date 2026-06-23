@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🧬 Universal Agent Core
+<img src="public/kuma.png" alt="Kuma Logo" width="250" />
+
+# 🧬 Kuma
 
 ### **The MCP Server That Supercharges Every AI Coding Agent**
 
@@ -28,7 +30,7 @@ Works with Claude Code, GitHub Copilot (Codex), Gemini CLI, Cursor, and any MCP-
 
 ## ✨ Features
 
-Universal Agent Core provides **10 specialized tools** that turn any AI coding agent into a production-grade codebase manager.
+Kuma provides **10 specialized tools** that turn any AI coding agent into a production-grade codebase manager.
 
 ### 🔧 The Tool Arsenal
 
@@ -75,8 +77,8 @@ Universal Agent Core provides **10 specialized tools** that turn any AI coding a
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/universal-agent-core.git
-cd universal-agent-core
+git clone https://github.com/your-org/kuma.git
+cd kuma
 
 # Install dependencies + auto-build
 npm install
@@ -90,7 +92,7 @@ npm run build
 
 ```bash
 # Via npx (di dalam folder project)
-npx universal-agent-core
+npx kuma
 
 # Atau via node langsung
 node dist/index.js
@@ -106,7 +108,7 @@ Semua client pake config yang sama, tinggal ganti path-nya:
 ```json
 {
   "mcpServers": {
-    "universal-agent-core": {
+    "kuma": {
       "command": "node",
       "args": ["/ABSOLUTE/PATH/TO/kuma/dist/index.js"]
     }
@@ -125,7 +127,7 @@ Add to your `~/.claude/settings.json` or project `.claude/settings.json`:
 ```json
 {
   "mcpServers": {
-    "universal-agent-core": {
+    "kuma": {
       "command": "node",
       "args": ["/home/mawa/My_File/Development/kuma/dist/index.js"]
     }
@@ -141,9 +143,9 @@ In Cursor: **Settings → MCP Servers → Add New**
 
 | Field | Value |
 |-------|-------|
-| Name | `universal-agent-core` |
+| Name | `kuma` |
 | Type | `command` |
-| Command | `node /absolute/path/to/universal-agent-core/dist/index.js` |
+| Command | `node /absolute/path/to/kuma/dist/index.js` |
 </details>
 
 <details>
@@ -152,7 +154,7 @@ In Cursor: **Settings → MCP Servers → Add New**
 Follow the MCP server configuration guide for your client. Point to:
 
 ```bash
-node /absolute/path/to/universal-agent-core/dist/index.js
+node /absolute/path/to/kuma/dist/index.js
 ```
 </details>
 
@@ -162,7 +164,7 @@ node /absolute/path/to/universal-agent-core/dist/index.js
 Configure your Gemini CLI to use the MCP server at:
 
 ```bash
-node /absolute/path/to/universal-agent-core/dist/index.js
+node /absolute/path/to/kuma/dist/index.js
 ```
 </details>
 
@@ -227,7 +229,7 @@ Once integrated, your AI agent can use these tools immediately. Here are real-wo
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     MCP SERVER                                │
-│                  universal-agent-core                         │
+│                          kuma                                 │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
@@ -305,7 +307,7 @@ This project is built on **Three Pillars of Robustness**:
 ## 📁 Project Structure
 
 ```
-universal-agent-core/
+kuma/
 ├── src/
 │   ├── index.ts                    # MCP Server entry point
 │   ├── manifest.ts                 # Tool registry (10 tools)
@@ -359,8 +361,8 @@ universal-agent-core/
 
 ```bash
 # Clone and setup
-git clone https://github.com/your-org/universal-agent-core.git
-cd universal-agent-core
+git clone https://github.com/your-org/kuma.git
+cd kuma
 npm install
 
 # Development server with hot reload
@@ -418,7 +420,7 @@ We welcome contributions! Here's how:
 
 ### What is MCP?
 
-**Model Context Protocol (MCP)** is an open standard by Anthropic that allows AI agents to interact with external tools, data sources, and services. Universal Agent Core implements an MCP server that exposes 10 coding-specific tools.
+**Model Context Protocol (MCP)** is an open standard by Anthropic that allows AI agents to interact with external tools, data sources, and services. Kuma implements an MCP server that exposes 10 coding-specific tools.
 
 ### Which AI clients are supported?
 
@@ -430,7 +432,7 @@ Yes — the system includes path traversal protection, automatic backups, circui
 
 ### How is this different from just using an agent's built-in tools?
 
-Universal Agent Core provides **specialized tools** that are optimized for token efficiency and reliability — context-limited output, fuzzy fallback for edits, auto-backup, session memory to prevent AI amnesia, and a separate code reviewer to catch mistakes.
+Kuma provides **specialized tools** that are optimized for token efficiency and reliability — context-limited output, fuzzy fallback for edits, auto-backup, session memory to prevent AI amnesia, and a separate code reviewer to catch mistakes.
 
 <br/>
 
@@ -440,7 +442,7 @@ This project is [MIT licensed](LICENSE). Use freely, contribute back.
 
 ```
 MIT License
-Copyright (c) 2026 Universal Agent Core
+Copyright (c) 2026 Kuma
 See the LICENSE file for details.
 ```
 
@@ -461,6 +463,6 @@ Built based on synthesis of:
 
 **Made with 🧬 for AI agents everywhere**
 
-[Report Bug](https://github.com/your-org/universal-agent-core/issues) · [Request Feature](https://github.com/your-org/universal-agent-core/issues) · [Discussions](https://github.com/your-org/universal-agent-core/discussions)
+[Report Bug](https://github.com/your-org/kuma/issues) · [Request Feature](https://github.com/your-org/kuma/issues) · [Discussions](https://github.com/your-org/kuma/discussions)
 
 </div>

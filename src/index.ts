@@ -9,7 +9,7 @@ import { sessionMemory } from "./engine/sessionMemory.js";
 // MCP SERVER — ENTRY POINT
 // ============================================================
 
-const SERVER_NAME = "universal-agent-core";
+const SERVER_NAME = "kuma";
 const SERVER_VERSION = "1.0.0";
 
 async function main(): Promise<void> {

@@ -2,7 +2,7 @@
 
 > **Berdasarkan sintesis:** Pengalaman langsung sebagai LLM Agent (Codebuff) + Riset arsitektur MCP Server 2024-2025 + Analisis failure modes agentic coding tools + Best practices multi-agent orchestration.
 >
-> **Nama Proyek:** `universal-agent-core`
+> **Nama Proyek:** `kuma`
 > **Tujuan:** Membangun AI Agent CLI yang setara atau melampaui Claude Code / Codebuff — mandiri, hemat token, anti-infinite-loop, dan aman untuk production codebase.
 
 ---
@@ -75,7 +75,7 @@
 ### Struktur Folder
 
 ```
-universal-agent-core/
+kuma/
 ├── src/
 │   ├── index.ts                     # Entry point MCP Server
 │   ├── manifest.ts                  # Registry semua tools & agents

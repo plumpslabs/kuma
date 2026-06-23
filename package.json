@@ -1,12 +1,12 @@
 {
-  "name": "universal-agent-core",
+  "name": "kuma",
   "version": "1.0.0",
   "description": "Mega-Plugin Orchestrator MCP Server — Universal AI Agent for any MCP-compatible client (Claude Code, Codex, Gemini, Cursor)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "universal-agent-core": "./dist/index.js"
+    "kuma": "./dist/index.js"
   },
   "files": [
     "dist/"
