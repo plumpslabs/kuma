@@ -7,11 +7,11 @@
 ### **The MCP Server That Supercharges Every AI Coding Agent**
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@farhan22/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@farhan22/kuma)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=nodedotjs)](https://nodejs.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP-1.7-000000?logo=modelcontextprotocol)](https://github.com/modelcontextprotocol/sdk)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
-[![npm version](https://img.shields.io/badge/npm-v1.0.0-red?logo=npm)](package.json)
+[![GitHub stars](https://img.shields.io/github/stars/farhank15/kuma.svg?style=flat&logo=github)](https://github.com/farhank15/kuma)
 
 **Not a plugin for one agent — an infrastructure layer for ALL agents.**  
 Works with Claude Code, GitHub Copilot (Codex), Gemini CLI, Cursor, and any MCP-compatible client.
@@ -67,69 +67,77 @@ Kuma provides **10 specialized tools** that turn any AI coding agent into a prod
 
 ## 🚀 Quick Start
 
+There are two ways to use Kuma: **via npm (Recommended)** or **running locally (for development)**.
+
 ### Prerequisites
 
 - **Node.js** 18+ (recommended: 20+)
 - **npm** or **pnpm** or **yarn**
 - An MCP-compatible AI coding client (Claude Code, Cursor, Codex, etc.)
 
-### Installation
+---
 
-```bash
-# Clone the repository
-git clone https://github.com/your-org/kuma.git
-cd kuma
+### Method 1: Direct Integration (Recommended)
 
-# Install dependencies + auto-build
-npm install
-# (postinstall script otomatis menjalankan build)
+The easiest way to integrate Kuma is using `npx` directly. This ensures you always use the latest release without manual cloning or compiling.
 
-# Atau manual:
-npm run build
-```
-
-### Jalankan Langsung
-
-```bash
-# Via npx (di dalam folder project)
-npx kuma
-
-# Atau via node langsung
-node dist/index.js
-
-# Atau via npm script
-npm start
-```
-
-### Integrate with Your AI Client
-
-Semua client pake config yang sama, tinggal ganti path-nya:
+Simply add this to your AI client's MCP server configuration settings:
 
 ```json
 {
   "mcpServers": {
     "kuma": {
-      "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/kuma/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "@farhan22/kuma"]
     }
   }
 }
 ```
 
-> 💡 **Untuk project ini**, absolute path-nya:
-> `/home/mawa/My_File/Development/kuma/dist/index.js`
+---
+
+### Method 2: Manual Installation (Local / Development)
+
+If you wish to modify the code or contribute to Kuma:
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/farhank15/kuma.git
+   cd kuma
+   ```
+2. **Install dependencies and compile:**
+   ```bash
+   npm install
+   # (The postinstall script automatically builds the TypeScript source to dist/index.js)
+   ```
+3. **Reference the compiled build in your AI client configuration:**
+   ```json
+   {
+     "mcpServers": {
+       "kuma": {
+         "command": "node",
+         "args": ["/ABSOLUTE/PATH/TO/kuma/dist/index.js"]
+       }
+     }
+   }
+   ```
+   *(Be sure to replace `/ABSOLUTE/PATH/TO` with the real path of the repository on your machine, e.g., `/home/mawa/My_File/Development/kuma/dist/index.js`)*
+
+---
+
+## 🔌 Client Integration Setup Examples
 
 <details>
 <summary><b>🔵 Claude Code</b></summary>
 
-Add to your `~/.claude/settings.json` or project `.claude/settings.json`:
+Add Kuma to your global Claude settings (`~/.claude/settings.json`):
 
 ```json
 {
   "mcpServers": {
     "kuma": {
-      "command": "node",
-      "args": ["/home/mawa/My_File/Development/kuma/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "@farhan22/kuma"]
     }
   }
 }
@@ -139,32 +147,32 @@ Add to your `~/.claude/settings.json` or project `.claude/settings.json`:
 <details>
 <summary><b>🟢 Cursor</b></summary>
 
-In Cursor: **Settings → MCP Servers → Add New**
+In Cursor, navigate to **Settings → Features → MCP** and click **Add New MCP Server**:
 
 | Field | Value |
 |-------|-------|
-| Name | `kuma` |
-| Type | `command` |
-| Command | `node /absolute/path/to/kuma/dist/index.js` |
+| **Name** | `kuma` |
+| **Type** | `command` |
+| **Command** | `npx -y @farhan22/kuma` |
+
+*(If you are developing locally, set Type to `command` and Command to `node /absolute/path/to/kuma/dist/index.js`)*
 </details>
 
 <details>
 <summary><b>🟣 GitHub Copilot / Codex</b></summary>
 
-Follow the MCP server configuration guide for your client. Point to:
-
+Follow the MCP configuration instructions for your VS Code extension/client and use:
 ```bash
-node /absolute/path/to/kuma/dist/index.js
+npx -y @farhan22/kuma
 ```
 </details>
 
 <details>
 <summary><b>🟡 Gemini CLI</b></summary>
 
-Configure your Gemini CLI to use the MCP server at:
-
+Configure your Gemini CLI config to point to:
 ```bash
-node /absolute/path/to/kuma/dist/index.js
+npx -y @farhan22/kuma
 ```
 </details>
 
@@ -361,7 +369,7 @@ kuma/
 
 ```bash
 # Clone and setup
-git clone https://github.com/your-org/kuma.git
+git clone https://github.com/farhank15/kuma.git
 cd kuma
 npm install
 
@@ -463,6 +471,6 @@ Built based on synthesis of:
 
 **Made with 🧬 for AI agents everywhere**
 
-[Report Bug](https://github.com/your-org/kuma/issues) · [Request Feature](https://github.com/your-org/kuma/issues) · [Discussions](https://github.com/your-org/kuma/discussions)
+[Report Bug](https://github.com/farhank15/kuma/issues) · [Request Feature](https://github.com/farhank15/kuma/issues) · [Discussions](https://github.com/farhank15/kuma/discussions)
 
 </div>
