@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/farhank15/kuma/main/public/kuma.png" alt="Kuma Logo" width="200" />
+<img src="https://raw.githubusercontent.com/plumps/kuma/main/public/kuma.png" alt="Kuma Logo" width="200" />
 
 # Kuma
 
 **Zero-setup safety toolkit for AI coding agents.**
 
-[![npm](https://img.shields.io/npm/v/@farhan22/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@farhan22/kuma)
+[![npm](https://img.shields.io/npm/v/@plumps/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@plumps/kuma)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-18+-339933?logo=nodedotjs)](https://nodejs.org/)
 
@@ -25,13 +25,12 @@ Add to your MCP client config:
   "mcpServers": {
     "kuma": {
       "command": "npx",
-      "args": ["-y", "@farhan22/kuma"]
+      "args": ["-y", "@plumps/kuma"]
     }
   }
 }
 ```
 
-**30 detik.** Gak perlu install database, gak perlu config API key, gak perlu setup 5 MCP server beda. Langsung jalan.
 
 <details>
 <summary><b>Where does this config go?</b></summary>
