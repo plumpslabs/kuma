@@ -6,7 +6,7 @@
 
 **Zero-setup safety toolkit for AI coding agents.**
 
-[![npm](https://img.shields.io/npm/v/@farhan22/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@farhan22/kuma)
+[![npm](https://img.shields.io/npm/v/@farhank15/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@farhank15/kuma)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-18+-339933?logo=nodedotjs)](https://nodejs.org/)
 
@@ -25,7 +25,7 @@ Add to your MCP client config:
   "mcpServers": {
     "kuma": {
       "command": "npx",
-      "args": ["-y", "@farhan22/kuma"]
+      "args": ["-y", "@farhank15/kuma"]
     }
   }
 }
