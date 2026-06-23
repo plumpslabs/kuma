@@ -19,7 +19,6 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "prepublishOnly": "npm run build",
-    "postinstall": "npm run build",
     "test": "node --experimental-vm-modules node_modules/.bin/jest"
   },
   "dependencies": {
