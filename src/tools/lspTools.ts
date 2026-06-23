@@ -35,14 +35,14 @@ export async function handleFindReferences(params: LSPFindParams): Promise<strin
 
   const resolvedPath = validation.resolvedPath;
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File tidak ditemukan: "${filePath}".`;
+    return `Error: File not found: "${filePath}".`;
   }
 
-  // LSP fallback ke regex grep
+  // LSP fallback to regex grep
   if (!lspClient.isAvailable()) {
     const symbolName = extractSymbolAtPosition(resolvedPath, line, character);
     if (!symbolName) {
-      return `⚠️ LSP tidak tersedia dan tidak bisa membaca symbol di posisi tersebut untuk fallback grep.
+      return `⚠️ LSP unavailable and cannot read symbol at that position for fallback grep.
 
 💡 Install typescript-language-server: npm install typescript-language-server --save-dev`;
     }
@@ -53,7 +53,7 @@ export async function handleFindReferences(params: LSPFindParams): Promise<strin
     const references = await lspClient.findReferences(resolvedPath, line, character);
 
     if (references.length === 0) {
-      return `🔍 **Find References** — "${filePath}:${line + 1}:${character + 1}"\n⚠️ Tidak ada referensi ditemukan untuk symbol di posisi ini.`;
+      return `🔍 **Find References** — "${filePath}:${line + 1}:${character + 1}"\n⚠️ No references found for symbol at this position.`;
     }
 
     // Read line content for each reference
@@ -79,7 +79,7 @@ export async function handleFindReferences(params: LSPFindParams): Promise<strin
 
     const projectRoot = getProjectRoot();
     const lines: string[] = [
-      `🔍 **Find References** — ${enrichedRefs.length} referensi ditemukan`,
+      `🔍 **Find References** — ${enrichedRefs.length} references found`,
       `📍 File: ${path.relative(projectRoot, resolvedPath)}:${line + 1}:${character + 1}`,
       "",
     ];
@@ -94,10 +94,10 @@ export async function handleFindReferences(params: LSPFindParams): Promise<strin
       lines.push("");
     }
 
-    lines.push("💡 Gunakan smart_file_picker untuk membaca file spesifik.");
+    lines.push("💡 Use smart_file_picker to read specific files.");
     return lines.join("\n");
   } catch (err) {
-    return `Error saat mencari referensi: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error finding references: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -115,14 +115,14 @@ export async function handleGoToDefinition(params: LSPFindParams): Promise<strin
 
   const resolvedPath = validation.resolvedPath;
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File tidak ditemukan: "${filePath}".`;
+    return `Error: File not found: "${filePath}".`;
   }
 
-  // LSP fallback ke regex
+  // LSP fallback to regex
   if (!lspClient.isAvailable()) {
     const symbolName = extractSymbolAtPosition(resolvedPath, line, character);
     if (!symbolName) {
-      return `⚠️ LSP tidak tersedia dan tidak bisa membaca symbol di posisi tersebut untuk fallback.
+      return `⚠️ LSP unavailable and cannot read symbol at that position for fallback.
 
 💡 Install typescript-language-server: npm install typescript-language-server --save-dev`;
     }
@@ -133,7 +133,7 @@ export async function handleGoToDefinition(params: LSPFindParams): Promise<strin
     const definition = await lspClient.goToDefinition(resolvedPath, line, character);
 
     if (!definition) {
-      return `🔍 **Go to Definition** — "${filePath}:${line + 1}:${character + 1}"\n⚠️ Tidak dapat menemukan definisi untuk symbol di posisi ini.`;
+      return `🔍 **Go to Definition** — "${filePath}:${line + 1}:${character + 1}"\n⚠️ Cannot find definition for symbol at this position.`;
     }
 
     const projectRoot = getProjectRoot();
@@ -155,16 +155,16 @@ export async function handleGoToDefinition(params: LSPFindParams): Promise<strin
       `📏 Line: ${definition.line + 1}:${definition.character + 1}`,
       `└ ${lineContent}`,
       "",
-      `💡 Gunakan smart_file_picker(${JSON.stringify({
+      `💡 Use smart_file_picker(${JSON.stringify({
         filePath: relPath,
         startLine: Math.max(1, definition.line + 1 - 5),
         endLine: definition.line + 1 + 5,
-      })}) untuk membaca konteks sekitar definisi.`,
+      })}) to read context around the definition.`,
     ];
 
     return lines.join("\n");
   } catch (err) {
-    return `Error saat mencari definisi: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error finding definition: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -176,7 +176,7 @@ export async function handleRenameSymbol(params: LSPRenameParams): Promise<strin
   const { filePath, line, character, newName } = params;
 
   if (!newName || newName.trim().length === 0) {
-    return "Error: Parameter 'newName' tidak boleh kosong.";
+    return "Error: Parameter 'newName' must not be empty.";
   }
 
   const validation = validateFilePath(filePath);
@@ -186,32 +186,32 @@ export async function handleRenameSymbol(params: LSPRenameParams): Promise<strin
 
   const resolvedPath = validation.resolvedPath;
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File tidak ditemukan: "${filePath}".`;
+    return `Error: File not found: "${filePath}".`;
   }
 
-  // LSP fallback: rename butuh LSP server untuk refactoring akurat
+  // LSP fallback: rename requires LSP server for accurate refactoring
   if (!lspClient.isAvailable()) {
-    return `⚠️ **Rename Symbol** tidak tersedia tanpa LSP server.
-Rename membutuhkan typescript-language-server untuk tracking referensi di semua file.
+    return `⚠️ **Rename Symbol** unavailable without LSP server.
+Rename requires typescript-language-server to track references across all files.
 💡 Install: npm install typescript-language-server --save-dev
 
-Sementara, gunakan smart_grep dulu untuk cari semua referensi, lalu precise_diff_editor untuk edit manual.`;
+Meanwhile, use smart_grep to find all references, then precise_diff_editor for manual editing.`;
   }
 
   try {
     const result = await lspClient.renameSymbol(resolvedPath, line, character, newName);
 
     if (!result.success) {
-      return `❌ **Rename Symbol** gagal: ${result.error ?? "Unknown error"}
+      return `❌ **Rename Symbol** failed: ${result.error ?? "Unknown error"}
 \`\`\`
-Pastikan:
-1. Posisi (line: ${line + 1}, character: ${character + 1}) tepat pada symbol yang ingin di-rename
-2. Symbol tersebut valid untuk di-rename
+Make sure:
+1. Position (line: ${line + 1}, character: ${character + 1}) is exactly on the symbol you want to rename
+2. The symbol is valid for renaming
 \`\`\``;
     }
 
     if (result.changes.length === 0) {
-      return "⚠️ Tidak ada perubahan yang diperlukan.";
+      return "⚠️ No changes needed.";
     }
 
     // Apply the changes to files
@@ -251,17 +251,17 @@ Pastikan:
     }
 
     const lines: string[] = [
-      `✏️ **Rename Symbol** ✅ Berhasil — ${newName}`,
-      `📊 ${totalEdits} perubahan di ${fileChanges.length} file:`,
+      `✏️ **Rename Symbol** ✅ Success — ${newName}`,
+      `📊 ${totalEdits} changes in ${fileChanges.length} files:`,
       "",
       ...fileChanges.map((f) => `  📄 \`${f.filePath}\` — ${f.editCount} edit`),
       "",
-      `💡 Jalankan execute_safe_test({task: "typecheck"}) untuk verifikasi.`,
+      `💡 Run execute_safe_test({task: "typecheck"}) to verify.`,
     ];
 
     return lines.join("\n");
   } catch (err) {
-    return `Error saat rename symbol: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error renaming symbol: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -279,17 +279,17 @@ export async function handleGetTypeInfo(params: LSPFindParams): Promise<string> 
 
   const resolvedPath = validation.resolvedPath;
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File tidak ditemukan: "${filePath}".`;
+    return `Error: File not found: "${filePath}".`;
   }
 
-  // LSP fallback: type info butuh LSP server
+  // LSP fallback: type info requires LSP server
   if (!lspClient.isAvailable()) {
-    return `⚠️ **Type Info** tidak tersedia tanpa LSP server.
+    return `⚠️ **Type Info** unavailable without LSP server.
 
-Type info membutuhkan typescript-language-server untuk analisis semantik.
+Type info requires typescript-language-server for semantic analysis.
 💡 Install: npm install typescript-language-server --save-dev
 
-Sementara, gunakan smart_grep atau baca file langsung untuk memahami struktur kode.`;
+Meanwhile, use smart_grep or read the file directly to understand code structure.`;
   }
 
   try {
@@ -297,7 +297,7 @@ Sementara, gunakan smart_grep atau baca file langsung untuk memahami struktur ko
 
     if (!hoverInfo || !hoverInfo.contents) {
       return `📋 **Type Info** — "${filePath}:${line + 1}:${character + 1}"
-⚠️ Tidak ada informasi tipe untuk posisi ini.`;
+⚠️ No type info for this position.`;
     }
 
     const projectRoot = getProjectRoot();
@@ -315,13 +315,13 @@ Sementara, gunakan smart_grep atau baca file langsung untuk memahami struktur ko
       const r = hoverInfo.range;
       lines.push(
         "",
-        `📍 Cakupan: L${r.start.line + 1}:${r.start.character + 1} — L${r.end.line + 1}:${r.end.character + 1}`,
+        `📍 Range: L${r.start.line + 1}:${r.start.character + 1} — L${r.end.line + 1}:${r.end.character + 1}`,
       );
     }
 
     return lines.join("\n");
   } catch (err) {
-    return `Error saat mengambil type info: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error getting type info: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -329,11 +329,12 @@ interface LSPQueryParams {
   filePath: string;
   line: number;
   character: number;
-  action: "def" | "refs" | "type";
+  action: "def" | "refs" | "type" | "rename";
+  newName?: string;
 }
 
 export async function handleLspQuery(params: LSPQueryParams): Promise<string> {
-  const { filePath, line, character, action } = params;
+  const { filePath, line, character, action, newName } = params;
   if (action === "def") {
     return handleGoToDefinition({ filePath, line, character });
   }
@@ -343,14 +344,20 @@ export async function handleLspQuery(params: LSPQueryParams): Promise<string> {
   if (action === "type") {
     return handleGetTypeInfo({ filePath, line, character });
   }
-  return `Error: Action "${action}" tidak didukung.`;
+  if (action === "rename") {
+    if (!newName || newName.trim().length === 0) {
+      return "Error: Parameter 'newName' required for rename action.";
+    }
+    return handleRenameSymbol({ filePath, line, character, newName });
+  }
+  return `Error: Action "${action}" not supported.`;
 }
 
 // ============================================================
 // LSP FALLBACK: Regex-based helpers saat LSP server unavailable
 // ============================================================
 
-/** Baca symbol name di posisi tertentu pake regex sederhana */
+/** Read symbol name at position using simple regex */
 function extractSymbolAtPosition(filePath: string, line: number, character: number): string | null {
   try {
     const content = fs.readFileSync(filePath, "utf-8");
@@ -358,7 +365,7 @@ function extractSymbolAtPosition(filePath: string, line: number, character: numb
     const targetLine = lines[line];
     if (!targetLine) return null;
 
-    // Cari word di sekitar character position
+    // Find word around character position
     const before = targetLine.slice(0, character);
     const after = targetLine.slice(character);
     const leftMatch = before.match(/(\w+)$/);
@@ -372,7 +379,7 @@ function extractSymbolAtPosition(filePath: string, line: number, character: numb
   }
 }
 
-/** Fallback grep untuk find references */
+/** Fallback grep for find references */
 async function fallbackGrepReferences(symbolName: string, _filePath: string, _line: number, _character: number): Promise<string> {
   try {
     const { default: fg } = await import("fast-glob");
@@ -405,7 +412,7 @@ async function fallbackGrepReferences(symbolName: string, _filePath: string, _li
 
     if (results.length === 0) {
       return `🔍 **Find References** (regex fallback) — "${symbolName}"
-⚠️ Tidak ada referensi ditemukan. Mungkin symbol tidak digunakan di file lain.`;
+⚠️ No references found. Symbol may not be used in other files.`;
     }
 
     const grouped = new Map<string, typeof results>();
@@ -417,9 +424,9 @@ async function fallbackGrepReferences(symbolName: string, _filePath: string, _li
 
     const projectRoot = getProjectRoot();
     const lines: string[] = [
-      `🔍 **Find References** (regex fallback) — ${results.length} referensi ditemukan`,
+      `🔍 **Find References** (regex fallback) — ${results.length} references found`,
       `📍 Symbol: "${symbolName}"`,
-      `⚠️ Hasil regex mungkin kurang akurat dibanding LSP (termasuk komentar/string).`,
+      `⚠️ Regex results may be less accurate than LSP (includes comments/strings).`,
       "",
     ];
 
@@ -432,14 +439,14 @@ async function fallbackGrepReferences(symbolName: string, _filePath: string, _li
       lines.push("");
     }
 
-    lines.push("💡 Install typescript-language-server untuk hasil yang lebih akurat.");
+    lines.push("💡 Install typescript-language-server for more accurate results.");
     return lines.join("\n");
   } catch (err) {
-    return `Error saat fallback grep references: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error in fallback grep references: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
-/** Fallback regex untuk go to definition */
+/** Fallback regex for go to definition */
 async function fallbackGrepDefinition(symbolName: string): Promise<string> {
   try {
     const { default: fg } = await import("fast-glob");
@@ -477,7 +484,7 @@ async function fallbackGrepDefinition(symbolName: string): Promise<string> {
                 `📏 Line: ${i + 1}`,
                 `└ ${trimmed.substring(0, 120)}`,
                 "",
-                `💡 Install typescript-language-server untuk hasil yang lebih akurat.`,
+                `💡 Install typescript-language-server for more accurate results.`,
               ].join("\n");
             }
           }
@@ -487,11 +494,11 @@ async function fallbackGrepDefinition(symbolName: string): Promise<string> {
       }
     }
 
-    return `📍 **Go to Definition** (regex fallback) — "${symbolName}"
-⚠️ Tidak dapat menemukan definisi.
-💡 Install typescript-language-server untuk hasil yang lebih akurat.`;
+     return `📍 **Go to Definition** (regex fallback) — "${symbolName}"
+⚠️ Cannot find definition.
+💡 Install typescript-language-server for more accurate results.`;
   } catch (err) {
-    return `Error saat fallback grep definition: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error in fallback grep definition: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 

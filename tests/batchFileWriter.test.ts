@@ -28,7 +28,7 @@ describe("handleBatchFileWriter — validation", () => {
     const result = await handleBatchFileWriter({
       files: [{ filePath: "src/new.ts", content: "export const x = 1;", instructions: "test" }],
     });
-    expect(result).toContain("berhasil dibuat");
+    expect(result).toContain("created successfully");
     expect(fs.existsSync(path.join(tmpDir, "src", "new.ts"))).toBe(true);
     const content = fs.readFileSync(path.join(tmpDir, "src", "new.ts"), "utf-8");
     expect(content).toBe("export const x = 1;");
@@ -51,7 +51,7 @@ describe("handleBatchFileWriter — validation", () => {
       files: [{ filePath: "src/bad.exe", content: "MZ...", instructions: "test" }],
     });
     expect(result).toContain("❌");
-    expect(result).toContain("Ekstensi");
+    expect(result).toContain("File extension");
   });
 
   test("rejects path traversal", async () => {
@@ -75,7 +75,7 @@ describe("handleBatchFileWriter — validation", () => {
       files: [{ filePath: "src/empty.ts", content: "", instructions: "test" }],
     });
     expect(result).toContain("❌");
-    expect(result).toContain("Konten");
+    expect(result).toContain("File content");
   });
 
   test("rejects file without instructions", async () => {
@@ -83,7 +83,7 @@ describe("handleBatchFileWriter — validation", () => {
       files: [{ filePath: "src/noinst.ts", content: "export const x = 1;", instructions: "" }],
     });
     expect(result).toContain("❌");
-    expect(result).toContain("wajib diisi");
+    expect(result).toContain("is required");
   });
 
   test("rejects more than 15 files", async () => {
@@ -101,7 +101,7 @@ describe("handleBatchFileWriter — validation", () => {
     const result = await handleBatchFileWriter({
       files: [{ filePath: "config.json", content: JSON.stringify({ key: "value" }), instructions: "test" }],
     });
-    expect(result).toContain("berhasil");
+    expect(result).toContain("created successfully");
     expect(fs.existsSync(path.join(tmpDir, "config.json"))).toBe(true);
   });
 
@@ -109,7 +109,7 @@ describe("handleBatchFileWriter — validation", () => {
     const result = await handleBatchFileWriter({
       files: [{ filePath: "deep/nested/dir/file.ts", content: "export const deep = true;", instructions: "test" }],
     });
-    expect(result).toContain("berhasil");
+    expect(result).toContain("created successfully");
     expect(fs.existsSync(path.join(tmpDir, "deep", "nested", "dir", "file.ts"))).toBe(true);
   });
 });

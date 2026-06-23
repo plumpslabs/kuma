@@ -2,13 +2,13 @@
 // ORCHESTRATOR — Multi-Agent Parallel Execution Engine
 // ============================================================
 //
-// Ini adalah blueprint orchestrator yang bisa dipanggil oleh AI
-// untuk menjalankan multiple agents secara paralel.
+// This is the orchestrator blueprint that AI can call
+// to run multiple agents in parallel.
 //
-// Untuk implementasi awal, orchestrator ini menyediakan:
+// For initial implementation, this orchestrator provides:
 // 1. Parallel tool execution API
-// 2. Supervisor pattern untuk breakdown task
-// 3. Result synthesis dari multiple sources
+// 2. Supervisor pattern for task breakdown
+// 3. Result synthesis from multiple sources
 // ============================================================
 
 import { sessionMemory } from "./sessionMemory.js";
@@ -35,7 +35,7 @@ export interface TaskResult {
 
 export interface OrchestrationPlan {
   goal: string;
-  parallelGroups: OrchestrationTask[][]; // Tasks per group (dijalankan paralel dalam group)
+  parallelGroups: OrchestrationTask[][]; // Tasks per group (run in parallel within group)
 }
 
 // ============================================================
@@ -47,7 +47,7 @@ class Orchestrator {
 
   /**
    * Execute a plan with parallel task groups
-   * Setiap group dijalankan paralel, group berikutnya nunggu group sebelumnya
+   * Each group runs in parallel, next group waits for previous group
    */
   async executePlan(plan: OrchestrationPlan): Promise<{
     results: TaskResult[];
@@ -147,7 +147,7 @@ export const orchestrator = new Orchestrator();
 
 /**
  * Build a standard context-gathering orchestration plan.
- * AI akan memanggil ini untuk ngumpulin context dari multiple sources sekaligus.
+ * AI will call this to gather context from multiple sources at once.
  */
 export function buildContextPlan(goal: string, queries: string[]): OrchestrationPlan {
   const grepTasks: OrchestrationTask[] = queries.map((q, i) => ({

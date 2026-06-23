@@ -316,7 +316,7 @@ describe("handleRollbackEdit", () => {
     const copySpy = jest.spyOn(fs, "copyFileSync").mockImplementation(() => {});
 
     const result = await handleRollbackEdit({ filePath: testFilePath });
-    expect(result).toContain("✅ Rollback Berhasil");
+    expect(result).toContain("✅ Rollback Successful");
     expect(copySpy).toHaveBeenCalled();
   });
 
@@ -353,7 +353,7 @@ describe("handleRollbackEdit", () => {
     const copySpy = jest.spyOn(fs, "copyFileSync").mockImplementation(() => {});
 
     const result = await handleRollbackEdit({ filePath: testFilePath, version: 2 });
-    expect(result).toContain("✅ Rollback Berhasil");
+    expect(result).toContain("✅ Rollback Successful");
     expect(copySpy).toHaveBeenCalled();
     // Version 2 = second newest. Sorted desc: 3000, 2000, 1000. Second = 2000.
     const callArgs = copySpy.mock.calls[0];
@@ -374,7 +374,7 @@ describe("handleRollbackEdit", () => {
     const copySpy = jest.spyOn(fs, "copyFileSync").mockImplementation(() => {});
 
     const result = await handleRollbackEdit({ filePath: testFilePath });
-    expect(result).toContain("✅ Rollback Berhasil");
+    expect(result).toContain("✅ Rollback Successful");
     expect(copySpy).toHaveBeenCalled();
     // No version = newest. Sorted desc: 3000, 2000, 1000. Newest = 3000.
     const callArgs = copySpy.mock.calls[0];

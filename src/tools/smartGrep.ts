@@ -6,7 +6,7 @@ import { limitLines } from "../utils/tokenCounter.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
-// SMART GREP — Pencarian regex cerdas dengan output terbatas
+// SMART GREP — Regex search with bounded, line-context output
 // ============================================================
 
 interface SmartGrepParams {
@@ -44,22 +44,24 @@ const IGNORE_PATTERNS = [
   "**/.nyc_output/**",
 ];
 
-// Cache untuk hasil grep (biar gak perlu scan ulang)
+// Result cache to avoid rescanning identical queries
 const grepCache = new Map<string, { results: string; timestamp: number }>();
-const CACHE_TTL_MS = 30_000; // 30 detik
+const CACHE_TTL_MS = 30_000; // 30 seconds
 
-export async function handleSmartGrep(params: SmartGrepParams): Promise<string> {
+export async function handleSmartGrep(
+  params: SmartGrepParams,
+): Promise<string> {
   const { query, targetFolder, maxResults = 30, extensions } = params;
 
-  // Validasi input
+  // Input validation
   if (!query || query.length < 1) {
-    return "Error: Parameter 'query' wajib diisi.";
+    return "Error: 'query' parameter is required.";
   }
 
-  // Cek cache
+  // Check cache
   const cacheKey = `${query}:${targetFolder ?? "root"}:${maxResults}:${extensions ? extensions.join(",") : ""}`;
   const cached = grepCache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     sessionMemory.recordToolCall("smart_grep", { query, cached: true });
     return cached.results;
   }
@@ -84,20 +86,22 @@ export async function handleSmartGrep(params: SmartGrepParams): Promise<string> 
 
     // Filter by extensions if provided
     if (extensions && extensions.length > 0) {
-      const normalizedExts = extensions.map(e => e.startsWith(".") ? e.toLowerCase() : `.${e.toLowerCase()}`);
-      entries = entries.filter(entry => {
+      const normalizedExts = extensions.map((e) =>
+        e.startsWith(".") ? e.toLowerCase() : `.${e.toLowerCase()}`,
+      );
+      entries = entries.filter((entry) => {
         const ext = path.extname(entry).toLowerCase();
         return normalizedExts.includes(ext);
       });
     }
 
     if (entries.length === 0) {
-      const msg = `Tidak ada file ditemukan${targetFolder ? ` di folder "${targetFolder}"` : ""}${extensions ? ` dengan ekstensi [${extensions.join(", ")}]` : ""}.`;
+      const msg = `No files found${targetFolder ? ` in folder "${targetFolder}"` : ""}${extensions ? ` with extensions [${extensions.join(", ")}]` : ""}.`;
       grepCache.set(cacheKey, { results: msg, timestamp: Date.now() });
       return msg;
     }
 
-    // Cari regex di setiap file
+    // Search regex in each file
     const regex = createRegex(query);
     const results: Array<{ file: string; line: number; content: string }> = [];
     let filesScanned = 0;
@@ -124,11 +128,13 @@ export async function handleSmartGrep(params: SmartGrepParams): Promise<string> 
 
           const line = lines[i];
           if (regex.test(line)) {
-            // Ambil konteks: 1 baris sebelum, baris match, 1 baris setelah
+            // Get context: 1 line before, match line, 1 line after
             const contextLines: string[] = [];
-            if (i > 0) contextLines.push(`${i}: ${lines[i - 1].substring(0, 200)}`);
+            if (i > 0)
+              contextLines.push(`${i}: ${lines[i - 1].substring(0, 200)}`);
             contextLines.push(`${i + 1}: ${line.substring(0, 200)}`);
-            if (i < lines.length - 1) contextLines.push(`${i + 2}: ${lines[i + 1].substring(0, 200)}`);
+            if (i < lines.length - 1)
+              contextLines.push(`${i + 2}: ${lines[i + 1].substring(0, 200)}`);
 
             results.push({
               file: entry,
@@ -138,24 +144,28 @@ export async function handleSmartGrep(params: SmartGrepParams): Promise<string> 
           }
         }
       } catch {
-        // Skip file yang gak bisa dibaca
         continue;
       }
     }
 
-    // Format output
     const formatted = formatResults(results, query, filesScanned);
 
-    // Simpan ke cache
     grepCache.set(cacheKey, { results: formatted, timestamp: Date.now() });
 
     // Record ke session memory
-    sessionMemory.recordToolCall("smart_grep", { query, matchCount: results.length, filesScanned });
-    sessionMemory.addSearchResult(query, results.map(r => r.file));
+    sessionMemory.recordToolCall("smart_grep", {
+      query,
+      matchCount: results.length,
+      filesScanned,
+    });
+    sessionMemory.addSearchResult(
+      query,
+      results.map((r) => r.file),
+    );
 
     return formatted;
   } catch (err) {
-    return `Error saat mencari "${query}": ${err instanceof Error ? err.message : String(err)}`;
+    return `Error searching "${query}": ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -178,15 +188,15 @@ export function createRegex(query: string): RegExp {
 export function formatResults(
   results: Array<{ file: string; line: number; content: string }>,
   query: string,
-  filesScanned: number
+  filesScanned: number,
 ): string {
   if (results.length === 0) {
-    return `🔍 Tidak ada hasil untuk "${query}" (${filesScanned} file discan).`;
+    return `🔍 No matches for "${query}" (${filesScanned} files scanned).`;
   }
 
   const lines = [
     `🔍 Smart Grep: "${query}"`,
-    `📁 ${results.length} hasil dari ${filesScanned} file discan`,
+    `📁 ${results.length} matches from ${filesScanned} files scanned`,
     "",
     ...results.map((r, i) => {
       const filePath = r.file;
@@ -196,7 +206,7 @@ export function formatResults(
         .join("\n")}`;
     }),
     "",
-    `💡 Gunakan smart_file_picker untuk membaca file spesifik.`,
+    `💡 Use smart_file_picker to open a specific file.`,
   ];
 
   // Batasi output (anti token explosion)
@@ -211,7 +221,7 @@ export function isBinaryFile(filePath: string): boolean {
     const bytesRead = fs.readSync(fd, buffer, 0, 512, 0);
     fs.closeSync(fd);
 
-    // Cek null bytes (indikasi binary)
+    // Check null bytes (indicates binary)
     for (let i = 0; i < bytesRead; i++) {
       if (buffer[i] === 0) return true;
     }

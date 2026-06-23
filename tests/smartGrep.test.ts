@@ -75,9 +75,9 @@ describe("formatResults", () => {
 
   test("returns no results message when empty", () => {
     const output = formatResults([], "test", 10);
-    expect(output).toContain("Tidak ada hasil");
+    expect(output).toContain("No matches");
     expect(output).toContain("test");
-    expect(output).toContain("10 file discan");
+    expect(output).toContain("10 files scanned");
   });
 
   test("includes query in output", () => {
@@ -105,13 +105,13 @@ describe("formatResults", () => {
 
   test("counts results correctly", () => {
     const output = formatResults(sampleResults, "auth", 5);
-    expect(output).toContain("2 hasil");
+    expect(output).toContain("2 matches");
   });
 
   test("single result still works", () => {
     const single = [{ file: "src/foo.ts", line: 1, content: "1: hello\n2: world" }];
     const output = formatResults(single, "hello", 10);
-    expect(output).toContain("1 hasil");
+    expect(output).toContain("1 matches");
     expect(output).toContain("src/foo.ts");
   });
 });
@@ -204,13 +204,13 @@ function authenticate() {}
     const { handleSmartGrep } = await import("../src/tools/smartGrep.js");
     const result = await handleSmartGrep({ query: "zzz_nonexistent_zzz" });
 
-    expect(result).toContain("Tidak ada hasil");
+    expect(result).toContain("No matches");
   });
 
   test("handles empty query", async () => {
     const { handleSmartGrep } = await import("../src/tools/smartGrep.js");
     const result = await handleSmartGrep({ query: "" });
-    expect(result).toContain("wajib diisi");
+    expect(result).toContain("required");
   });
 
   test("maxResults limits output", async () => {

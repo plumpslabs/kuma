@@ -21,7 +21,7 @@ describe("gitLog", () => {
     jest.spyOn(child_process, "execSync").mockReturnValue("");
 
     const result = await handleGitLog({ filePath: "nonexistent.ts" });
-    expect(result).toContain("Tidak ada commit history ditemukan");
+    expect(result).toContain("No commit history found");
   });
 
   test("handles execution errors gracefully", async () => {

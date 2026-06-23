@@ -4,7 +4,7 @@ import { validateFilePath, validateFileExtension, getBackupPath, ensureBackupDir
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
-// BATCH FILE WRITER — Membuat file baru secara batch
+// BATCH FILE WRITER — Create new files in batch
 // ============================================================
 
 interface BatchFile {
@@ -20,23 +20,23 @@ interface BatchWriterParams {
 export async function handleBatchFileWriter(params: BatchWriterParams): Promise<string> {
   const { files } = params;
 
-  // Batas maksimal 15 file
+  // Maximum 15 files per batch
   if (files.length > 15) {
-    return `Error: Maksimal 15 file per batch. Anda mengirim ${files.length} file.`;
+    return `Error: Maximum 15 files per batch. You sent ${files.length} files.`;
   }
 
   const results: Array<{ filePath: string; success: boolean; error?: string }> = [];
 
   for (const file of files) {
-    // Validasi konten tidak kosong
+    // Validate content is not empty
     if (!file.content || file.content.trim().length === 0) {
-      results.push({ filePath: file.filePath, success: false, error: "Konten file tidak boleh kosong." });
+      results.push({ filePath: file.filePath, success: false, error: "File content must not be empty." });
       continue;
     }
 
-    // Validasi instructions harus diisi
+    // Validate instructions are provided
     if (!file.instructions || file.instructions.trim().length === 0) {
-      results.push({ filePath: file.filePath, success: false, error: "Alasan pembuatan file (instructions) wajib diisi." });
+      results.push({ filePath: file.filePath, success: false, error: "File creation reason (instructions) is required." });
       continue;
     }
     try {
@@ -54,7 +54,7 @@ export async function handleBatchFileWriter(params: BatchWriterParams): Promise<
         results.push({
           filePath: file.filePath,
           success: false,
-          error: `Ekstensi file tidak diizinkan: "${path.extname(file.filePath)}". Ekstensi yang diizinkan: .ts, .js, .tsx, .jsx, .json, .md, .css, .html, .yml, .yaml, .toml, .sh, .env`,
+          error: `File extension not allowed: "${path.extname(file.filePath)}". Allowed extensions: .ts, .js, .tsx, .jsx, .json, .md, .css, .html, .yml, .yaml, .toml, .sh, .env`,
         });
         continue;
       }
@@ -95,30 +95,32 @@ export async function handleBatchFileWriter(params: BatchWriterParams): Promise<
     }
   }
 
-  return formatBatchResult(results);
+  const totalRequested = files.length;
+  return formatBatchResult(results, totalRequested);
 }
 
-function formatBatchResult(results: Array<{ filePath: string; success: boolean; error?: string }>): string {
+function formatBatchResult(results: Array<{ filePath: string; success: boolean; error?: string }>, totalRequested?: number): string {
   const successCount = results.filter((r) => r.success).length;
   const failCount = results.filter((r) => !r.success).length;
 
   const lines: string[] = [
+    ...(totalRequested && totalRequested > 3 ? [`💡 **The Ladder:** Are all ${totalRequested} files needed? Could any be combined or skipped?\n`] : []),
     `📝 Batch File Writer`,
-    `✅ ${successCount} file dibuat | ❌ ${failCount} file gagal`,
+    `✅ ${successCount} files created | ❌ ${failCount} files failed`,
     "",
   ];
 
   for (const r of results) {
     if (r.success) {
-      lines.push(`✅ ${r.filePath} — berhasil dibuat`);
+      lines.push(`✅ ${r.filePath} — created successfully`);
     } else {
       lines.push(`❌ ${r.filePath} — ${r.error}`);
     }
   }
 
   if (failCount === 0 && successCount > 0) {
-    lines.push("", "✅ Semua file berhasil dibuat.");
-    lines.push("💡 Jalankan execute_safe_test({task: \"typecheck\"}) untuk verifikasi.");
+    lines.push("", "✅ All files created successfully.");
+    lines.push("💡 Run execute_safe_test({task: \"typecheck\"}) to verify.");
   }
 
   return lines.join("\n");

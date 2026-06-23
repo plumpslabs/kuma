@@ -5,12 +5,14 @@ import { validateFilePath, getProjectRoot } from "../utils/pathValidator.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
-// CODE REVIEWER — Agent khusus untuk me-review kode
+// CODE REVIEWER — Senior-level static review for changed code
 // ============================================================
+// Pattern-based (regex + line heuristics). Not a full type-checker.
+// Designed to catch the smells a senior would flag on first read.
 
 interface CodeReviewerParams {
   files?: string[];
-  focus?: "correctness" | "conventions" | "security" | "performance";
+  focus?: "correctness" | "conventions" | "security" | "performance" | "over-engineering";
   customCriteria?: string;
   format?: "text" | "json";
 }
@@ -19,9 +21,15 @@ interface ReviewIssue {
   file: string;
   line: number;
   severity: "error" | "warning" | "info";
+  rule: string;
   message: string;
   suggestion: string;
 }
+
+const CODE_EXTENSIONS = [
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+  ".py", ".go", ".rs", ".php", ".cs", ".java",
+];
 
 function getGitChangedFiles(): string[] {
   try {
@@ -30,41 +38,21 @@ function getGitChangedFiles(): string[] {
       cwd: root,
       encoding: "utf-8",
     });
-    const lines = stdout.split("\n");
     const files: string[] = [];
-    for (const line of lines) {
+    for (const line of stdout.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      // git status porcelain output is: XY path/to/file or XY "path/to/file"
       const parts = trimmed.split(/\s+/);
       let filePath = parts.slice(1).join(" ");
       if (filePath.startsWith('"') && filePath.endsWith('"')) {
         filePath = filePath.substring(1, filePath.length - 1);
       }
       const ext = path.extname(filePath).toLowerCase();
-      // Filter only coding files to avoid reviewing lock files or images
-      if (
-        [
-          ".ts",
-          ".tsx",
-          ".js",
-          ".jsx",
-          ".py",
-          ".go",
-          ".rs",
-          ".php",
-          ".cs",
-          ".java",
-        ].includes(ext)
-      ) {
-        files.push(filePath);
-      }
+      if (CODE_EXTENSIONS.includes(ext)) files.push(filePath);
     }
-    return files.slice(0, 10); // Limit to max 10 files
+    return files.slice(0, 10);
   } catch (err) {
-    console.error(
-      `[CodeReviewer] Gagal mendapatkan list file dari git status: ${err}`,
-    );
+    console.error(`[CodeReviewer] Failed to list git-changed files: ${err}`);
     return [];
   }
 }
@@ -81,7 +69,7 @@ export async function handleCodeReviewer(
     files = getGitChangedFiles();
     isAutoDetected = true;
     if (files.length === 0) {
-      return `ℹ️ Tidak ada file kode (TS/JS/Python/Go) yang terdeteksi berubah di git diff saat ini.\nSilakan masukkan file yang ingin di-review secara manual menggunakan parameter 'files'.`;
+      return `ℹ️ No code files (TS/JS/Python/Go/Rust/PHP/C#/Java) detected as changed in git status.\nPass an explicit 'files' array to review specific files.`;
     }
   }
 
@@ -89,15 +77,15 @@ export async function handleCodeReviewer(
   let filesReviewed = 0;
 
   for (const filePath of files) {
-    // Validate path
     const validation = validateFilePath(filePath);
     if (!validation.valid) {
       allIssues.push({
         file: filePath,
         line: 0,
         severity: "error",
+        rule: "path/invalid",
         message: `Invalid path: ${validation.error.message}`,
-        suggestion: "Perbaiki path file",
+        suggestion: "Fix the file path",
       });
       continue;
     }
@@ -108,8 +96,9 @@ export async function handleCodeReviewer(
         file: filePath,
         line: 0,
         severity: "error",
+        rule: "path/not-found",
         message: "File not found",
-        suggestion: "Cek apakah file sudah benar pathnya",
+        suggestion: "Verify the file path",
       });
       continue;
     }
@@ -118,7 +107,10 @@ export async function handleCodeReviewer(
       const content = fs.readFileSync(resolvedPath, "utf-8");
       filesReviewed++;
 
-      // Review berdasarkan focus
+      // Always run general/file-wide checks
+      checkGeneral(filePath, content, allIssues);
+
+      // Focus-specific checks
       switch (focus) {
         case "correctness":
           checkCorrectness(filePath, content, allIssues);
@@ -132,24 +124,28 @@ export async function handleCodeReviewer(
         case "performance":
           checkPerformance(filePath, content, allIssues);
           break;
+        case "over-engineering":
+          checkOverEngineering(filePath, content, allIssues);
+          break;
       }
     } catch (err) {
       allIssues.push({
         file: filePath,
         line: 0,
         severity: "error",
+        rule: "io/read-failed",
         message: `Error reading file: ${err}`,
         suggestion: "",
       });
     }
   }
 
-  // Record ke session
   sessionMemory.recordToolCall("code_reviewer", {
     filesReviewed,
     focus,
     issuesFound: allIssues.length,
     errors: allIssues.filter((i) => i.severity === "error").length,
+    autoDetected: isAutoDetected,
   });
 
   if (format === "json") {
@@ -161,6 +157,7 @@ export async function handleCodeReviewer(
       filesReviewed,
       filesRequested: files.length,
       focus,
+      autoDetected: isAutoDetected,
       ...(customCriteria ? { customCriteria } : {}),
     };
 
@@ -173,307 +170,651 @@ export async function handleCodeReviewer(
     return JSON.stringify({ summary: jsonSummary, issuesByFile, issues: allIssues }, null, 2);
   }
 
-  return formatReviewOutput(
-    allIssues,
-    filesReviewed,
-    files.length,
-    focus,
-    customCriteria,
-  );
+  return formatReviewOutput(allIssues, filesReviewed, files.length, focus, customCriteria, isAutoDetected);
 }
 
 // ============================================================
-// REVIEW CHECKS
+// SHARED HELPERS
 // ============================================================
 
-function checkCorrectness(
-  filePath: string,
-  content: string,
-  issues: ReviewIssue[],
-): void {
-  const lines = content.split("\n");
-  const ext = path.extname(filePath);
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineNum = i + 1;
-
-    // Check: console.log left in code
-    if (
-      /console\.(log|debug|info)\(/.test(line) &&
-      !filePath.includes(".test.")
-    ) {
-      issues.push({
-        file: filePath,
-        line: lineNum,
-        severity: "warning",
-        message: "Leftover console.log statement",
-        suggestion: "Hapus atau ganti dengan structured logging",
-      });
+// Strip line comments and string literals so regex checks don't false-positive
+// on words appearing inside comments or strings.
+function stripCommentsAndStrings(line: string): string {
+  let result = "";
+  let i = 0;
+  let inString: string | null = null;
+  while (i < line.length) {
+    const ch = line[i];
+    const next = line[i + 1];
+    if (inString) {
+      if (ch === "\\" && i + 1 < line.length) { i += 2; continue; }
+      if (ch === inString) { inString = null; i++; continue; }
+      i++;
+      continue;
     }
-
-    // Check: TODO/FIXME comments
-    if (
-      /\b(TODO|FIXME|HACK|XXX)\b/i.test(line) &&
-      !line.includes("// TODO:") &&
-      !line.includes("// FIXME:")
-    ) {
-      issues.push({
-        file: filePath,
-        line: lineNum,
-        severity: "info",
-        message: "Unresolved TODO/FIXME",
-        suggestion: "Selesaikan atau buat issue tracker",
-      });
-    }
-
-    // TypeScript specific checks
-    if (ext === ".ts" || ext === ".tsx") {
-      // Check: 'any' type usage
-      if (/: any\b/.test(line) && !line.includes("// eslint-disable")) {
-        issues.push({
-          file: filePath,
-          line: lineNum,
-          severity: "error",
-          message: "Usage of 'any' type detected",
-          suggestion: "Ganti 'any' dengan tipe yang spesifik atau 'unknown'",
-        });
-      }
-
-      // Check: @ts-ignore
-      if (/@ts-ignore/.test(line)) {
-        issues.push({
-          file: filePath,
-          line: lineNum,
-          severity: "warning",
-          message: "@ts-ignore suppresses type errors",
-          suggestion: "Gunakan @ts-expect-error dengan alasan yang jelas",
-        });
-      }
-    }
-
-    // Check: empty catch blocks
-    if (/catch\s*\([^)]*\)\s*{[\s]*}/.test(line)) {
-      issues.push({
-        file: filePath,
-        line: lineNum,
-        severity: "error",
-        message: "Empty catch block swallows errors",
-        suggestion:
-          "Tambahkan error handling minimal: console.error atau throw",
-      });
-    }
-
-    // Check: hardcoded secrets
-    if (
-      /(password|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"]+['"]/i.test(line)
-    ) {
-      if (!line.includes("process.env") && !line.includes("import.meta.env")) {
-        issues.push({
-          file: filePath,
-          line: lineNum,
-          severity: "error",
-          message: "Potential hardcoded secret detected",
-          suggestion: "Gunakan environment variable: process.env.YOUR_VAR",
-        });
-      }
-    }
+    if (ch === "/" && next === "/") break; // line comment
+    if (ch === '"' || ch === "'" || ch === "`") { inString = ch; i++; continue; }
+    result += ch;
+    i++;
   }
+  return result;
+}
 
-  // Check: file ends with newline
-  if (!content.endsWith("\n")) {
+function isTestFile(filePath: string): boolean {
+  return /\.(test|spec)\.[a-z]+$/i.test(filePath) || /__tests__/.test(filePath);
+}
+
+function isTsLike(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return ext === ".ts" || ext === ".tsx";
+}
+
+// ============================================================
+// GENERAL CHECKS — run for every focus
+// ============================================================
+
+function checkGeneral(filePath: string, content: string, issues: ReviewIssue[]): void {
+  const lines = content.split("\n");
+
+  // File ends with newline
+  if (content.length > 0 && !content.endsWith("\n")) {
     issues.push({
       file: filePath,
       line: lines.length,
       severity: "info",
-      message: "File does not end with newline",
-      suggestion: "Tambahkan newline di akhir file",
+      rule: "style/final-newline",
+      message: "File does not end with a newline",
+      suggestion: "Add a trailing newline",
+    });
+  }
+
+  // File is very long — signal to split
+  if (lines.length > 500) {
+    issues.push({
+      file: filePath,
+      line: 1,
+      severity: "info",
+      rule: "complexity/file-too-long",
+      message: `File is ${lines.length} lines — consider splitting`,
+      suggestion: "Extract cohesive sections into separate modules",
     });
   }
 }
 
-function checkConventions(
-  filePath: string,
-  content: string,
-  issues: ReviewIssue[],
-): void {
+// ============================================================
+// CORRECTNESS CHECKS
+// ============================================================
+
+function checkCorrectness(filePath: string, content: string, issues: ReviewIssue[]): void {
   const lines = content.split("\n");
+  const isTest = isTestFile(filePath);
+  const isTs = isTsLike(filePath);
 
-  // Check: mixed indentation
-  let hasTabs = false;
-  let hasSpaces = false;
+  // Detect deeply-nested code by tracking max brace depth
+  let braceDepth = 0;
+  let maxDepth = 0;
+  let maxDepthLine = 0;
 
-  for (let i = 0; i < Math.min(lines.length, 50); i++) {
-    if (lines[i].startsWith("\t")) hasTabs = true;
-    if (lines[i].startsWith("  ") || lines[i].startsWith("    "))
-      hasSpaces = true;
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const line = stripCommentsAndStrings(rawLine);
+    const lineNum = i + 1;
+
+    // Track nesting via braces (rough but useful)
+    for (const ch of line) {
+      if (ch === "{") braceDepth++;
+      else if (ch === "}") braceDepth = Math.max(0, braceDepth - 1);
+      if (braceDepth > maxDepth) {
+        maxDepth = braceDepth;
+        maxDepthLine = lineNum;
+      }
+    }
+
+    // Leftover console.log (skip tests)
+    if (!isTest && /\bconsole\.(log|debug|info)\s*\(/.test(line)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "warning",
+        rule: "correctness/console-log",
+        message: "Leftover console.log",
+        suggestion: "Remove or replace with a structured logger",
+      });
+    }
+
+    // TODO / FIXME / HACK / XXX
+    if (/\b(TODO|FIXME|HACK|XXX)\b/.test(rawLine)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "info",
+        rule: "correctness/todo",
+        message: "Unresolved TODO/FIXME/HACK marker",
+        suggestion: "Resolve or file a tracked issue and link it",
+      });
+    }
+
+    // TypeScript-specific
+    if (isTs) {
+      // 'any' annotation (excluding 'as any' which is caught separately)
+      if (/:\s*any\b/.test(line) && !/eslint-disable/.test(rawLine)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "ts/no-any",
+          message: "'any' type annotation",
+          suggestion: "Replace with a specific type or 'unknown'",
+        });
+      }
+
+      // 'as any' cast — high-severity smell
+      if (/\bas\s+any\b/.test(line)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "error",
+          rule: "ts/no-as-any",
+          message: "'as any' cast bypasses the type system",
+          suggestion: "Narrow with a type guard or cast to 'unknown' then validate",
+        });
+      }
+
+      // Chained 'as' casts (double cast) — usually a workaround for a bad type
+      if (/\)\s*as\s+\w[^;]*\bas\s+\w/.test(line)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "ts/double-cast",
+          message: "Chained 'as' casts indicate a type-modeling problem",
+          suggestion: "Fix the upstream type or use a type guard",
+        });
+      }
+
+      // Non-null assertion (!.) — overuse hides nullability bugs
+      if (/[a-zA-Z_$\]\)]\s*!\s*\./.test(line) && !/!==|!=/.test(line)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "ts/non-null-assertion",
+          message: "Non-null assertion (!) suppresses null checks",
+          suggestion: "Use optional chaining or an explicit guard",
+        });
+      }
+
+      // @ts-ignore
+      if (/@ts-ignore\b/.test(rawLine)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "ts/ts-ignore",
+          message: "@ts-ignore silently suppresses type errors",
+          suggestion: "Use @ts-expect-error with a reason, or fix the underlying type",
+        });
+      }
+
+      // Untyped Function type
+      if (/:\s*Function\b/.test(line)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "ts/no-unsafe-function",
+          message: "'Function' type is unsafe (loses signature)",
+          suggestion: "Use a specific signature like (x: T) => U",
+        });
+      }
+    }
+
+    // Empty catch block (single-line or following lines)
+    if (/catch\s*\([^)]*\)\s*{\s*}/.test(line)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "error",
+        rule: "correctness/empty-catch",
+        message: "Empty catch swallows the error",
+        suggestion: "Log the error or rethrow — silent catch hides bugs",
+      });
+    }
+
+    // Hardcoded secrets (skip env var references)
+    if (/(password|secret|api[_-]?key|token|bearer)\s*[:=]\s*['"][^'"]{6,}['"]/i.test(line)
+        && !/process\.env|import\.meta\.env|getenv|os\.environ/.test(line)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "error",
+        rule: "security/hardcoded-secret",
+        message: "Possible hardcoded secret",
+        suggestion: "Read from an environment variable instead",
+      });
+    }
+
+    // async function with no await inside (best-effort: check next 30 lines for await up to closing brace)
+    const asyncFnMatch = line.match(/\basync\s+(function\b|\([^)]*\)\s*=>|[a-zA-Z_$][\w$]*\s*\()/);
+    if (asyncFnMatch) {
+      const body = lines.slice(i, Math.min(i + 40, lines.length)).join("\n");
+      if (!/\bawait\b/.test(body) && !/return\s+\w+\s*\(/.test(body)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "info",
+          rule: "correctness/async-without-await",
+          message: "async function without await",
+          suggestion: "Drop 'async' or add the awaited call",
+        });
+      }
+    }
+
+    // == / != instead of === / !==
+    if (isTs || /\.(js|jsx|mjs|cjs)$/i.test(filePath)) {
+      if (/[^=!<>]==[^=]/.test(line) || /!=[^=]/.test(line)) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "correctness/loose-equality",
+          message: "Loose equality (==/!=) — prefer strict equality",
+          suggestion: "Use === / !==",
+        });
+      }
+    }
+
+    // Floating Promise: `someAsyncCall(...);` without await/then/catch/return
+    if (isTs && /^\s*[a-zA-Z_$][\w$]*\([^)]*\)\.[a-zA-Z]/.test(line) === false) {
+      // intentional skip — too noisy without AST
+    }
   }
 
+  // Report deeply nested code (>= 5 levels)
+  if (maxDepth >= 5) {
+    issues.push({
+      file: filePath,
+      line: maxDepthLine,
+      severity: "warning",
+      rule: "complexity/deep-nesting",
+      message: `Code nests ${maxDepth} levels deep`,
+      suggestion: "Extract helper functions or use early returns",
+    });
+  }
+}
+
+// ============================================================
+// CONVENTIONS CHECKS
+// ============================================================
+
+function checkConventions(filePath: string, content: string, issues: ReviewIssue[]): void {
+  const lines = content.split("\n");
+
+  // Mixed indentation
+  let hasTabs = false;
+  let hasSpaces = false;
+  for (let i = 0; i < Math.min(lines.length, 50); i++) {
+    if (lines[i].startsWith("\t")) hasTabs = true;
+    if (/^ {2,}/.test(lines[i])) hasSpaces = true;
+  }
   if (hasTabs && hasSpaces) {
     issues.push({
       file: filePath,
       line: 1,
       severity: "warning",
+      rule: "style/mixed-indent",
       message: "Mixed indentation (tabs and spaces)",
-      suggestion:
-        "Konsisten: pilih tabs atau spaces (prefer 2 spaces untuk JS/TS)",
+      suggestion: "Pick one (typically 2 spaces for JS/TS)",
     });
   }
 
-  // Check: line length
+  // Line length
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].length > 200) {
       issues.push({
         file: filePath,
         line: i + 1,
         severity: "info",
-        message: `Line too long (${lines[i].length} chars)`,
-        suggestion: "Pertimbangkan untuk memecah baris > 200 karakter",
+        rule: "style/line-length",
+        message: `Line is ${lines[i].length} chars`,
+        suggestion: "Wrap lines over ~120 chars",
       });
-      break; // Only report once
+      break;
     }
   }
 
-  // Check: naming conventions
+  // Naming conventions
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = stripCommentsAndStrings(lines[i]);
 
-    // Classes should be PascalCase
-    const classMatch = line.match(/class\s+([a-zA-Z_$][\w$]*)/);
+    const classMatch = line.match(/\bclass\s+([a-zA-Z_$][\w$]*)/);
     if (classMatch && !/^[A-Z]/.test(classMatch[1])) {
       issues.push({
         file: filePath,
         line: i + 1,
         severity: "warning",
+        rule: "naming/class-pascalcase",
         message: `Class "${classMatch[1]}" should be PascalCase`,
         suggestion: `Rename to "${classMatch[1].charAt(0).toUpperCase() + classMatch[1].slice(1)}"`,
       });
     }
 
-    // Functions should be camelCase
-    const funcMatch = line.match(/function\s+([A-Z][a-zA-Z0-9_$]*)\s*\(/);
-    if (funcMatch && !line.includes("React") && !line.includes("Component")) {
+    const funcMatch = line.match(/\bfunction\s+([A-Z][a-zA-Z0-9_$]*)\s*\(/);
+    if (funcMatch && !/React|Component/.test(line)) {
       issues.push({
         file: filePath,
         line: i + 1,
         severity: "info",
-        message: `Function "${funcMatch[1]}" starts with uppercase (may be a component?)`,
-        suggestion: "Gunakan lowercase untuk regular functions",
+        rule: "naming/function-camelcase",
+        message: `Function "${funcMatch[1]}" starts with uppercase (component?)`,
+        suggestion: "Use camelCase for regular functions",
       });
     }
   }
 }
 
-function checkSecurity(
-  filePath: string,
-  content: string,
-  issues: ReviewIssue[],
-): void {
+// ============================================================
+// SECURITY CHECKS
+// ============================================================
+
+function checkSecurity(filePath: string, content: string, issues: ReviewIssue[]): void {
   const lines = content.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const rawLine = lines[i];
+    const line = stripCommentsAndStrings(rawLine);
     const lineNum = i + 1;
 
-    // Check: eval()
     if (/\beval\s*\(/.test(line)) {
       issues.push({
         file: filePath,
         line: lineNum,
         severity: "error",
+        rule: "security/no-eval",
         message: "eval() is a security risk",
-        suggestion:
-          "Hindari eval(). Gunakan JSON.parse() atau Function constructor",
+        suggestion: "Use JSON.parse or a real parser",
       });
     }
 
-    // Check: innerHTML
     if (/\.innerHTML\s*=/.test(line)) {
       issues.push({
         file: filePath,
         line: lineNum,
         severity: "warning",
+        rule: "security/innerhtml",
         message: "innerHTML can lead to XSS",
-        suggestion: "Gunakan textContent atau DOMPurify untuk sanitasi",
+        suggestion: "Use textContent or sanitize with DOMPurify",
       });
     }
 
-    // Check: SQL injection potential
-    if (/\.query\s*\([\s`'"]+SELECT|INSERT|UPDATE|DELETE/.test(line)) {
+    if (/\.query\s*\(\s*[`'"][^`'"]*(SELECT|INSERT|UPDATE|DELETE)/i.test(line)
+        && /\$\{|\+\s*\w/.test(line)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "error",
+        rule: "security/sql-injection",
+        message: "SQL query built via string interpolation",
+        suggestion: "Use parameterized queries or an ORM",
+      });
+    }
+
+    if (/\b(exec|execSync|spawn|spawnSync)\s*\(/.test(line)
+        && /\$\{|\+\s*\w/.test(line)
+        && !/\/\/\s*reviewed/i.test(rawLine)) {
       issues.push({
         file: filePath,
         line: lineNum,
         severity: "warning",
-        message: "Raw SQL query detected — potential SQL injection",
-        suggestion: "Gunakan prepared statements atau ORM query builder",
+        rule: "security/shell-injection",
+        message: "Shell command built from interpolated input",
+        suggestion: "Sanitize input or use array-form spawn with explicit args",
       });
     }
 
-    // Check: shell command injection
-    if (/exec\(|execSync\(|spawn\(|spawnSync\(/.test(line)) {
-      if (!line.includes("// approved") && !line.includes("sanitize")) {
-        issues.push({
-          file: filePath,
-          line: lineNum,
-          severity: "warning",
-          message: "Shell command execution detected",
-          suggestion:
-            "Sanitize input dan gunakan execa dengan options yang aman",
-        });
-      }
+    // Insecure HTTP in code (skip docs/comments — stripCommentsAndStrings already removed strings/comments)
+    if (/['"]http:\/\/(?!localhost|127\.|0\.0\.0\.0)/.test(rawLine)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "info",
+        rule: "security/insecure-http",
+        message: "Insecure http:// URL",
+        suggestion: "Use https:// where possible",
+      });
     }
   }
 }
 
-function checkPerformance(
-  filePath: string,
-  content: string,
-  issues: ReviewIssue[],
-): void {
+// ============================================================
+// PERFORMANCE CHECKS
+// ============================================================
+
+function checkPerformance(filePath: string, content: string, issues: ReviewIssue[]): void {
   const lines = content.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = stripCommentsAndStrings(lines[i]);
     const lineNum = i + 1;
 
-    // Check: nested loops
-    if (/(for\s*\(|while\s*\()/.test(line)) {
-      // Check if previous/next lines also have loops
-      if (i > 0 && /(for\s*\(|while\s*\()/.test(lines[i - 1])) {
-        issues.push({
-          file: filePath,
-          line: lineNum,
-          severity: "warning",
-          message: "Nested loops detected — potential O(n²) performance issue",
-          suggestion:
-            "Pertimbangkan menggunakan Map/Set atau algoritma yang lebih efisien",
-        });
-      }
-    }
-
-    // Check: large array operations in loop
-    if (/\.filter\(/.test(line) && i > 0 && /for\s*\(/.test(lines[i - 1])) {
+    // Nested loops (rough)
+    if (/\b(for|while)\s*\(/.test(line) && i > 0 && /\b(for|while)\s*\(/.test(stripCommentsAndStrings(lines[i - 1]))) {
       issues.push({
         file: filePath,
         line: lineNum,
-        severity: "info",
-        message: "Array method inside loop — consider moving outside",
-        suggestion:
-          "Pindahkan operasi array ke luar loop untuk performa lebih baik",
+        severity: "warning",
+        rule: "perf/nested-loops",
+        message: "Nested loops — potential O(n²)",
+        suggestion: "Use Map/Set lookups or a single-pass algorithm",
       });
     }
 
-    // Check: unnecessary spread in loops
-    if (/\.\.\./.test(line) && /(for|while|forEach|map)/.test(lines[i])) {
+    // Array method inside a loop (rough)
+    if (/\.(filter|map|reduce|find)\s*\(/.test(line) && i > 0 && /\bfor\s*\(/.test(stripCommentsAndStrings(lines[i - 1]))) {
       issues.push({
         file: filePath,
         line: lineNum,
         severity: "info",
-        message: "Spread operator in loop can be expensive",
-        suggestion: "Pertimbangkan untuk menggunakan push() atau concat()",
+        rule: "perf/array-in-loop",
+        message: "Array method inside a loop",
+        suggestion: "Hoist the computation outside the loop if possible",
+      });
+    }
+
+    // Spread inside a loop
+    if (/\.\.\./.test(line) && /\b(for|while|forEach|map|reduce)\b/.test(line)) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "info",
+        rule: "perf/spread-in-loop",
+        message: "Spread inside a loop is O(n)",
+        suggestion: "Use push() or concat() to grow arrays in loops",
+      });
+    }
+
+    // Sync I/O in what looks like a hot path
+    if (/\b(readFileSync|writeFileSync|existsSync)\s*\(/.test(line)
+        && /\b(for|while|forEach|map)\b/.test(lines[Math.max(0, i - 2)] + lines[Math.max(0, i - 1)] + lines[i])) {
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "warning",
+        rule: "perf/sync-io-in-loop",
+        message: "Synchronous I/O inside a loop",
+        suggestion: "Use the async variant and await in parallel where safe",
       });
     }
   }
+}
+
+// ============================================================
+// OVER-ENGINEERING CHECKS — Senior dev's "does this need to exist?"
+// ============================================================
+
+function checkOverEngineering(filePath: string, content: string, issues: ReviewIssue[]): void {
+  const lines = content.split("\n");
+  const text = content.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  // 1. Wrapper class with one method
+  const classBodies = findBlockBodies(lines, /^\s*(export\s+)?(abstract\s+)?class\s+\w+/);
+  for (const { body, nameLine, name } of classBodies) {
+    const methodCount = (body.match(/^\s*(public|private|protected|static|async)?\s*\w+\s*\([^)]*\)\s*{/gm) || []).length;
+    if (methodCount <= 1 && body.length > 0) {
+      const trimmed = body.trim();
+      const nonEmptyLines = trimmed ? trimmed.split("\n").filter(l => l.trim()).length : 0;
+      if (nonEmptyLines <= 3) {
+        issues.push({
+          file: filePath,
+          line: nameLine,
+          severity: "info",
+          rule: "over-engineering/wrapper-class",
+          message: `Class "${name}" has only 1 method — likely a wrapper that could be a plain function`,
+          suggestion: "Replace with a standalone function or a utility module export",
+        });
+      }
+    }
+  }
+
+  // 2. Factory for one product
+  const factoryMatches = text.matchAll(/^\s*(export\s+)?function\s+(create\w+|make\w+|build\w+|factory\w+)\s*\(/gm);
+  for (const match of factoryMatches) {
+    const funcName = match[2];
+    const body = extractBodyAfter(lines, match);
+    const creationCount = (body.match(/\bnew\s+\w+/g) || []).length;
+    if (creationCount <= 1) {
+      issues.push({
+        file: filePath,
+        line: lines.findIndex(l => l.includes(funcName)) + 1,
+        severity: "warning",
+        rule: "over-engineering/single-product-factory",
+        message: `Factory "${funcName}" produces only 1 product — unnecessary abstraction`,
+        suggestion: "Inline the construction or drop the factory pattern",
+      });
+    }
+  }
+
+  // 3. Interface with single implementation
+  const interfaceNames: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(export\s+)?interface\s+(\w+)/);
+    if (m) interfaceNames.push(m[2]);
+  }
+  for (const iface of interfaceNames) {
+    const implCount = (text.match(new RegExp(`implements\\s+.*\\b${iface}\\b`, "g")) || []).length;
+    if (implCount <= 1) {
+      const lineNum = lines.findIndex(l => l.includes(`interface ${iface}`)) + 1;
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "info",
+        rule: "over-engineering/single-impl-interface",
+        message: `Interface "${iface}" has only 1 implementation — unnecessary unless more planned`,
+        suggestion: "Remove the interface or inline the type",
+      });
+    }
+  }
+
+  // 4. Config object with values never changed
+  const configObjPattern = /^\s*(export\s+)?(const|let|var)\s+(\w+)\s*[=:]\s*\{/;
+  for (let i = 0; i < lines.length; i++) {
+    const cm = lines[i].match(configObjPattern);
+    if (!cm || !/config|setting|option|default/i.test(cm[3])) continue;
+
+    const configName = cm[3];
+    const refs = (text.match(new RegExp(`\\b${configName}\\b`, "g")) || []).length;
+    if (refs <= 2) {
+      issues.push({
+        file: filePath,
+        line: i + 1,
+        severity: "info",
+        rule: "over-engineering/unused-config",
+        message: `Config "${configName}" is referenced ${refs === 0 ? "nowhere" : `only ${refs - 1}x outside definition`}`,
+        suggestion: refs === 0
+          ? "Remove the dead config"
+          : "Inline the value or remove if unused elsewhere",
+      });
+    }
+  }
+
+  // 5. Hand-rolled implementation when stdlib covers it
+  const stdlibPatterns: Array<{ pattern: RegExp; rule: string; msg: string; suggestion: string }> = [
+    { pattern: /function\s+\w+\s*\([^)]*\)\s*\{[^}]*fs\.readFileSync[^}]*\}/, rule: "over-engineering/hand-rolled-file-read", msg: "Hand-rolled file reader — use fs.readFileSync directly", suggestion: "Call fs.readFileSync directly instead of wrapping" },
+    { pattern: /function\s+\w+\s*\([^)]*\)\s*\{[^}]*crypto\.createHash[^}]*\}/, rule: "over-engineering/hand-rolled-hash", msg: "Hand-rolled hash — use crypto directly", suggestion: "Call crypto.createHash directly" },
+    { pattern: /function\s+uuid\s*\(|function\s+generateId\s*\(/, rule: "over-engineering/hand-rolled-uuid", msg: "Hand-rolled UUID — use crypto.randomUUID()", suggestion: "Replace with crypto.randomUUID() (Node 19+) or the uuid package" },
+    { pattern: /function\s+debounce\s*\(|function\s+throttle\s*\(/, rule: "over-engineering/hand-rolled-debounce", msg: "Hand-rolled debounce/throttle — utility lib or native", suggestion: "Use lodash.debounce or a 3-line inline version" },
+  ];
+  for (const sp of stdlibPatterns) {
+    const sl = text.match(sp.pattern);
+    if (sl) {
+      const matchIndex = sl.index ?? 0;
+      const preText = text.substring(0, matchIndex);
+      const lineNum = preText.split("\n").length;
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "info",
+        rule: sp.rule,
+        message: sp.msg,
+        suggestion: sp.suggestion,
+      });
+    }
+  }
+
+  // 6. Unused exports (best-effort: exported const/func referenced only once in file)
+  const exportDecls: Array<{ name: string; line: number }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const ed = lines[i].match(/^\s*export\s+(const|let|var|function|class)\s+(\w+)/);
+    if (ed) exportDecls.push({ name: ed[2], line: i + 1 });
+  }
+  for (const decl of exportDecls) {
+    const refCount = (text.match(new RegExp(`\\b${decl.name}\\b`, "g")) || []).length;
+    const isReactComponent = /^[A-Z]/.test(decl.name) && /return\s+<|React\./.test(text);
+    if (refCount <= 1 && decl.name !== "default" && !isReactComponent) {
+      issues.push({
+        file: filePath,
+        line: decl.line,
+        severity: "info",
+        rule: "over-engineering/unused-export",
+        message: `"${decl.name}" is exported but referenced only in its declaration`,
+        suggestion: "Check if it is imported elsewhere; if not, remove or inline",
+      });
+    }
+  }
+}
+
+function findBlockBodies(lines: string[], startPattern: RegExp): Array<{ body: string; nameLine: number; name: string }> {
+  const results: Array<{ body: string; nameLine: number; name: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(startPattern);
+    if (!m) continue;
+    const name = m[0].match(/class\s+(\w+)/)?.[1] ?? "Unknown";
+    const body = collectBlockLines(lines, i);
+    results.push({ body: body.join("\n"), nameLine: i + 1, name });
+  }
+  return results;
+}
+
+function collectBlockLines(lines: string[], startIdx: number): string[] {
+  let depth = 0;
+  let started = false;
+  const block: string[] = [];
+  for (let j = startIdx; j < lines.length; j++) {
+    const line = lines[j];
+    block.push(line);
+    for (const ch of line) {
+      if (ch === "{") { depth++; started = true; }
+      else if (ch === "}") depth--;
+    }
+    if (started && depth <= 0) break;
+  }
+  return block;
+}
+
+function extractBodyAfter(lines: string[], match: RegExpMatchArray): string {
+  const startIdx = lines.findIndex(l => l.includes(match[0].trim().split(/\s+/).pop() ?? ""));
+  if (startIdx < 0) return "";
+  return collectBlockLines(lines, startIdx).join("\n");
 }
 
 // ============================================================
@@ -486,6 +827,7 @@ function formatReviewOutput(
   totalFiles: number,
   focus: string,
   customCriteria?: string,
+  autoDetected?: boolean,
 ): string {
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
@@ -493,6 +835,8 @@ function formatReviewOutput(
 
   const lines: string[] = [
     `🔍 **Code Review — Focus: ${focus}**`,
+    ...(focus === "over-engineering" ? ["💡 **The Ladder:** 1. Does this code need to exist? 2. Does stdlib cover it? 3. Is there a one-liner? 4. Only then, write it."] : []),
+    ...(autoDetected ? [`📂 Auto-detected ${totalFiles} changed file(s) from git`] : []),
     ...(customCriteria ? [`📋 **Custom Criteria:** ${customCriteria}`] : []),
     `📁 ${filesReviewed}/${totalFiles} files reviewed`,
     `🔴 ${errors.length} errors | 🟡 ${warnings.length} warnings | 🔵 ${infos.length} info`,
@@ -500,11 +844,10 @@ function formatReviewOutput(
   ];
 
   if (issues.length === 0) {
-    lines.push("✅ No issues found! Code looks clean.");
+    lines.push("✅ No issues found.");
     return lines.join("\n");
   }
 
-  // Group by file
   const grouped = new Map<string, ReviewIssue[]>();
   for (const issue of issues) {
     const existing = grouped.get(issue.file) ?? [];
@@ -515,31 +858,20 @@ function formatReviewOutput(
   for (const [file, fileIssues] of grouped) {
     lines.push(`**📄 ${file}:**`);
     for (const issue of fileIssues) {
-      const icon =
-        issue.severity === "error"
-          ? "🔴"
-          : issue.severity === "warning"
-            ? "🟡"
-            : "🔵";
-      lines.push(`  ${icon} [L${issue.line}] ${issue.message}`);
-      if (issue.suggestion) {
-        lines.push(`     💡 ${issue.suggestion}`);
-      }
+      const icon = issue.severity === "error" ? "🔴" : issue.severity === "warning" ? "🟡" : "🔵";
+      lines.push(`  ${icon} [L${issue.line}] [${issue.rule}] ${issue.message}`);
+      if (issue.suggestion) lines.push(`     💡 ${issue.suggestion}`);
     }
     lines.push("");
   }
 
   if (errors.length > 0) {
-    lines.push(
-      "⚠️ **Prioritas: Fix error issues terlebih dahulu, lalu warning.**",
-    );
-    lines.push(
-      "💡 Gunakan precise_diff_editor untuk memperbaiki issues di atas.",
-    );
+    lines.push("⚠️ Fix errors first, then warnings.");
+    lines.push("💡 Use precise_diff_editor to apply fixes.");
   } else if (warnings.length > 0) {
-    lines.push("💡 Pertimbangkan untuk memperbaiki warnings sebelum lanjut.");
+    lines.push("💡 Address warnings before merging.");
   } else {
-    lines.push("✅ Issues minor. Siap untuk lanjut ke testing.");
+    lines.push("✅ Only informational issues — ready for testing.");
   }
 
   return lines.join("\n");

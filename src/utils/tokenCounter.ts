@@ -1,19 +1,19 @@
 // ============================================================
-// TOKEN COUNTER — Perkiraan token usage untuk tracking
+// TOKEN COUNTER — Token usage estimation for tracking
 // ============================================================
 
 /**
- * Perkiraan jumlah token dari teks.
- * Rule of thumb: ~4 karakter per token untuk English,
- * ~2-3 karakter per token untuk kode.
- * Kita pake pendekatan konservatif: 3 karakter per token.
+ * Estimate token count from text.
+ * Rule of thumb: ~4 chars per token for English,
+ * ~2-3 chars per token for code.
+ * We use a conservative approach: 3 chars per token.
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
 }
 
 /**
- * Token budget tracker untuk session
+ * Token budget tracker for the session
  */
 export class TokenBudgetTracker {
   private totalTokensUsed = 0;
@@ -70,8 +70,8 @@ export class TokenBudgetTracker {
 }
 
 /**
- * Format teks dengan batasan token.
- * Berguna untuk output tool yang perlu dibatasi.
+ * Format text with token limit.
+ * Useful for tool output that needs to be limited.
  */
 export function truncateToTokenLimit(text: string, maxTokens: number): string {
   const estimatedTokens = estimateTokens(text);

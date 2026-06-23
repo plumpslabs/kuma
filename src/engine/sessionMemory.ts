@@ -5,6 +5,11 @@ import path from "node:path";
 // SESSION MEMORY — State tracker & Knowledge graph mini proyek
 // ============================================================
 
+const MEMORY_TOPICS = ["decisions", "glossary", "architecture", "conventions", "known-issues"] as const;
+export type MemoryTopic = typeof MEMORY_TOPICS[number];
+
+
+
 interface ToolCallRecord {
   toolName: string;
   params: Record<string, unknown>;
@@ -45,17 +50,24 @@ export class SessionMemory {
 
   init(config: { projectRoot: string; startTime: number }): void {
     const kumaDir = path.join(config.projectRoot, ".kuma");
-    const sessionFile = path.join(kumaDir, ".kuma-memory.json");
+    const sessionFile = path.join(kumaDir, "memory.json");
 
-    // Migration: rename old session.json to .kuma-memory.json
+    // Migration: .kuma-memory.json → memory.json (v1.4.0)
+    const oldFile = path.join(kumaDir, ".kuma-memory.json");
+    if (fs.existsSync(oldFile) && !fs.existsSync(sessionFile)) {
+      try {
+        fs.renameSync(oldFile, sessionFile);
+        console.error('[SessionMemory] Migrated .kuma-memory.json → memory.json');
+      } catch {}
+    }
+
+    // Migration: session.json → memory.json
     const oldSessionFile = path.join(kumaDir, "session.json");
     if (fs.existsSync(oldSessionFile) && !fs.existsSync(sessionFile)) {
       try {
         fs.renameSync(oldSessionFile, sessionFile);
-        console.error('[SessionMemory] Migrated session.json → .kuma-memory.json');
-      } catch {
-        // Ignore migration errors
-      }
+        console.error('[SessionMemory] Migrated session.json → memory.json');
+      } catch {}
     }
 
     if (fs.existsSync(sessionFile)) {
@@ -75,7 +87,7 @@ export class SessionMemory {
           conventions: parsed.conventions,
         };
         this.initialized = true;
-        console.error(`[SessionMemory] Loaded persistent session from .kuma/.kuma-memory.json`);
+        console.error(`[SessionMemory] Loaded persistent session memory.json`);
         return;
       } catch (err) {
         console.error(`[SessionMemory] Failed to load persistent session: ${err}. Re-initializing.`);
@@ -95,8 +107,113 @@ export class SessionMemory {
     };
     this.initialized = true;
     this.save();
+    this.ensureMemoriesDir();
     console.error(`[SessionMemory] Initialized at ${new Date(config.startTime).toISOString()}`);
   }
+
+  private memoriesDir(): string {
+    return path.join(this.state.projectRoot, ".kuma", "memories");
+  }
+
+  private ensureMemoriesDir(): void {
+    const dir = this.memoriesDir();
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  private memoryFilePath(topic: MemoryTopic): string {
+    return path.join(this.memoriesDir(), `${topic}.md`);
+  }
+
+  getMemoryContent(topic: MemoryTopic): string {
+    this.ensureInit();
+    this.ensureMemoriesDir();
+    const filePath = this.memoryFilePath(topic);
+
+    if (fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath, "utf-8");
+    }
+
+    return this.generateMemory(topic);
+  }
+
+  writeMemory(topic: MemoryTopic, content: string): void {
+    this.ensureInit();
+    this.ensureMemoriesDir();
+    this.writeMemoryFile(topic, content);
+  }
+
+  private writeMemoryFile(topic: MemoryTopic, content: string): void {
+    const filePath = this.memoryFilePath(topic);
+    fs.writeFileSync(filePath, content, "utf-8");
+  }
+
+  private generateMemory(topic: MemoryTopic): string {
+    switch (topic) {
+      case "architecture":
+        return this.generateArchitectureMd();
+      case "conventions":
+        return this.generateConventionsMd();
+      case "known-issues":
+        return this.generateKnownIssuesMd();
+      default:
+        return `# ${topic}\n\n(empty)`;
+    }
+  }
+
+  private generateArchitectureMd(): string {
+    const conv = this.state.conventions;
+    if (!conv) return `# Architecture\n\nRun project_conventions first to auto-generate this file.`;
+    const lines: string[] = [
+      "# Architecture",
+      "",
+      `Auto-generated from project conventions at ${new Date().toISOString()}`,
+      "",
+    ];
+    for (const [key, value] of Object.entries(conv)) {
+      lines.push(`- **${key}**: ${JSON.stringify(value)}`);
+    }
+    return lines.join("\n");
+  }
+
+  private generateConventionsMd(): string {
+    const conv = this.state.conventions;
+    if (!conv) return `# Conventions\n\nRun project_conventions first to auto-generate this file.`;
+    const lines: string[] = [
+      "# Conventions",
+      "",
+      `Auto-generated from project conventions at ${new Date().toISOString()}`,
+      "",
+    ];
+    for (const [key, value] of Object.entries(conv)) {
+      lines.push(`- **${key}**: ${JSON.stringify(value)}`);
+    }
+    return lines.join("\n");
+  }
+
+  private generateKnownIssuesMd(): string {
+    const allFailures = this.getFailedFiles();
+    const unresolved = allFailures.filter(f => f.failures.some(ff => !ff.resolved));
+    if (unresolved.length === 0) return `# Known Issues\n\nNo unresolved issues.`;
+    const lines: string[] = [
+      "# Known Issues",
+      "",
+      `Generated at ${new Date().toISOString()}`,
+      "",
+    ];
+    for (const f of unresolved) {
+      lines.push(`## ${f.task}`);
+      for (const ff of f.failures) {
+        if (!ff.resolved) {
+          lines.push(`- ${new Date(ff.timestamp).toISOString()}: ${ff.error.substring(0, 300)}`);
+        }
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
 
   private save(): void {
     if (!this.initialized || !this.state) return;
@@ -117,7 +234,7 @@ export class SessionMemory {
         toolCalls: this.state.toolCalls,
         conventions: this.state.conventions,
       };
-      fs.writeFileSync(path.join(kumaDir, ".kuma-memory.json"), JSON.stringify(serialized, null, 2), "utf-8");
+      fs.writeFileSync(path.join(kumaDir, "memory.json"), JSON.stringify(serialized, null, 2), "utf-8");
     } catch (err) {
       console.error(`[SessionMemory] Failed to save session: ${err}`);
     }
@@ -165,15 +282,25 @@ export class SessionMemory {
 
   addFailedFile(task: string, error: string): void {
     this.ensureInit();
+    const trimmedError = error?.trim() ?? "";
+    if (!trimmedError) return;
+
+    const truncatedError = trimmedError.substring(0, 500);
     const failures = this.state.failedFiles.get(task) ?? [];
+
+    const lastUnresolved = [...failures].reverse().find((f) => !f.resolved);
+    if (lastUnresolved && lastUnresolved.error === truncatedError) return;
+
     failures.push({
       task,
-      error: error.substring(0, 500),
+      error: truncatedError,
       timestamp: Date.now(),
       resolved: false,
     });
     this.state.failedFiles.set(task, failures);
     this.save();
+    this.ensureMemoriesDir();
+    this.writeMemoryFile("known-issues", this.generateKnownIssuesMd());
   }
 
   markFailureResolved(task: string): void {
@@ -189,6 +316,8 @@ export class SessionMemory {
       }
       if (changed) {
         this.save();
+        this.ensureMemoriesDir();
+        this.writeMemoryFile("known-issues", this.generateKnownIssuesMd());
       }
     }
   }
@@ -228,6 +357,9 @@ export class SessionMemory {
     this.ensureInit();
     this.state.conventions = conventions;
     this.save();
+    this.ensureMemoriesDir();
+    this.writeMemoryFile("architecture", this.generateArchitectureMd());
+    this.writeMemoryFile("conventions", this.generateConventionsMd());
   }
 
   pruneMemory(): void {
@@ -238,15 +370,25 @@ export class SessionMemory {
     this.save();
   }
 
-  getSummary(): Record<string, unknown> {
+  getSummary(topic?: MemoryTopic): Record<string, unknown> {
     this.ensureInit();
 
+    if (topic) {
+      const content = this.getMemoryContent(topic);
+      return { topic, content };
+    }
+
     const unresolvedFailures: Array<{ task: string; error: string }> = [];
+    const seen = new Set<string>();
     for (const [, failures] of this.state.failedFiles) {
       for (const f of failures) {
-        if (!f.resolved) {
-          unresolvedFailures.push({ task: f.task, error: f.error.substring(0, 200) });
-        }
+        if (f.resolved) continue;
+        const error = f.error.substring(0, 200);
+        if (!error.trim()) continue;
+        const key = `${f.task}::${error}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unresolvedFailures.push({ task: f.task, error });
       }
     }
 
@@ -256,7 +398,6 @@ export class SessionMemory {
       currentGoal: this.state.currentGoal,
       completedSteps: this.state.completedSteps,
       modifiedFiles: Array.from(this.state.modifiedFiles.values()),
-      unfailures: unresolvedFailures, // Backward compatibility or simple helper
       unresolvedFailures,
       toolCallCount: this.state.toolCalls.length,
       recentSearches: Array.from(this.state.searchResults.keys()).slice(-5),
@@ -321,7 +462,23 @@ export class SessionMemory {
 // Singleton
 export const sessionMemory = new SessionMemory();
 
-// Fungsi untuk MCP tool
-export function getSessionMemory(): Record<string, unknown> {
-  return sessionMemory.getSummary();
+// Function for MCP tool
+export function getSessionMemory(topic?: MemoryTopic): Record<string, unknown> {
+  return sessionMemory.getSummary(topic);
+}
+
+export function handleWriteMemory(params: { topic: MemoryTopic; content: string; mode?: "append" | "prepend" | "overwrite" }): string {
+  const { topic, content, mode = "append" } = params;
+  const existing = sessionMemory.getMemoryContent(topic);
+
+  let finalContent = content;
+  if (mode === "prepend") {
+    finalContent = content + "\n\n" + existing;
+  } else if (mode === "append") {
+    finalContent = existing + "\n\n" + content;
+  }
+
+  sessionMemory.writeMemory(topic, finalContent);
+  sessionMemory.recordToolCall("write_memory", { topic, mode });
+  return `✅ Memory "${topic}" updated (mode: ${mode}).`;
 }

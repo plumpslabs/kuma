@@ -6,8 +6,15 @@ import { getProjectRoot } from "./pathValidator.js";
 // CONVENTIONS DETECTOR — Auto-detect project configuration
 // ============================================================
 
+export interface WorkspacePackage {
+  path: string;            // relative to project root
+  name: string;
+  framework: string;
+}
+
 export interface ProjectConventions {
   framework: string;
+  projectType: "web-app" | "backend" | "cli" | "mcp-server" | "library" | "unknown";
   testRunner: string;
   styling: string;
   importAlias?: string;
@@ -16,6 +23,8 @@ export interface ProjectConventions {
   moduleSystem: "esm" | "cjs";
   language: "typescript" | "javascript";
   features: string[];
+  isMonorepo: boolean;
+  workspaces: WorkspacePackage[];
 }
 
 let cachedConventions: ProjectConventions | null = null;
@@ -26,9 +35,11 @@ export async function detectConventions(forceRescan = false): Promise<ProjectCon
   }
 
   const projectRoot = getProjectRoot();
+  const workspaces = detectWorkspaces(projectRoot);
 
   const conventions: ProjectConventions = {
     framework: detectFramework(projectRoot),
+    projectType: detectProjectType(projectRoot),
     testRunner: detectTestRunner(projectRoot),
     styling: detectStyling(projectRoot),
     importAlias: detectImportAlias(projectRoot),
@@ -37,6 +48,8 @@ export async function detectConventions(forceRescan = false): Promise<ProjectCon
     moduleSystem: detectModuleSystem(projectRoot),
     language: detectLanguage(projectRoot),
     features: detectFeatures(projectRoot),
+    isMonorepo: workspaces.length > 0,
+    workspaces,
   };
 
   cachedConventions = conventions;
@@ -51,19 +64,163 @@ function detectFramework(root: string): string {
   const pkgDevDeps = (pkg.devDependencies ?? {}) as Record<string, string>;
   const deps: Record<string, string> = { ...pkgDeps, ...pkgDevDeps };
 
+  // Web frameworks
   if (deps.next) return "Next.js";
   if (deps["@remix-run/react"]) return "Remix";
   if (deps.gatsby) return "Gatsby";
   if (deps.nuxt || deps["@nuxt/core"]) return "Nuxt.js";
   if (deps.vue) return "Vue";
   if (deps.react) return "React";
-  if (deps.express) return "Express";
-  if (deps.fastify) return "Fastify";
-  if (deps.nest) return "NestJS";
   if (deps.svelte) return "Svelte";
   if (deps.astro) return "Astro";
+  if (deps.solid || deps["solid-js"]) return "SolidJS";
+  if (deps.qwik || deps["@builder.io/qwik"]) return "Qwik";
+
+  // Build tools (frontend)
+  if (deps.vite) return "Vite";
+
+  // Backend frameworks
+  if (deps["@nestjs/core"]) return "NestJS";
+  if (deps.fastify) return "Fastify";
+  if (deps.express) return "Express";
+  if (deps.koa) return "Koa";
+  if (deps.hono) return "Hono";
+  if (deps["@hapi/hapi"]) return "Hapi";
+
+  // MCP / agent SDKs
+  if (deps["@modelcontextprotocol/sdk"]) return "MCP Server";
+  if (deps["@anthropic-ai/claude-agent-sdk"]) return "Claude Agent SDK";
+
+  // CLI frameworks
+  if (deps.commander) return "Commander CLI";
+  if (deps.yargs) return "Yargs CLI";
+  if (deps["@oclif/core"] || deps.oclif) return "Oclif CLI";
+  if (deps.ink) return "Ink (React CLI)";
+
+  // If it has a "bin" entry it's likely a CLI
+  if (pkg.bin) return "CLI Tool";
+
+  // Library fallback when it exposes main/exports but nothing app-y
+  if (pkg.main || pkg.exports) return "Library";
 
   return "unknown";
+}
+
+function detectProjectType(root: string): ProjectConventions["projectType"] {
+  const pkg = readJsonSafe(path.join(root, "package.json"));
+  if (!pkg) return "unknown";
+
+  const pkgDeps = (pkg.dependencies ?? {}) as Record<string, string>;
+  const pkgDevDeps = (pkg.devDependencies ?? {}) as Record<string, string>;
+  const deps: Record<string, string> = { ...pkgDeps, ...pkgDevDeps };
+
+  if (deps["@modelcontextprotocol/sdk"]) return "mcp-server";
+
+  if (deps.next || deps.react || deps.vue || deps.svelte || deps.astro
+      || deps.gatsby || deps.nuxt || deps["@remix-run/react"] || deps.solid) {
+    return "web-app";
+  }
+
+  if (deps.express || deps.fastify || deps.koa || deps.hono
+      || deps["@nestjs/core"] || deps["@hapi/hapi"]) {
+    return "backend";
+  }
+
+  if (deps.commander || deps.yargs || deps["@oclif/core"] || deps.oclif || deps.ink) {
+    return "cli";
+  }
+
+  if (pkg.bin) return "cli";
+  if (pkg.main || pkg.exports) return "library";
+
+  return "unknown";
+}
+
+/**
+ * Detects monorepo workspace packages (npm/yarn/pnpm/bun workspaces, Turborepo, Nx).
+ * Scans common conventions (apps/*, packages/*, services/*) one level deep.
+ */
+function detectWorkspaces(root: string): WorkspacePackage[] {
+  const results: WorkspacePackage[] = [];
+  const pkg = readJsonSafe(path.join(root, "package.json"));
+  const pnpmWorkspace = readYamlLite(path.join(root, "pnpm-workspace.yaml"));
+
+  // Collect workspace patterns
+  const patterns = new Set<string>();
+  const pkgWorkspaces = pkg?.workspaces;
+  if (Array.isArray(pkgWorkspaces)) {
+    for (const p of pkgWorkspaces) if (typeof p === "string") patterns.add(p);
+  } else if (pkgWorkspaces && typeof pkgWorkspaces === "object") {
+    const packages = (pkgWorkspaces as Record<string, unknown>).packages;
+    if (Array.isArray(packages)) {
+      for (const p of packages) if (typeof p === "string") patterns.add(p);
+    }
+  }
+  if (Array.isArray(pnpmWorkspace?.packages)) {
+    for (const p of pnpmWorkspace.packages) if (typeof p === "string") patterns.add(p);
+  }
+  // Convention fallback even without explicit workspaces config
+  patterns.add("apps/*");
+  patterns.add("packages/*");
+  patterns.add("services/*");
+
+  for (const pattern of patterns) {
+    // Only handle one-level glob like "apps/*" — keep it simple, no glob lib needed
+    const match = pattern.match(/^([^*]+)\/\*$/);
+    if (!match) continue;
+    const dir = path.join(root, match[1]);
+    if (!fs.existsSync(dir)) continue;
+
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const pkgPath = path.join(dir, entry.name, "package.json");
+      const subPkg = readJsonSafe(pkgPath);
+      if (!subPkg) continue;
+      results.push({
+        path: path.relative(root, path.join(dir, entry.name)),
+        name: (subPkg.name as string) ?? entry.name,
+        framework: detectFramework(path.join(dir, entry.name)),
+      });
+    }
+  }
+
+  // Dedup by path
+  const seen = new Set<string>();
+  return results.filter((w) => {
+    if (seen.has(w.path)) return false;
+    seen.add(w.path);
+    return true;
+  });
+}
+
+// Minimal YAML reader — supports the only shape we need: "packages:" list of strings.
+// ponytail: doesn't need a YAML dep just for one file.
+function readYamlLite(filePath: string): { packages?: string[] } | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const text = fs.readFileSync(filePath, "utf-8");
+    const packages: string[] = [];
+    let inPackages = false;
+    for (const rawLine of text.split("\n")) {
+      const line = rawLine.replace(/#.*$/, "").trimEnd();
+      if (/^packages:\s*$/.test(line)) { inPackages = true; continue; }
+      if (inPackages) {
+        const m = line.match(/^\s*-\s*['"]?([^'"]+)['"]?\s*$/);
+        if (m) packages.push(m[1]);
+        else if (/^\S/.test(line)) inPackages = false;
+      }
+    }
+    return { packages };
+  } catch {
+    return null;
+  }
 }
 
 function detectTestRunner(root: string): string {

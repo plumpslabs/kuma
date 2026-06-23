@@ -45,7 +45,7 @@ describe("handleFindReferences", () => {
     });
 
     expect(result).toContain("Find References");
-    expect(result).toContain("2 referensi");
+    expect(result).toContain("2 references");
     expect(result).toContain("test.ts");
   });
 
@@ -58,7 +58,7 @@ describe("handleFindReferences", () => {
       character: 0,
     });
 
-    expect(result).toContain("Tidak ada referensi");
+    expect(result).toContain("No references found");
   });
 
   test("handles invalid file path", async () => {
@@ -103,7 +103,7 @@ describe("handleGoToDefinition", () => {
       character: 0,
     });
 
-    expect(result).toContain("Tidak dapat menemukan definisi");
+    expect(result).toContain("Cannot find definition");
   });
 });
 
@@ -136,7 +136,7 @@ describe("handleRenameSymbol", () => {
 
     expect(result).toContain("Rename Symbol");
     expect(result).toContain("✅");
-    expect(result).toContain("2 perubahan");
+    expect(result).toContain("2 changes");
     expect(result).toContain("other.ts");
     expect(result).toContain("test.ts");
   });
@@ -167,7 +167,7 @@ describe("handleRenameSymbol", () => {
       newName: "newName",
     });
 
-    expect(result).toContain("gagal");
+    expect(result).toContain("failed");
     expect(result).toContain("Symbol not renomable");
   });
 });
@@ -187,7 +187,7 @@ describe("handleGetTypeInfo", () => {
 
     expect(result).toContain("Type Info");
     expect(result).toContain("const x: number");
-    expect(result).toContain("Cakupan");
+    expect(result).toContain("Range");
   });
 
   test("handles null hover result", async () => {
@@ -229,7 +229,7 @@ describe("handleLspQuery", () => {
       character: 0,
       action: "refs",
     });
-    expect(resRefs).toContain("Tidak ada referensi");
+    expect(resRefs).toContain("No references found");
 
     const resType = await handleLspQuery({
       filePath: "src/test.ts",
@@ -247,7 +247,7 @@ describe("handleLspQuery", () => {
       character: 0,
       action: "unknown" as any,
     });
-    expect(result).toContain("tidak didukung");
+    expect(result).toContain("not supported");
   });
 });
 

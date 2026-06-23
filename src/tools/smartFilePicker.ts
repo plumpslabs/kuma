@@ -4,7 +4,7 @@ import { truncateToTokenLimit } from "../utils/tokenCounter.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
-// SMART FILE PICKER — File reader dengan chunking cerdas
+// SMART FILE PICKER — File reader with smart chunking
 // ============================================================
 
 interface SmartFilePickerParams {
@@ -15,12 +15,12 @@ interface SmartFilePickerParams {
 }
 
 const MAX_FILE_SIZE = 1_000_000; // 1MB
-const CHUNK_THRESHOLD = 300; // Baris
+const CHUNK_THRESHOLD = 300; // lines
 
 export async function handleSmartFilePicker(params: SmartFilePickerParams): Promise<string> {
   const { filePath, startLine, endLine, chunkStrategy = "smart" } = params;
 
-  // Validasi path
+  // Path validation
   const validation = validateFilePath(filePath);
   if (!validation.valid) {
     return `Error: ${validation.error.message}`;
@@ -28,16 +28,16 @@ export async function handleSmartFilePicker(params: SmartFilePickerParams): Prom
 
   const resolvedPath = validation.resolvedPath;
 
-  // Cek file exists
+  // Check file exists
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File tidak ditemukan: "${filePath}".\nCoba gunakan smart_grep dulu untuk mencari file yang benar.`;
+    return `Error: File not found: "${filePath}".\nTry smart_grep first to locate the correct file.`;
   }
 
   const stat = fs.statSync(resolvedPath);
 
-  // Cek file size
+  // Check file size
   if (stat.size > MAX_FILE_SIZE) {
-    return `Error: File terlalu besar (${(stat.size / 1024 / 1024).toFixed(1)}MB). Maks 1MB.\nGunakan smart_grep untuk mencari konten spesifik.`;
+    return `Error: File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB). Max 1MB.\nUse smart_grep to find specific content instead.`;
   }
 
   try {
@@ -45,10 +45,9 @@ export async function handleSmartFilePicker(params: SmartFilePickerParams): Prom
     const lines = content.split("\n");
     const totalLines = lines.length;
 
-    // Record ke session memory
     sessionMemory.recordToolCall("smart_file_picker", { filePath, chunkStrategy, totalLines });
 
-    // Jika ada range spesifik (startLine - endLine)
+    // Explicit range
     if (startLine !== undefined || endLine !== undefined) {
       const start = startLine ?? 1;
       const end = endLine ?? totalLines;
@@ -56,12 +55,12 @@ export async function handleSmartFilePicker(params: SmartFilePickerParams): Prom
       return formatOutput(filePath, selectedLines, start, totalLines, false);
     }
 
-    // Jika file kecil, kirim full
+    // Small file: send full
     if (totalLines <= CHUNK_THRESHOLD || chunkStrategy === "full") {
       return formatOutput(filePath, lines, 1, totalLines, false);
     }
 
-    // Chunking berdasarkan strategi
+    // Chunking strategy
     switch (chunkStrategy) {
       case "outline":
         return handleOutlineStrategy(filePath, lines, totalLines);
@@ -71,7 +70,7 @@ export async function handleSmartFilePicker(params: SmartFilePickerParams): Prom
         return formatOutput(filePath, lines.slice(0, CHUNK_THRESHOLD), 1, totalLines, true);
     }
   } catch (err) {
-    return `Error membaca file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
+    return `Error reading file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -84,8 +83,8 @@ function formatOutput(
 ): string {
   const header = [
     `📄 File: ${filePath}`,
-    `📏 ${totalLines} baris total`,
-    truncated ? `⚠️ Ditampilkan ${lines.length} baris (file >${CHUNK_THRESHOLD} baris). Gunakan startLine/endLine untuk range spesifik.` : "",
+    `📏 ${totalLines} total lines`,
+    truncated ? `⚠️ Showing ${lines.length} lines (file >${CHUNK_THRESHOLD} lines). Use startLine/endLine for a specific range.` : "",
     "",
   ]
     .filter(Boolean)
@@ -100,7 +99,7 @@ function formatOutput(
 
   const full = `${header}\n${body}`;
 
-  // Batasi total output (anti token explosion)
+  // Limit total output (anti token explosion)
   return truncateToTokenLimit(full, 2000);
 }
 
@@ -109,7 +108,7 @@ async function handleOutlineStrategy(
   lines: string[],
   totalLines: number
 ): Promise<string> {
-  // Outline: cuma exported symbols + imports
+  // Outline: only imports + exported symbols
   const importLines: string[] = [];
   const exportLines: Array<{ line: number; text: string }> = [];
 
@@ -146,17 +145,17 @@ async function handleOutlineStrategy(
 
   const result = [
     `📄 File: ${filePath}`,
-    `📏 ${totalLines} baris total (OUTLINE MODE — hanya signatures & imports)`,
+    `📏 ${totalLines} total lines (OUTLINE MODE — signatures & imports only)`,
     "",
     "📥 Imports:",
     ...importLines.slice(0, 30).map((l) => `  ${l.substring(0, 150)}`),
-    importLines.length > 30 ? `  ...dan ${importLines.length - 30} imports lainnya` : "",
+    importLines.length > 30 ? `  ...and ${importLines.length - 30} more imports` : "",
     "",
     "📤 Exports & Declarations:",
     ...exportLines.map((e) => `  [L${e.line}] ${e.text}`),
     "",
-    `💡 Gunakan smart_file_picker dengan startLine/endLine untuk membaca bagian spesifik.`,
-    `💡 Atau gunakan chunkStrategy: "full" untuk membaca seluruh file.`,
+    `💡 Pass startLine/endLine to read a specific range.`,
+    `💡 Or use chunkStrategy: "full" to read the entire file.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -169,23 +168,23 @@ async function handleSmartStrategy(
   lines: string[],
   totalLines: number
 ): Promise<string> {
-  // Smart: kirim baris pertama (imports, headers) + signatures + baris terakhir
-  // Ini ngasih AI cukup konteks tanpa overload
+  // Smart: send header (imports) + key signatures + tail
+  // Gives the model enough context without overloading tokens
 
   const headerEnd = Math.min(findHeaderEnd(lines), 50);
   const tailStart = Math.max(totalLines - 30, headerEnd);
 
   const smartLines: Array<{ line: number; text: string }> = [];
 
-  // Header (imports, interfaces awal)
+  // Header (imports, early interfaces)
   for (let i = 0; i < headerEnd; i++) {
     smartLines.push({ line: i + 1, text: lines[i] });
   }
 
-  // Function/class signatures dari middle
+  // Function/class signatures from the middle
   if (headerEnd < tailStart) {
     smartLines.push({ line: -1, text: "" });
-    smartLines.push({ line: -1, text: `  ... ${tailStart - headerEnd} baris disembunyikan ...` });
+    smartLines.push({ line: -1, text: `  ... ${tailStart - headerEnd} lines hidden ...` });
     smartLines.push({ line: -1, text: "" });
   }
 
@@ -206,9 +205,9 @@ async function handleSmartStrategy(
 
   const header = [
     `📄 File: ${filePath}`,
-    `📏 ${totalLines} baris total (SMART MODE — header + signatures + tail)`,
-    `💡 Gunakan startLine/endLine untuk membaca range baris tertentu.`,
-    `💡 Atau chunkStrategy: "full" untuk membaca seluruh file.`,
+    `📏 ${totalLines} total lines (SMART MODE — header + signatures + tail)`,
+    `💡 Pass startLine/endLine to read a specific range.`,
+    `💡 Or use chunkStrategy: "full" to read the entire file.`,
     "",
   ].join("\n");
 
@@ -224,7 +223,7 @@ async function handleSmartStrategy(
 }
 
 function findHeaderEnd(lines: string[]): number {
-  // Cari akhir dari blok imports/header
+  // Find the end of the imports/header block
   let lastImportLine = 0;
   for (let i = 0; i < Math.min(lines.length, 80); i++) {
     const line = lines[i].trim();

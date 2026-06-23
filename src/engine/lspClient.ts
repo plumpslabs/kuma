@@ -45,7 +45,7 @@ class LSPClient {
   private openDocuments = new Set<string>();
   private _isAvailable = true;
 
-  /** Cek apakah LSP tersedia (binary terinstall) */
+  /** Check whether LSP is available (binary installed) */
   isAvailable(): boolean {
     return this._isAvailable;
   }

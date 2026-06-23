@@ -52,7 +52,7 @@ describe("handleSmartFilePicker — path resolution", () => {
   test("returns error for non-existent file", async () => {
     const result = await handleSmartFilePicker({ filePath: "nonexistent.ts" });
     expect(result).toContain("Error");
-    expect(result).toContain("tidak ditemukan");
+    expect(result).toContain("not found");
   });
 
   test("returns error for path traversal", async () => {
@@ -97,7 +97,7 @@ describe("handleSmartFilePicker — chunk strategies", () => {
 
   test("full strategy reads entire file", async () => {
     const result = await handleSmartFilePicker({ filePath: "large.ts", chunkStrategy: "full" });
-    expect(result).toContain("500 baris total");
+    expect(result).toContain("500 total lines");
     expect(result).toContain("handler50");
   });
 

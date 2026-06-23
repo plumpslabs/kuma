@@ -4,7 +4,7 @@ import { circuitBreaker } from "../utils/errorHandler.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
-// SAFE TERMINAL EXEC — Eksekutor terminal aman
+// SAFE TERMINAL EXEC — Sandboxed terminal runner
 // ============================================================
 
 interface TerminalExecParams {
@@ -13,7 +13,7 @@ interface TerminalExecParams {
   timeout?: number;
 }
 
-// Map tugas ke command
+// Map task → command
 const TASK_COMMANDS: Record<string, string> = {
   test: "npm test",
   build: "npm run build",
@@ -47,7 +47,7 @@ export async function handleSafeTerminalExec(params: TerminalExecParams): Promis
 
   // Validate task
   if (task === "custom" && !customCommand) {
-    return "Error: Task 'custom' membutuhkan parameter 'customCommand'.";
+    return "Error: Task 'custom' requires the 'customCommand' parameter.";
   }
 
   // Build command
@@ -61,13 +61,13 @@ export async function handleSafeTerminalExec(params: TerminalExecParams): Promis
   // Check circuit breaker
   const cbResult = circuitBreaker.check("safe_terminal_exec", { task, command });
   if (!cbResult.allowed) {
-    return `⚠️ Circuit breaker: ${cbResult.reason}\n\nCoba perbaiki kode dulu sebelum menjalankan task lagi.`;
+    return `⚠️ Circuit breaker: ${cbResult.reason}\n\nFix the code first before running the task again.`;
   }
 
   // Check dangerous patterns
   const dangerousPattern = DANGEROUS_PATTERNS.find((p) => command.toLowerCase().includes(p.toLowerCase()));
   if (dangerousPattern) {
-    return `🚫 BLOCKED: Command mengandung pola berbahaya "${dangerousPattern}".\nPerintah ini tidak diizinkan demi keamanan.`;
+    return `🚫 BLOCKED: Command contains a dangerous pattern: "${dangerousPattern}".\nThis command is not permitted.`;
   }
 
   const projectRoot = getProjectRoot();
@@ -95,7 +95,7 @@ export async function handleSafeTerminalExec(params: TerminalExecParams): Promis
       return formatTimeoutResult(command, timeout);
     }
 
-    return `Error saat menjalankan "${command}": ${errorMsg}`;
+    return `Error running "${command}": ${errorMsg}`;
   }
 }
 
@@ -192,14 +192,14 @@ function formatExecResult(result: ExecResult, command: string, task: string): st
 
   if (result.exitCode !== 0) {
     lines.push(
-      "💡 Recovery saran:",
-      "  1. Baca error di atas — file mana yang error?",
-      "  2. Gunakan smart_file_picker untuk baca file yang error",
-      "  3. Perbaiki dengan precise_diff_editor",
-      "  4. Jalankan task lagi untuk verifikasi",
+      "💡 Recovery steps:",
+      "  1. Read the error above — which file is failing?",
+      "  2. Use smart_file_picker to open the failing file",
+      "  3. Fix it with precise_diff_editor",
+      "  4. Re-run the task to verify",
     );
   } else {
-    lines.push("✅ Semua test lulus.");
+    lines.push("✅ All checks passed.");
   }
 
   return lines.join("\n");
@@ -207,16 +207,16 @@ function formatExecResult(result: ExecResult, command: string, task: string): st
 
 function formatTimeoutResult(command: string, timeout: number): string {
   return [
-    `⏰ TIMEOUT — "${command}" melebihi batas ${timeout} detik.`,
+    `⏰ TIMEOUT — "${command}" exceeded the ${timeout}s limit.`,
     "",
-    "Kemungkinan penyebab:",
-    "  1. Infinite loop di kode",
-    "  2. Test terlalu lambat (butuh optimasi)",
+    "Possible causes:",
+    "  1. Infinite loop in code",
+    "  2. Test suite too slow (needs optimization)",
     "  3. Background process blocking",
     "",
-    "Saran:",
-    "  - Cek kode untuk infinite loop",
-    "  - Tambah timeout lebih besar (max 180s)",
-    "  - Jalankan di terminal manual untuk test",
+    "Suggestions:",
+    "  - Inspect the code for infinite loops",
+    "  - Increase the timeout (max 180s)",
+    "  - Run the command manually for diagnostics",
   ].join("\n");
 }

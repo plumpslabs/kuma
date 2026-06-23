@@ -1,8 +1,8 @@
 /**
  * 🏗️ CORE TYPE DEFINITIONS
  * 
- * Semua tipe yang dipake di seluruh engine.
- * SINGLE SOURCE OF TRUTH — jangan duplikasi di file lain!
+ * All types used across the engine.
+ * SINGLE SOURCE OF TRUTH — do not duplicate in other files!
  */
 
 // ============================================================
@@ -12,23 +12,23 @@
 export interface ToolDefinition {
   name: string;
   description: string;
-  /** JSON Schema untuk validasi parameter input */
+  /** JSON Schema for input parameter validation */
   inputSchema: {
     type: "object";
     properties: Record<string, SchemaProperty>;
     required?: string[];
   };
-  /** Fungsi handler yang dieksekusi */
+  /** Handler function to execute */
   handler: (params: Record<string, unknown>) => Promise<unknown>;
   /** 
-   * Kategori tool — untuk grouping di MCP dan logging.
-   * "context" = ngumpulin info (grep, pick, research)
-   * "execution" = ngeubah file (diff, write)
-   * "validation" = ngetes (test, lint, review)
+   * Tool category — for MCP grouping and logging.
+   * "context" = gathers info (grep, pick, research)
+   * "execution" = modifies files (diff, write)
+   * "validation" = tests (test, lint, review)
    * "system" = internal (memory, convention)
    */
   category: "context" | "execution" | "validation" | "system";
-  /** Estimasi berat tool dalam token (untuk rate limiting) */
+  /** Estimated tool weight in tokens (for rate limiting) */
   weight: "light" | "medium" | "heavy";
 }
 
@@ -37,12 +37,12 @@ export interface SchemaProperty {
   description?: string;
   enum?: string[];
   default?: unknown;
-  /** Regex pattern untuk validasi string */
+  /** Regex pattern for string validation */
   pattern?: string;
-  /** Min/max untuk number */
+  /** Min/max for number */
   minimum?: number;
   maximum?: number;
-  /** Untuk array: tipe item di dalamnya */
+  /** For array: type of items within */
   items?: SchemaProperty;
 }
 
@@ -52,32 +52,32 @@ export interface SchemaProperty {
 // ============================================================
 
 /**
- * Sebuah "Agent" adalah task dengan konteks.
- * Beda dari Tool: Agent punya prompt dan tujuan spesifik.
+ * An "Agent" is a task with context.
+ * Different from Tool: Agent has a prompt and specific goal.
  * 
- * Orchestrator bisa spawn MULTIPLE agents secara PARALLEL.
- * Setiap agent punya 1 tool call + 1 tujuan.
+ * Orchestrator can spawn MULTIPLE agents in PARALLEL.
+ * Each agent has 1 tool call + 1 goal.
  */
 export interface AgentDefinition {
-  /** Nama agent (untuk logging dan debugging) */
+  /** Agent name (for logging and debugging) */
   name: string;
-  /** Tujuan agent — apa yang harus dicapai */
+  /** Agent goal — what must be achieved */
   goal: string;
-  /** Tool yang dipanggil agent ini */
+  /** Tool this agent calls */
   toolName: string;
-  /** Parameter untuk tool tersebut */
+  /** Parameters for that tool */
   params: Record<string, unknown>;
-  /** Prioritas */
+  /** Priority */
   priority: AgentPriority;
   /** 
-   * Apakah agent ini WAJIB berhasil?
-   * Kalau critical gagal → orchestrator stop semua
+   * Is this agent CRITICAL?
+   * If critical fails → orchestrator stops all
    */
   critical: boolean;
   /**
-   * Apakah hasil agent ini perlu di-summarize?
+   * Should this agent's result be summarized?
    * light = compressed summary only
-   * full = full result dikirim
+   * full = full result sent
    */
   responseMode: "light" | "full";
 }
@@ -85,8 +85,8 @@ export interface AgentDefinition {
 export type AgentPriority = "high" | "normal" | "low";
 
 /**
- * Template untuk mendefinisikan agent secara deklaratif.
- * Ini yang dipake AI untuk milih agent apa yang mau di-spawn.
+ * Template for declaratively defining agents.
+ * Used by AI to choose which agent to spawn.
  */
 export interface AgentTemplate {
   name: string;
@@ -96,7 +96,7 @@ export interface AgentTemplate {
   priority: AgentPriority;
   critical: boolean;
   responseMode: "light" | "full";
-  /** Kapan agent ini cocok dipake */
+  /** When this agent is suitable to use */
   useCases: string[];
 }
 
@@ -106,10 +106,10 @@ export interface AgentTemplate {
 // ============================================================
 
 /**
- * WORKFLOW TEMPLATES — Blueprint untuk workflow yang sering dipake.
- * AI gak perlu nulis plan dari nol setiap kali — tinggal pilih template.
+ * WORKFLOW TEMPLATES — Blueprint for commonly used workflows.
+ * AI does not need to write plans from scratch every time — just pick a template.
  * 
- * Contoh:
+ * Examples:
  * - "debug_error" → grep error → pick file → review → fix
  * - "implement_feature" → conventions → grep existing → pick → write → test
  * - "refactor" → grep usage → pick files → diff edit → test
@@ -117,102 +117,102 @@ export interface AgentTemplate {
 export interface WorkflowTemplate {
   name: string;
   description: string;
-  /** Parameter yang bisa dikustomisasi */
+  /** Customizable parameters */
   parameters: Record<string, SchemaProperty>;
-  /** Fungsi untuk generate ExecutionPlan dari parameter */
+  /** Function to generate ExecutionPlan from parameters */
   generatePlan: (params: Record<string, unknown>) => ExecutionPlan;
 }
 
 /**
  * ===== EXECUTION PLAN =====
- * Rencana eksekusi yang dikirim oleh AI ke orchestrator.
+ * Execution plan sent by AI to the orchestrator.
  * 
- * AI bisa request:
- * 1. Beberapa tools jalan parallel (parallel)
- * 2. Beberapa tools jalan berurutan (serial)
- * 3. Multi-phase: phase 1 parallel, lalu phase 2 parallel (phases)
+ * AI can request:
+ * 1. Multiple tools running in parallel
+ * 2. Multiple tools running sequentially (serial)
+ * 3. Multi-phase: phase 1 parallel, then phase 2 parallel (phases)
  * 
- * INI ADALAH SINGLE SOURCE OF TRUTH.
- * Jangan definisikan ulang di file lain!
+ * THIS IS THE SINGLE SOURCE OF TRUTH.
+ * Do not redefine in other files!
  */
 export interface ExecutionPlan {
-  /** Judul singkat dari rencana ini (untuk logging) */
+  /** Short title of this plan (for logging) */
   title: string;
-  /** Workflow yang akan dieksekusi */
+  /** Workflow to execute */
   workflow: Workflow;
   /** 
-   * Strategi jika ada task yang gagal:
-   * "fail_fast" = batalkan semua kalau ada satu gagal
-   * "continue" = lanjutkan task lain, kumpulin error
-   * "retry" = coba ulang task yang gagal (maxRetries kali)
+   * Strategy if a task fails:
+   * "fail_fast" = cancel all if one fails
+   * "continue" = continue other tasks, collect errors
+   * "retry" = retry failed tasks (maxRetries times)
    */
   onError: "fail_fast" | "continue" | "retry";
-  /** Maks percobaan ulang (default: 2) */
+  /** Max retries (default: 2) */
   maxRetries: number;
-  /** Timeout total untuk semua task (ms). Default: 60000 */
+  /** Total timeout for all tasks (ms). Default: 60000 */
   globalTimeoutMs: number;
 }
 
 /**
- * Sebuah task adalah satu panggilan tool yang akan dieksekusi.
- * Ini adalah "sub-agent" — agent kecil yang specialized untuk satu tugas.
+ * A task is a single tool call to be executed.
+ * This is a "sub-agent" — a small agent specialized for one task.
  */
 export interface Task {
-  /** ID unik untuk task ini (biar bisa di-refer di result) */
+  /** Unique ID for this task (so it can be referenced in results) */
   id: string;
-  /** Nama tool yang mau dipanggil (harus terdaftar di registry) */
+  /** Tool name to call (must be registered in the registry) */
   tool: string;
-  /** Parameter untuk tool tersebut */
+  /** Parameters for that tool */
   params: Record<string, unknown>;
   /** 
-   * Priority: "high" = eksekusi duluan 
+   * Priority: "high" = execute first 
    * "normal" = default
-   * "low" = boleh ditunda
+   * "low" = can be deferred
    */
   priority?: AgentPriority;
   /** Timeout per-task (ms). Default: 15000 */
   timeoutMs?: number;
   /** 
-   * Dependency: task ini gak jalan sampe task_id di dependency selesai.
-   * Ini yang bikin kita bisa bikin workflow SEQUENTIAL di dalam PARALLEL.
+   * Dependency: this task does not run until task_id in dependency completes.
+   * This is how we create SEQUENTIAL workflows inside PARALLEL.
    */
   dependsOn?: string[];
   /**
-   * Apakah task ini critical? Kalau critical gagal → orchestrator stop.
+   * Is this task critical? If critical fails → orchestrator stops.
    * Default: false
    */
   critical?: boolean;
 }
 
 /**
- * Workflow menentukan URUTAN dan PARALELITAS dari tasks.
+ * Workflow determines ORDER and PARALLELISM of tasks.
  * 
- * Contoh:
+ * Example:
  * {
  *   parallel: [
  *     { id: "grep-1", tool: "smart_grep", params: { query: "auth" } },
  *     { id: "grep-2", tool: "smart_grep", params: { query: "user" } },
  *   ],
  *   serial: [
- *     // Task di sini jalan SETELAH semua parallel selesai
+ *     // Tasks here run AFTER all parallel tasks complete
  *     { id: "synthesis", tool: "llm_synthesize", params: { ... }, dependsOn: ["grep-1", "grep-2"] }
  *   ]
  * }
  */
 export interface Workflow {
-  /** Task-task yang bisa jalan BERSAMAAN (parallel) */
+  /** Tasks that can run TOGETHER (parallel) */
   parallel?: Task[];
-  /** Task-task yang jalan BERURUTAN setelah parallel selesai */
+  /** Tasks that run SEQUENTIALLY after parallel tasks complete */
   serial?: Task[];
   /**
-   * Multi-phase parallel: array of parallel groups yang jalan berurutan.
-   * Phase 1 jalan duluan, setelah selesai Phase 2 jalan, dst.
-   * Ini untuk kasus: "cari file dulu (phase1), baru baca isinya (phase2)"
+   * Multi-phase parallel: array of parallel groups running sequentially.
+   * Phase 1 runs first, after completion Phase 2 runs, etc.
+   * For cases: "search files first (phase1), then read content (phase2)"
    */
   phases?: Task[][];
   /**
-   * Maksimal jumlah task yang jalan BERSAMAAN dalam satu phase.
-   * Default: 5 — mencegah overload Promise.all dengan 50 task.
+   * Maximum number of tasks running TOGETHER in one phase.
+   * Default: 5 — prevents Promise.all overload with 50 tasks.
    */
   concurrency?: number;
 }
@@ -232,9 +232,9 @@ export interface TaskResult {
     code: string;
     recoverable: boolean;
   };
-  /** Waktu eksekusi dalam ms */
+  /** Execution time in ms */
   durationMs: number;
-  /** Percobaan ke berapa (0 = pertama) */
+  /** Attempt number (0 = first) */
   attempt: number;
 }
 
@@ -250,7 +250,7 @@ export interface ExecutionReport {
     skipped: number;
     totalDurationMs: number;
   };
-  /** Ringkasan untuk AI (harus hemat token!) */
+  /** Summary for AI (must be token-efficient!) */
   compressedSummary: string;
 }
 
@@ -261,21 +261,21 @@ export interface ExecutionReport {
 
 export interface SessionMemory {
   sessionId: string;
-  /** File yang udah diubah */
+  /** Files that have been modified */
   filesModified: ModifiedFile[];
-  /** File yang gagal test */
+  /** Files that failed tests */
   filesFailed: FailedFile[];
-  /** History eksekusi */
+  /** Execution history */
   executionHistory: ExecutionHistoryEntry[];
   /** 
-   * Graph dependency antar file.
-   * Record (bukan Map!) biar gampang di-serialize ke JSON.
-   * Contoh: { "auth.ts": ["user.ts", "db.ts"], "user.ts": ["types.ts"] }
+   * File dependency graph.
+   * Record (not Map!) so it serializes easily to JSON.
+   * Example: { "auth.ts": ["user.ts", "db.ts"], "user.ts": ["types.ts"] }
    */
   dependencyGraph: Record<string, string[]>;
-  /** Goal yang sedang dikerjakan */
+  /** Current goal being worked on */
   currentGoal: string;
-  /** Langkah-langkah yang udah selesai */
+  /** Completed steps */
   completedSteps: string[];
   /** Token tracker */
   tokenUsage: TokenUsage;
@@ -334,24 +334,24 @@ export interface ProjectConventions {
 // ============================================================
 
 export type ErrorCategory =
-  | "DIFF_MISMATCH"      // searchBlock gak cocok di file
+  | "DIFF_MISMATCH"      // searchBlock does not match file
   | "TIMEOUT"            // tool timeout
-  | "VALIDATION"         // parameter validation gagal
-  | "TEST_FAILURE"       // test/typecheck gagal
-  | "NOT_FOUND"          // file/pattern gak ditemukan
-  | "PERMISSION_DENIED"  // akses path dilarang
+  | "VALIDATION"         // parameter validation failed
+  | "TEST_FAILURE"       // test/typecheck failed
+  | "NOT_FOUND"          // file/pattern not found
+  | "PERMISSION_DENIED"  // path access denied
   | "TOOL_CRASH"         // tool internal error
-  | "ABORTED"            // dibatalkan user/system
-  | "LOOP_DETECTED"      // circuit breaker aktif
-  | "UNKNOWN_ERROR";     // error gak dikenal
+  | "ABORTED"            // cancelled by user/system
+  | "LOOP_DETECTED"      // circuit breaker active
+  | "UNKNOWN_ERROR";     // unknown error
 
 export interface AgentError {
   category: ErrorCategory;
   message: string;
   severity: "low" | "medium" | "critical";
   recoverable: boolean;
-  /** Saran perbaikan untuk AI */
+  /** Fix suggestion for AI */
   suggestion?: string;
-  /** Konteks tambahan */
+  /** Additional context */
   context?: Record<string, unknown>;
 }

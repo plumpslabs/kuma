@@ -17,8 +17,10 @@ interface DiffEdit {
 
 interface DiffEditorParams {
   filePath: string;
-  edits: DiffEdit[];
+  action?: "rollback";
+  edits?: DiffEdit[];
   dryRun?: boolean;
+  version?: number | 'list';
 }
 
 interface DiffResult {
@@ -31,7 +33,15 @@ interface DiffResult {
 }
 
 export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise<string> {
-  const { filePath, edits, dryRun = false } = params;
+  const { filePath, edits, dryRun = false, action } = params;
+
+  if (action === "rollback") {
+    return handleRollbackEdit({ filePath, version: params.version });
+  }
+
+  if (!edits || edits.length === 0) {
+    return "Error: 'edits' required for edit mode, or use action: 'rollback' for rollback.";
+  }
 
   // Validate path
   const validation = validateFilePath(filePath);
@@ -41,15 +51,15 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
 
   const resolvedPath = validation.resolvedPath;
 
-  // Cek circuit breaker
+  // Check circuit breaker
   const cbResult = circuitBreaker.check("precise_diff_editor", { filePath });
   if (!cbResult.allowed) {
-    return `⚠️ ${cbResult.reason}\n\nCoba baca file dulu dengan smart_file_picker untuk verifikasi konten terkini.`;
+    return `⚠️ ${cbResult.reason}\n\nTry reading the file first with smart_file_picker to verify current content.`;
   }
 
-  // Cek file exists
+  // Check file exists
   if (!fs.existsSync(resolvedPath)) {
-    return `Error: File tidak ditemukan: "${filePath}".\nGunakan batch_file_writer untuk membuat file baru.`;
+    return `Error: File not found: "${filePath}".\nUse batch_file_writer to create a new file.`;
   }
 
   try {
@@ -89,7 +99,7 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
     }
     return formatDiffResult(results, filePath);
   } catch (err) {
-    return `Error saat mengedit file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
+    return `Error editing file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -176,10 +186,10 @@ export function applyEdit(
     success: false,
     matched: 0,
     replaced: 0,
-    error: `DIFF_MISMATCH: searchBlock tidak ditemukan di file "${filePath}" (edit #${editIndex + 1}).`,
+    error: `DIFF_MISMATCH: searchBlock not found in file "${filePath}" (edit #${editIndex + 1}).`,
     details: nearestLine
-      ? `Baris terdekat dengan konten mirip ditemukan di line ${nearestLine.line}:\n\`\`\`\n${nearestLine.content}\n\`\`\`\nPeriksa apakah:\n1. Spasi/indentasi sudah pas (coba match dengan 1:1)\n2. Isi searchBlock persis sama dengan yang ada di file\n3. File belum diubah oleh edit sebelumnya\n\n💡 Baca file dulu dengan smart_file_picker untuk verifikasi konten terkini.`
-      : "Tidak ada baris yang mirip. File mungkin memiliki konten yang sangat berbeda dari yang diharapkan.",
+      ? `Nearest line with similar content found at line ${nearestLine.line}:\n\`\`\`\n${nearestLine.content}\n\`\`\`\nCheck whether:\n1. Spacing/indentation matches (try 1:1 matching)\n2. searchBlock content is exactly the same as what's in the file\n3. File was not modified by a previous edit\n\n💡 Read the file first with smart_file_picker to verify current content.`
+      : "No similar lines found. The file may have completely different content than expected.",
   };
 }
 
@@ -204,7 +214,7 @@ export function replaceAll(content: string, search: string, replace: string): st
 
 /**
  * Per-line whitespace normalization that preserves line count.
- * Unlike normalizeWhitespace, this doesn't collapse blank lines or trim trailing \n,
+ * Unlike normalizeWhitespace, this does not collapse blank lines or trim trailing \n,
  * so line indices stay consistent for mapping back to original content.
  */
 function normalizeLines(text: string): string[] {
@@ -352,7 +362,7 @@ function createBackup(filePath: string): string {
 function formatDryRunResult(results: DiffResult[], filePath: string, originalContent: string): string {
   const lines: string[] = [
     `🔍 **DRY RUN** — ${filePath}`,
-    `⚠️ File tidak diubah (dryRun=true). Berikut preview perubahan dari ${results.length} edit:`,
+    `⚠️ File not modified (dryRun=true). Preview of changes from ${results.length} edits:`,
     "",
   ];
 
@@ -432,11 +442,11 @@ function formatDryRunResult(results: DiffResult[], filePath: string, originalCon
   const origLineCount = originalContent.split("\n").length;
   const diff = finalLines.length - origLineCount;
   const sign = diff >= 0 ? "+" : "";
-  lines.push(`📊 **Net perubahan:** ${sign}${diff} baris (${origLineCount} → ${finalLines.length})`);
+  lines.push(`📊 **Net change:** ${sign}${diff} lines (${origLineCount} → ${finalLines.length})`);
 
   lines.push(
     "",
-    `💡 **Hilangkan dryRun** atau set \`dryRun: false\` untuk menulis perubahan ke file.`,
+    `💡 **Remove dryRun** or set \`dryRun: false\` to write changes to file.`,
   );
 
   return lines.join("\n");
@@ -446,9 +456,15 @@ function formatDiffResult(results: DiffResult[], filePath: string): string {
   const successCount = results.filter((r) => r.success).length;
   const failCount = results.filter((r) => !r.success).length;
 
+  // Ladder hint: show only on first edit per session
+  const history = sessionMemory.getToolCallHistory(50);
+  const callCount = history.filter((c) => c.toolName === "precise_diff_editor").length;
+  const isFirstEdit = callCount <= 1; // 1 = current call only, 0 = not recorded yet
+
   const lines: string[] = [
+    ...(isFirstEdit ? ["💡 **The Ladder:** 1. Does this code need to exist? 2. Does stdlib cover it? 3. Is there a one-liner? 4. Only then, write it.\n"] : []),
     `📝 Diff Editor — ${filePath}`,
-    `✅ ${successCount} edit berhasil | ❌ ${failCount} edit gagal`,
+    `✅ ${successCount} edits successful | ❌ ${failCount} edits failed`,
     "",
   ];
 
@@ -471,8 +487,8 @@ function formatDiffResult(results: DiffResult[], filePath: string): string {
 
   lines.push(
     "",
-    `💡 Gunakan smart_file_picker untuk membaca file dan verifikasi hasil edit.`,
-    `💡 Atau execute_safe_test({task: "typecheck"}) untuk cek apakah edit tidak merusak.`,
+    `💡 Use smart_file_picker to read the file and verify edit results.`,
+    `💡 Or execute_safe_test({task: "typecheck"}) to check if edits broke anything.`,
   );
 
   return lines.join("\n");
@@ -504,7 +520,7 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
   const backupRoot = path.join(root, ".agent-backups");
 
   if (!fs.existsSync(backupRoot)) {
-    return `Error: Tidak ada folder backup (.agent-backups) ditemukan di project root.`;
+    return `Error: No backup folder (.agent-backups) found in project root.`;
   }
 
   try {
@@ -515,7 +531,7 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
     });
 
     if (dirs.length === 0) {
-      return `Error: Tidak ada backup yang valid di folder .agent-backups.`;
+      return `Error: No valid backup found in .agent-backups folder.`;
     }
 
     // Sort directories by timestamp descending (newest first)
@@ -531,7 +547,7 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
     }
 
     if (backupVersions.length === 0) {
-      return `Error: Tidak ada riwayat backup ditemukan untuk file "${filePath}".`;
+      return `Error: No backup history found for file "${filePath}".`;
     }
 
     // Handle version === 'list': return formatted list of all versions
@@ -552,7 +568,7 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
     let selectedIndex = 0; // default: newest (index 0)
     if (typeof version === 'number') {
       if (version < 1 || version > backupVersions.length) {
-        return `Error: Version ${version} tidak valid. Tersedia ${backupVersions.length} backup (1-${backupVersions.length}).`;
+        return `Error: Version ${version} is invalid. ${backupVersions.length} backups available (1-${backupVersions.length}).`;
       }
       selectedIndex = version - 1; // 1-indexed to 0-indexed
     }
@@ -571,8 +587,8 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
     });
 
     const relBackupPath = path.relative(root, selected.backupPath);
-    return `✅ Rollback Berhasil!\nFile "${filePath}" telah dikembalikan ke kondisi cadangan dari: "${relBackupPath}".`;
+    return `✅ Rollback Successful!\nFile "${filePath}" restored from backup: "${relBackupPath}".`;
   } catch (err) {
-    return `Error saat melakukan rollback untuk "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
+    return `Error performing rollback for "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
   }
 }

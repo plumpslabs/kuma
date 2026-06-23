@@ -229,15 +229,15 @@ describe("SessionMemory", () => {
     });
   });
   // ============================================================
-  // MIGRATION (session.json → .kuma-memory.json)
+  // MIGRATION (session.json → memory.json)
   // ============================================================
   describe("migration", () => {
-    test("renames old session.json to .kuma-memory.json during init", () => {
+    test("renames old session.json to memory.json during init", () => {
       const renameSpy = jest.spyOn(fs, "renameSync").mockImplementation(() => {});
 
-      // existsSync returns: true for old file, false for new file
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => {
         if (typeof p === "string" && p.endsWith("session.json")) return true;
+        if (typeof p === "string" && p.endsWith("memory.json")) return false;
         if (typeof p === "string" && p.endsWith(".kuma-memory.json")) return false;
         return false;
       });
@@ -247,7 +247,7 @@ describe("SessionMemory", () => {
 
       expect(renameSpy).toHaveBeenCalledWith(
         expect.stringContaining("session.json"),
-        expect.stringContaining(".kuma-memory.json"),
+        expect.stringContaining("memory.json"),
       );
       expect(console.error).toHaveBeenCalledWith(
         expect.stringContaining("Migrated session.json"),

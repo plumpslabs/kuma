@@ -3,17 +3,17 @@
 // ============================================================
 
 export type ErrorType =
-  | "DIFF_MISMATCH"      // searchBlock gak cocok di file
+  | "DIFF_MISMATCH"      // searchBlock does not match file
   | "TIMEOUT"            // tool/command timeout
-  | "VALIDATION"         // path/param validation gagal
-  | "TEST_FAILURE"       // test/typecheck/lint gagal
-  | "HALLUCINATION"      // AI ngaco (detected by reviewer)
+  | "VALIDATION"         // path/param validation failed
+  | "TEST_FAILURE"       // test/typecheck/lint failed
+  | "HALLUCINATION"      // AI incorrect (detected by reviewer)
   | "LOOP_DETECTED"      // Same action repeated >3x
-  | "FILE_NOT_FOUND"     // File tidak ditemukan
-  | "PATH_TRAVERSAL"     // Mencoba akses file di luar proyek
-  | "COMMAND_FAILED"     // Terminal command gagal
-  | "UNKNOWN"            // Error tidak dikenal
-  | "TOOL_MISUSE";       // Tool dipanggil dengan argumen salah
+  | "FILE_NOT_FOUND"     // File not found
+  | "PATH_TRAVERSAL"     // Attempted file access outside project
+  | "COMMAND_FAILED"     // Terminal command failed
+  | "UNKNOWN"            // Unknown error
+  | "TOOL_MISUSE";       // Tool called with wrong arguments
 
 export type SeverityLevel = "low" | "medium" | "critical";
 
@@ -49,10 +49,10 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "DIFF_MISMATCH",
     severity: "low",
     steps: [
-      { action: "read_file", description: "Baca ulang file untuk dapet konten real" },
-      { action: "normalize_whitespace", description: "Coba compare tanpa whitespace" },
+      { action: "read_file", description: "Re-read file to get real content" },
+      { action: "normalize_whitespace", description: "Try comparing without whitespace" },
       { action: "fuzzy_match", description: "Levenshtein distance matching" },
-      { action: "report_specific_diff", description: "Kirim error detail ke AI: baris terdekat, perbedaan" },
+      { action: "report_specific_diff", description: "Send detailed error to AI: nearest line, differences" },
     ],
     maxAttempts: 3,
     notifyUser: false,
@@ -62,9 +62,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "TIMEOUT",
     severity: "medium",
     steps: [
-      { action: "kill_process_tree", description: "Matiin semua child process" },
-      { action: "increase_timeout", description: "Coba lagi dengan timeout 2x lipat" },
-      { action: "simplify_command", description: "Coba dengan versi lebih sederhana" },
+      { action: "kill_process_tree", description: "Kill all child processes" },
+      { action: "increase_timeout", description: "Retry with 2x timeout" },
+      { action: "simplify_command", description: "Try with a simpler version" },
     ],
     maxAttempts: 2,
     notifyUser: true,
@@ -74,9 +74,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "VALIDATION",
     severity: "low",
     steps: [
-      { action: "check_param_types", description: "Cek tiap parameter sesuai schema" },
-      { action: "fix_param_format", description: "Perbaiki format parameter" },
-      { action: "retry_with_fixed_params", description: "Coba panggil ulang dengan parameter bener" },
+      { action: "check_param_types", description: "Check each parameter matches schema" },
+      { action: "fix_param_format", description: "Fix parameter format" },
+      { action: "retry_with_fixed_params", description: "Retry call with correct parameters" },
     ],
     maxAttempts: 3,
     notifyUser: false,
@@ -86,10 +86,10 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "TEST_FAILURE",
     severity: "medium",
     steps: [
-      { action: "read_error_log", description: "Baca stdout/stderr dari test" },
-      { action: "identify_failing_file", description: "Cari file spesifik yang error" },
-      { action: "fix_code", description: "Perbaiki kode berdasarkan error" },
-      { action: "retry_test", description: "Jalankan test ulang" },
+      { action: "read_error_log", description: "Read stdout/stderr from test" },
+      { action: "identify_failing_file", description: "Find specific file with the error" },
+      { action: "fix_code", description: "Fix code based on error" },
+      { action: "retry_test", description: "Run test again" },
     ],
     maxAttempts: 3,
     notifyUser: false,
@@ -99,9 +99,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "HALLUCINATION",
     severity: "critical",
     steps: [
-      { action: "read_actual_file", description: "Baca file beneran, bukan dari ingatan" },
-      { action: "verify_imports_exist", description: "Cek library yang dipake beneran ada" },
-      { action: "rewrite_with_correct_info", description: "Tulis ulang dengan informasi real" },
+      { action: "read_actual_file", description: "Read actual file, not from memory" },
+      { action: "verify_imports_exist", description: "Check that used libraries actually exist" },
+      { action: "rewrite_with_correct_info", description: "Rewrite with real information" },
     ],
     maxAttempts: 2,
     notifyUser: true,
@@ -111,9 +111,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "LOOP_DETECTED",
     severity: "critical",
     steps: [
-      { action: "circuit_breaker", description: "Hentikan eksekusi" },
-      { action: "inject_warning", description: "Inject warning ke AI: 'Kamu looping. Coba pendekatan beda'" },
-      { action: "suggest_alternative", description: "Saran: baca doc, cari pattern beda, atau lapor user" },
+      { action: "circuit_breaker", description: "Stop execution" },
+      { action: "inject_warning", description: "Inject warning to AI: 'You are looping. Try a different approach'" },
+      { action: "suggest_alternative", description: "Suggestion: read docs, find different pattern, or report to user" },
     ],
     maxAttempts: 1,
     notifyUser: true,
@@ -123,9 +123,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "FILE_NOT_FOUND",
     severity: "low",
     steps: [
-      { action: "suggest_similar_files", description: "Cari file dengan nama mirip" },
-      { action: "list_directory", description: "List isi direktori untuk bantu AI" },
-      { action: "retry_with_correct_path", description: "Coba dengan path yang bener" },
+      { action: "suggest_similar_files", description: "Find files with similar names" },
+      { action: "list_directory", description: "List directory contents to help AI" },
+      { action: "retry_with_correct_path", description: "Retry with correct path" },
     ],
     maxAttempts: 2,
     notifyUser: false,
@@ -135,9 +135,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "PATH_TRAVERSAL",
     severity: "critical",
     steps: [
-      { action: "block_immediately", description: "Blokir akses dan log attempt" },
-      { action: "warn_ai", description: "Peringatkan AI: akses dilarang" },
-      { action: "suggest_allowed_path", description: "Saran path yang diizinkan" },
+      { action: "block_immediately", description: "Block access and log attempt" },
+      { action: "warn_ai", description: "Warn AI: access denied" },
+      { action: "suggest_allowed_path", description: "Suggest allowed path" },
     ],
     maxAttempts: 1,
     notifyUser: true,
@@ -147,9 +147,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "COMMAND_FAILED",
     severity: "medium",
     steps: [
-      { action: "read_stderr", description: "Baca error output dari command" },
-      { action: "check_command_exists", description: "Cek apakah command terinstall" },
-      { action: "retry_with_fallback", description: "Coba dengan alternatif command" },
+      { action: "read_stderr", description: "Read error output from command" },
+      { action: "check_command_exists", description: "Check if command is installed" },
+      { action: "retry_with_fallback", description: "Try with alternative command" },
     ],
     maxAttempts: 2,
     notifyUser: false,
@@ -159,9 +159,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "TOOL_MISUSE",
     severity: "low",
     steps: [
-      { action: "validate_parameters", description: "Cek parameter sesuai skema" },
-      { action: "show_correct_usage", description: "Tampilkan contoh penggunaan yang benar" },
-      { action: "retry_with_correct_params", description: "Coba ulang dengan parameter benar" },
+      { action: "validate_parameters", description: "Check parameters match schema" },
+      { action: "show_correct_usage", description: "Show correct usage example" },
+      { action: "retry_with_correct_params", description: "Retry with correct parameters" },
     ],
     maxAttempts: 3,
     notifyUser: false,
@@ -171,9 +171,9 @@ export const RECOVERY_STRATEGIES: Record<ErrorType, RecoveryStrategy> = {
     type: "UNKNOWN",
     severity: "medium",
     steps: [
-      { action: "log_error", description: "Log error detail ke file" },
-      { action: "report_to_ai", description: "Kirim error ke AI untuk analisis" },
-      { action: "suggest_workaround", description: "Saran pendekatan alternatif" },
+      { action: "log_error", description: "Log error details to file" },
+      { action: "report_to_ai", description: "Send error to AI for analysis" },
+      { action: "suggest_workaround", description: "Suggest alternative approach" },
     ],
     maxAttempts: 2,
     notifyUser: true,
@@ -202,7 +202,7 @@ export function classifyError(
     lowerMsg.includes("path traversal") ||
     lowerMsg.includes("unauthorized path")
   ) {
-    return createError("PATH_TRAVERSAL", "Mencoba akses direktori di luar proyek", message, context);
+    return createError("PATH_TRAVERSAL", "Attempted directory access outside project", message, context);
   }
 
   // Diff mismatch
@@ -212,7 +212,7 @@ export function classifyError(
     lowerMsg.includes("no match") ||
     lowerMsg.includes("diff mismatch")
   ) {
-    return createError("DIFF_MISMATCH", "searchBlock tidak cocok dengan isi file", message, context);
+    return createError("DIFF_MISMATCH", "searchBlock does not match file content", message, context);
   }
 
   // Timeout
@@ -231,7 +231,7 @@ export function classifyError(
     lowerMsg.includes("schema") ||
     lowerMsg.includes("zod")
   ) {
-    return createError("VALIDATION", "Validasi parameter gagal", message, context);
+    return createError("VALIDATION", "Parameter validation failed", message, context);
   }
 
   // File not found
@@ -241,13 +241,13 @@ export function classifyError(
     lowerMsg.includes("no such file") ||
     lowerMsg.includes("file doesn't exist")
   ) {
-    return createError("FILE_NOT_FOUND", "File tidak ditemukan", message, context);
+    return createError("FILE_NOT_FOUND", "File not found", message, context);
   }
 
   // Loop detection
   if (context?.toolName && context?.params) {
-    // Ini akan di-handle oleh circuit breaker logic
-    // Tapi kita klasifikasiin aja
+    // This will be handled by circuit breaker logic
+    // But we classify it anyway
     return createError("LOOP_DETECTED", "Detected repeated tool call", message, context);
   }
 
@@ -338,7 +338,7 @@ class CircuitBreakerStore {
   private makeKey(toolName: string, params: Record<string, unknown>): string {
     // Simplify params to detect similar patterns
     const simplified = { ...params };
-    // Hapus field yang gak relevan buat loop detection
+    // Remove fields not relevant for loop detection
     delete (simplified as Record<string, unknown>).timestamp;
     return `${toolName}:${JSON.stringify(simplified)}`;
   }
@@ -352,7 +352,7 @@ class CircuitBreakerStore {
 export const circuitBreaker = new CircuitBreakerStore();
 
 // ============================================================
-// ERROR FORMATTER — Untuk dikirim ke AI
+// ERROR FORMATTER — For sending to AI
 // ============================================================
 
 export function formatErrorForAI(error: ToolError, recoverySteps?: RecoveryStep[]): string {

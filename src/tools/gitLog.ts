@@ -3,7 +3,7 @@ import { getProjectRoot } from "../utils/pathValidator.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
-// GIT LOG — Mendapatkan history commit terstruktur
+// GIT LOG — Get structured commit history
 // ============================================================
 
 interface GitLogParams {
@@ -29,11 +29,11 @@ export async function handleGitLog(params: GitLogParams): Promise<string> {
     sessionMemory.recordToolCall("git_log", { maxCount, filePath });
 
     if (!stdout.trim()) {
-      return `ℹ️ Tidak ada commit history ditemukan${filePath ? ` untuk file "${filePath}"` : ""}.`;
+      return `ℹ️ No commit history found${filePath ? ` for file "${filePath}"` : ""}.`;
     }
 
     return `📜 **Git Commit History**:\n\n${stdout}`;
   } catch (err) {
-    return `Error: Gagal mengambil git log: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error: Failed to get git log: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
