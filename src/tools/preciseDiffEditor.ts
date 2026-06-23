@@ -478,8 +478,19 @@ function formatDiffResult(results: DiffResult[], filePath: string): string {
   return lines.join("\n");
 }
 
-export async function handleRollbackEdit(params: { filePath: string }): Promise<string> {
-  const { filePath } = params;
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+export async function handleRollbackEdit(params: { filePath: string; version?: number | 'list' }): Promise<string> {
+  const { filePath, version } = params;
 
   // Validate path
   const validation = validateFilePath(filePath);
@@ -510,34 +521,56 @@ export async function handleRollbackEdit(params: { filePath: string }): Promise<
     // Sort directories by timestamp descending (newest first)
     dirs.sort((a, b) => Number(b) - Number(a));
 
-    // Find the newest backup for this specific file
-    let foundBackupPath: string | null = null;
-    let foundTimestamp: string | null = null;
-
+    // Collect all backup versions for this file
+    const backupVersions: { dir: string; backupPath: string }[] = [];
     for (const dir of dirs) {
       const potentialBackupPath = path.join(backupRoot, dir, relativePath);
       if (fs.existsSync(potentialBackupPath)) {
-        foundBackupPath = potentialBackupPath;
-        foundTimestamp = dir;
-        break;
+        backupVersions.push({ dir, backupPath: potentialBackupPath });
       }
     }
 
-    if (!foundBackupPath) {
+    if (backupVersions.length === 0) {
       return `Error: Tidak ada riwayat backup ditemukan untuk file "${filePath}".`;
     }
 
+    // Handle version === 'list': return formatted list of all versions
+    if (version === 'list') {
+      const lines: string[] = [`📋 Backup Versions for "${filePath}":`];
+      backupVersions.forEach((v, i) => {
+        const ts = Number(v.dir);
+        const date = new Date(ts).toISOString();
+        const relative = formatRelativeTime(ts);
+        lines.push(`  [${i + 1}] ${date} (${relative})`);
+      });
+      lines.push('');
+      lines.push(`💡 Use rollback_last_edit({ filePath: "${filePath}", version: <N> }) to restore a specific version.`);
+      return lines.join('\n');
+    }
+
+    // Determine which version to restore
+    let selectedIndex = 0; // default: newest (index 0)
+    if (typeof version === 'number') {
+      if (version < 1 || version > backupVersions.length) {
+        return `Error: Version ${version} tidak valid. Tersedia ${backupVersions.length} backup (1-${backupVersions.length}).`;
+      }
+      selectedIndex = version - 1; // 1-indexed to 0-indexed
+    }
+
+    const selected = backupVersions[selectedIndex];
+
     // Restore file from backup
-    fs.copyFileSync(foundBackupPath, resolvedPath);
+    fs.copyFileSync(selected.backupPath, resolvedPath);
 
     // Record to session memory
     sessionMemory.recordToolCall("rollback_last_edit", {
       filePath,
-      backupTimestamp: foundTimestamp,
+      backupTimestamp: selected.dir,
+      version: version ?? 1,
       success: true,
     });
 
-    const relBackupPath = path.relative(root, foundBackupPath);
+    const relBackupPath = path.relative(root, selected.backupPath);
     return `✅ Rollback Berhasil!\nFile "${filePath}" telah dikembalikan ke kondisi cadangan dari: "${relBackupPath}".`;
   } catch (err) {
     return `Error saat melakukan rollback untuk "${filePath}": ${err instanceof Error ? err.message : String(err)}`;

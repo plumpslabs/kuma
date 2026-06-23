@@ -319,4 +319,65 @@ describe("handleRollbackEdit", () => {
     expect(result).toContain("✅ Rollback Berhasil");
     expect(copySpy).toHaveBeenCalled();
   });
+
+  test("version 'list' returns formatted list of backups", async () => {
+    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
+      return ["1000", "2000", "3000"] as unknown as fs.Dirent[];
+    });
+
+    jest.spyOn(fs, "statSync").mockReturnValue({
+      isDirectory: () => true,
+    } as fs.Stats);
+
+    jest.spyOn(fs, "existsSync").mockReturnValue(true);
+
+    const result = await handleRollbackEdit({ filePath: testFilePath, version: 'list' });
+    expect(result).toContain("📋 Backup Versions");
+    expect(result).toContain("[1]");
+    expect(result).toContain("[2]");
+    expect(result).toContain("[3]");
+    expect(result).toContain("💡 Use rollback_last_edit");
+  });
+
+  test("version 2 restores second newest backup", async () => {
+    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
+      return ["1000", "2000", "3000"] as unknown as fs.Dirent[];
+    });
+
+    jest.spyOn(fs, "statSync").mockReturnValue({
+      isDirectory: () => true,
+    } as fs.Stats);
+
+    jest.spyOn(fs, "existsSync").mockReturnValue(true);
+
+    const copySpy = jest.spyOn(fs, "copyFileSync").mockImplementation(() => {});
+
+    const result = await handleRollbackEdit({ filePath: testFilePath, version: 2 });
+    expect(result).toContain("✅ Rollback Berhasil");
+    expect(copySpy).toHaveBeenCalled();
+    // Version 2 = second newest. Sorted desc: 3000, 2000, 1000. Second = 2000.
+    const callArgs = copySpy.mock.calls[0];
+    expect(String(callArgs[0])).toContain("2000");
+  });
+
+  test("backward compatibility: no version param restores newest", async () => {
+    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
+      return ["1000", "2000", "3000"] as unknown as fs.Dirent[];
+    });
+
+    jest.spyOn(fs, "statSync").mockReturnValue({
+      isDirectory: () => true,
+    } as fs.Stats);
+
+    jest.spyOn(fs, "existsSync").mockReturnValue(true);
+
+    const copySpy = jest.spyOn(fs, "copyFileSync").mockImplementation(() => {});
+
+    const result = await handleRollbackEdit({ filePath: testFilePath });
+    expect(result).toContain("✅ Rollback Berhasil");
+    expect(copySpy).toHaveBeenCalled();
+    // No version = newest. Sorted desc: 3000, 2000, 1000. Newest = 3000.
+    const callArgs = copySpy.mock.calls[0];
+    expect(String(callArgs[0])).toContain("3000");
+  });
 });

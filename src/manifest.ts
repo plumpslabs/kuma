@@ -115,9 +115,10 @@ export function registerAllTools(server: McpServer): void {
   // ============================================================
   server.tool(
     "rollback_last_edit",
-    "Rolls back the last edit of a file by restoring it from the most recent backup in .agent-backups.",
+    "Rolls back a file edit by restoring it from backup in .agent-backups. Supports version selection: omit version for latest, use a number (1=newest) for specific version, or 'list' to see all available versions.",
     {
       filePath: z.string().min(1).describe("Path to the file to rollback"),
+      version: z.union([z.number().min(1), z.literal('list')]).optional().describe("Version to restore: number (1=newest) or 'list' to see all versions. Default: newest."),
     },
     async (params) => {
       try {
@@ -139,13 +140,13 @@ export function registerAllTools(server: McpServer): void {
   // ============================================================
   server.tool(
     "batch_file_writer",
-    "Creates new files in batch. Safe with path validation and extension whitelist.",
+    "Creates new files in batch (up to 15). Safe with path validation and extension whitelist.",
     {
       files: z.array(z.object({
         filePath: z.string().min(1).describe("File path to create"),
         content: z.string().describe("File content"),
         instructions: z.string().min(1).describe("Reason for creating the file"),
-      })).min(1).max(5).describe("Array of files to create (max 5)"),
+      })).min(1).max(15).describe("Array of files to create (max 15)"),
     },
     async (params) => {
       try {

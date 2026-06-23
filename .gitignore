@@ -1,6 +1,8 @@
 node_modules/
 dist/
+coverage/
 .agent-backups/
+.kuma/
 *.log
 .env
 .env.local

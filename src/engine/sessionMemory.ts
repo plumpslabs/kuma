@@ -45,7 +45,18 @@ export class SessionMemory {
 
   init(config: { projectRoot: string; startTime: number }): void {
     const kumaDir = path.join(config.projectRoot, ".kuma");
-    const sessionFile = path.join(kumaDir, "session.json");
+    const sessionFile = path.join(kumaDir, ".kuma-memory.json");
+
+    // Migration: rename old session.json to .kuma-memory.json
+    const oldSessionFile = path.join(kumaDir, "session.json");
+    if (fs.existsSync(oldSessionFile) && !fs.existsSync(sessionFile)) {
+      try {
+        fs.renameSync(oldSessionFile, sessionFile);
+        console.error('[SessionMemory] Migrated session.json → .kuma-memory.json');
+      } catch {
+        // Ignore migration errors
+      }
+    }
 
     if (fs.existsSync(sessionFile)) {
       try {
@@ -64,7 +75,7 @@ export class SessionMemory {
           conventions: parsed.conventions,
         };
         this.initialized = true;
-        console.error(`[SessionMemory] Loaded persistent session from .kuma/session.json`);
+        console.error(`[SessionMemory] Loaded persistent session from .kuma/.kuma-memory.json`);
         return;
       } catch (err) {
         console.error(`[SessionMemory] Failed to load persistent session: ${err}. Re-initializing.`);
@@ -106,7 +117,7 @@ export class SessionMemory {
         toolCalls: this.state.toolCalls,
         conventions: this.state.conventions,
       };
-      fs.writeFileSync(path.join(kumaDir, "session.json"), JSON.stringify(serialized, null, 2), "utf-8");
+      fs.writeFileSync(path.join(kumaDir, ".kuma-memory.json"), JSON.stringify(serialized, null, 2), "utf-8");
     } catch (err) {
       console.error(`[SessionMemory] Failed to save session: ${err}`);
     }

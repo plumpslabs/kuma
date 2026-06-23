@@ -153,7 +153,24 @@ export async function handleCodeReviewer(
   });
 
   if (format === "json") {
-    return JSON.stringify(allIssues, null, 2);
+    const jsonSummary = {
+      totalIssues: allIssues.length,
+      errors: allIssues.filter((i) => i.severity === "error").length,
+      warnings: allIssues.filter((i) => i.severity === "warning").length,
+      info: allIssues.filter((i) => i.severity === "info").length,
+      filesReviewed,
+      filesRequested: files.length,
+      focus,
+      ...(customCriteria ? { customCriteria } : {}),
+    };
+
+    const issuesByFile: Record<string, ReviewIssue[]> = {};
+    for (const issue of allIssues) {
+      if (!issuesByFile[issue.file]) issuesByFile[issue.file] = [];
+      issuesByFile[issue.file].push(issue);
+    }
+
+    return JSON.stringify({ summary: jsonSummary, issuesByFile, issues: allIssues }, null, 2);
   }
 
   return formatReviewOutput(
