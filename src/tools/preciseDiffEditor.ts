@@ -477,3 +477,69 @@ function formatDiffResult(results: DiffResult[], filePath: string): string {
 
   return lines.join("\n");
 }
+
+export async function handleRollbackEdit(params: { filePath: string }): Promise<string> {
+  const { filePath } = params;
+
+  // Validate path
+  const validation = validateFilePath(filePath);
+  if (!validation.valid) {
+    return `Error: ${validation.error.message}`;
+  }
+
+  const resolvedPath = validation.resolvedPath;
+  const root = getProjectRoot();
+  const relativePath = path.relative(root, resolvedPath);
+  const backupRoot = path.join(root, ".agent-backups");
+
+  if (!fs.existsSync(backupRoot)) {
+    return `Error: Tidak ada folder backup (.agent-backups) ditemukan di project root.`;
+  }
+
+  try {
+    // List all directories in .agent-backups
+    const dirs = fs.readdirSync(backupRoot).filter((name) => {
+      const fullPath = path.join(backupRoot, name);
+      return fs.statSync(fullPath).isDirectory() && /^\d+$/.test(name);
+    });
+
+    if (dirs.length === 0) {
+      return `Error: Tidak ada backup yang valid di folder .agent-backups.`;
+    }
+
+    // Sort directories by timestamp descending (newest first)
+    dirs.sort((a, b) => Number(b) - Number(a));
+
+    // Find the newest backup for this specific file
+    let foundBackupPath: string | null = null;
+    let foundTimestamp: string | null = null;
+
+    for (const dir of dirs) {
+      const potentialBackupPath = path.join(backupRoot, dir, relativePath);
+      if (fs.existsSync(potentialBackupPath)) {
+        foundBackupPath = potentialBackupPath;
+        foundTimestamp = dir;
+        break;
+      }
+    }
+
+    if (!foundBackupPath) {
+      return `Error: Tidak ada riwayat backup ditemukan untuk file "${filePath}".`;
+    }
+
+    // Restore file from backup
+    fs.copyFileSync(foundBackupPath, resolvedPath);
+
+    // Record to session memory
+    sessionMemory.recordToolCall("rollback_last_edit", {
+      filePath,
+      backupTimestamp: foundTimestamp,
+      success: true,
+    });
+
+    const relBackupPath = path.relative(root, foundBackupPath);
+    return `✅ Rollback Berhasil!\nFile "${filePath}" telah dikembalikan ke kondisi cadangan dari: "${relBackupPath}".`;
+  } catch (err) {
+    return `Error saat melakukan rollback untuk "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
+  }
+}

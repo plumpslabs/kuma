@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import {
   applyEdit,
+  handleRollbackEdit,
   countOccurrences,
   replaceAll,
   normalizeWhitespace,
@@ -266,5 +267,56 @@ describe("applyEdit", () => {
     expect(result.success).toBe(true);
     expect(result.backupPath).toBeDefined();
     expect(result.details).toContain("const x = 42;");
+  });
+});
+
+describe("handleRollbackEdit", () => {
+  const testFilePath = "src/test.ts";
+
+  beforeEach(() => {
+    jest.spyOn(fs, "existsSync").mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test("returns error if backup root does not exist", async () => {
+    jest.spyOn(fs, "existsSync").mockImplementation((p) => {
+      if (typeof p === "string" && p.includes(".agent-backups")) {
+        return false;
+      }
+      return true;
+    });
+
+    const result = await handleRollbackEdit({ filePath: testFilePath });
+    expect(result).toContain("Error");
+    expect(result).toContain(".agent-backups");
+  });
+
+  test("restores file from latest backup successfully", async () => {
+    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
+      return ["1000", "2000"] as unknown as fs.Dirent[];
+    });
+
+    jest.spyOn(fs, "statSync").mockReturnValue({
+      isDirectory: () => true,
+    } as fs.Stats);
+
+    jest.spyOn(fs, "existsSync").mockImplementation((p) => {
+      if (typeof p === "string" && p.includes("2000")) {
+        return true;
+      }
+      if (typeof p === "string" && p.includes("1000")) {
+        return false;
+      }
+      return true;
+    });
+
+    const copySpy = jest.spyOn(fs, "copyFileSync").mockImplementation(() => {});
+
+    const result = await handleRollbackEdit({ filePath: testFilePath });
+    expect(result).toContain("✅ Rollback Berhasil");
+    expect(copySpy).toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { validateFilePath } from "../utils/pathValidator.js";
+import { execSync } from "node:child_process";
+import { validateFilePath, getProjectRoot } from "../utils/pathValidator.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
@@ -8,7 +9,7 @@ import { sessionMemory } from "../engine/sessionMemory.js";
 // ============================================================
 
 interface CodeReviewerParams {
-  files: string[];
+  files?: string[];
   focus?: "correctness" | "conventions" | "security" | "performance";
   customCriteria?: string;
 }
@@ -21,8 +22,67 @@ interface ReviewIssue {
   suggestion: string;
 }
 
-export async function handleCodeReviewer(params: CodeReviewerParams): Promise<string> {
-  const { files, focus = "correctness", customCriteria } = params;
+function getGitChangedFiles(): string[] {
+  try {
+    const root = getProjectRoot();
+    const stdout = execSync("git status --porcelain", {
+      cwd: root,
+      encoding: "utf-8",
+    });
+    const lines = stdout.split("\n");
+    const files: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      // git status porcelain output is: XY path/to/file or XY "path/to/file"
+      const parts = trimmed.split(/\s+/);
+      let filePath = parts.slice(1).join(" ");
+      if (filePath.startsWith('"') && filePath.endsWith('"')) {
+        filePath = filePath.substring(1, filePath.length - 1);
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      // Filter only coding files to avoid reviewing lock files or images
+      if (
+        [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx",
+          ".py",
+          ".go",
+          ".rs",
+          ".php",
+          ".cs",
+          ".java",
+        ].includes(ext)
+      ) {
+        files.push(filePath);
+      }
+    }
+    return files.slice(0, 10); // Limit to max 10 files
+  } catch (err) {
+    console.error(
+      `[CodeReviewer] Gagal mendapatkan list file dari git status: ${err}`,
+    );
+    return [];
+  }
+}
+
+export async function handleCodeReviewer(
+  params: CodeReviewerParams,
+): Promise<string> {
+  const { files: inputFiles, focus = "correctness", customCriteria } = params;
+
+  let files = inputFiles ?? [];
+  let isAutoDetected = false;
+
+  if (files.length === 0) {
+    files = getGitChangedFiles();
+    isAutoDetected = true;
+    if (files.length === 0) {
+      return `ℹ️ Tidak ada file kode (TS/JS/Python/Go) yang terdeteksi berubah di git diff saat ini.\nSilakan masukkan file yang ingin di-review secara manual menggunakan parameter 'files'.`;
+    }
+  }
 
   const allIssues: ReviewIssue[] = [];
   let filesReviewed = 0;
@@ -91,14 +151,24 @@ export async function handleCodeReviewer(params: CodeReviewerParams): Promise<st
     errors: allIssues.filter((i) => i.severity === "error").length,
   });
 
-  return formatReviewOutput(allIssues, filesReviewed, files.length, focus, customCriteria);
+  return formatReviewOutput(
+    allIssues,
+    filesReviewed,
+    files.length,
+    focus,
+    customCriteria,
+  );
 }
 
 // ============================================================
 // REVIEW CHECKS
 // ============================================================
 
-function checkCorrectness(filePath: string, content: string, issues: ReviewIssue[]): void {
+function checkCorrectness(
+  filePath: string,
+  content: string,
+  issues: ReviewIssue[],
+): void {
   const lines = content.split("\n");
   const ext = path.extname(filePath);
 
@@ -107,7 +177,10 @@ function checkCorrectness(filePath: string, content: string, issues: ReviewIssue
     const lineNum = i + 1;
 
     // Check: console.log left in code
-    if (/console\.(log|debug|info)\(/.test(line) && !filePath.includes(".test.")) {
+    if (
+      /console\.(log|debug|info)\(/.test(line) &&
+      !filePath.includes(".test.")
+    ) {
       issues.push({
         file: filePath,
         line: lineNum,
@@ -118,7 +191,11 @@ function checkCorrectness(filePath: string, content: string, issues: ReviewIssue
     }
 
     // Check: TODO/FIXME comments
-    if (/\b(TODO|FIXME|HACK|XXX)\b/i.test(line) && !line.includes("// TODO:") && !line.includes("// FIXME:")) {
+    if (
+      /\b(TODO|FIXME|HACK|XXX)\b/i.test(line) &&
+      !line.includes("// TODO:") &&
+      !line.includes("// FIXME:")
+    ) {
       issues.push({
         file: filePath,
         line: lineNum,
@@ -160,12 +237,15 @@ function checkCorrectness(filePath: string, content: string, issues: ReviewIssue
         line: lineNum,
         severity: "error",
         message: "Empty catch block swallows errors",
-        suggestion: "Tambahkan error handling minimal: console.error atau throw",
+        suggestion:
+          "Tambahkan error handling minimal: console.error atau throw",
       });
     }
 
     // Check: hardcoded secrets
-    if (/(password|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"]+['"]/i.test(line)) {
+    if (
+      /(password|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"]+['"]/i.test(line)
+    ) {
       if (!line.includes("process.env") && !line.includes("import.meta.env")) {
         issues.push({
           file: filePath,
@@ -190,7 +270,11 @@ function checkCorrectness(filePath: string, content: string, issues: ReviewIssue
   }
 }
 
-function checkConventions(filePath: string, content: string, issues: ReviewIssue[]): void {
+function checkConventions(
+  filePath: string,
+  content: string,
+  issues: ReviewIssue[],
+): void {
   const lines = content.split("\n");
 
   // Check: mixed indentation
@@ -199,7 +283,8 @@ function checkConventions(filePath: string, content: string, issues: ReviewIssue
 
   for (let i = 0; i < Math.min(lines.length, 50); i++) {
     if (lines[i].startsWith("\t")) hasTabs = true;
-    if (lines[i].startsWith("  ") || lines[i].startsWith("    ")) hasSpaces = true;
+    if (lines[i].startsWith("  ") || lines[i].startsWith("    "))
+      hasSpaces = true;
   }
 
   if (hasTabs && hasSpaces) {
@@ -208,7 +293,8 @@ function checkConventions(filePath: string, content: string, issues: ReviewIssue
       line: 1,
       severity: "warning",
       message: "Mixed indentation (tabs and spaces)",
-      suggestion: "Konsisten: pilih tabs atau spaces (prefer 2 spaces untuk JS/TS)",
+      suggestion:
+        "Konsisten: pilih tabs atau spaces (prefer 2 spaces untuk JS/TS)",
     });
   }
 
@@ -256,7 +342,11 @@ function checkConventions(filePath: string, content: string, issues: ReviewIssue
   }
 }
 
-function checkSecurity(filePath: string, content: string, issues: ReviewIssue[]): void {
+function checkSecurity(
+  filePath: string,
+  content: string,
+  issues: ReviewIssue[],
+): void {
   const lines = content.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
@@ -270,7 +360,8 @@ function checkSecurity(filePath: string, content: string, issues: ReviewIssue[])
         line: lineNum,
         severity: "error",
         message: "eval() is a security risk",
-        suggestion: "Hindari eval(). Gunakan JSON.parse() atau Function constructor",
+        suggestion:
+          "Hindari eval(). Gunakan JSON.parse() atau Function constructor",
       });
     }
 
@@ -304,14 +395,19 @@ function checkSecurity(filePath: string, content: string, issues: ReviewIssue[])
           line: lineNum,
           severity: "warning",
           message: "Shell command execution detected",
-          suggestion: "Sanitize input dan gunakan execa dengan options yang aman",
+          suggestion:
+            "Sanitize input dan gunakan execa dengan options yang aman",
         });
       }
     }
   }
 }
 
-function checkPerformance(filePath: string, content: string, issues: ReviewIssue[]): void {
+function checkPerformance(
+  filePath: string,
+  content: string,
+  issues: ReviewIssue[],
+): void {
   const lines = content.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
@@ -327,7 +423,8 @@ function checkPerformance(filePath: string, content: string, issues: ReviewIssue
           line: lineNum,
           severity: "warning",
           message: "Nested loops detected — potential O(n²) performance issue",
-          suggestion: "Pertimbangkan menggunakan Map/Set atau algoritma yang lebih efisien",
+          suggestion:
+            "Pertimbangkan menggunakan Map/Set atau algoritma yang lebih efisien",
         });
       }
     }
@@ -339,7 +436,8 @@ function checkPerformance(filePath: string, content: string, issues: ReviewIssue
         line: lineNum,
         severity: "info",
         message: "Array method inside loop — consider moving outside",
-        suggestion: "Pindahkan operasi array ke luar loop untuk performa lebih baik",
+        suggestion:
+          "Pindahkan operasi array ke luar loop untuk performa lebih baik",
       });
     }
 
@@ -365,7 +463,7 @@ function formatReviewOutput(
   filesReviewed: number,
   totalFiles: number,
   focus: string,
-  customCriteria?: string
+  customCriteria?: string,
 ): string {
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
@@ -395,7 +493,12 @@ function formatReviewOutput(
   for (const [file, fileIssues] of grouped) {
     lines.push(`**📄 ${file}:**`);
     for (const issue of fileIssues) {
-      const icon = issue.severity === "error" ? "🔴" : issue.severity === "warning" ? "🟡" : "🔵";
+      const icon =
+        issue.severity === "error"
+          ? "🔴"
+          : issue.severity === "warning"
+            ? "🟡"
+            : "🔵";
       lines.push(`  ${icon} [L${issue.line}] ${issue.message}`);
       if (issue.suggestion) {
         lines.push(`     💡 ${issue.suggestion}`);
@@ -405,8 +508,12 @@ function formatReviewOutput(
   }
 
   if (errors.length > 0) {
-    lines.push("⚠️ **Prioritas: Fix error issues terlebih dahulu, lalu warning.**");
-    lines.push("💡 Gunakan precise_diff_editor untuk memperbaiki issues di atas.");
+    lines.push(
+      "⚠️ **Prioritas: Fix error issues terlebih dahulu, lalu warning.**",
+    );
+    lines.push(
+      "💡 Gunakan precise_diff_editor untuk memperbaiki issues di atas.",
+    );
   } else if (warnings.length > 0) {
     lines.push("💡 Pertimbangkan untuk memperbaiki warnings sebelum lanjut.");
   } else {

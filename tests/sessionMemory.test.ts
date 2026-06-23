@@ -1,11 +1,18 @@
 import { jest } from '@jest/globals';
 import { SessionMemory } from "../src/engine/sessionMemory.js";
+import fs from "node:fs";
 
 let mem: SessionMemory;
 
 beforeEach(() => {
   // Suppress console.error (MCP uses stderr for logging, but test output should be clean)
   jest.spyOn(console, "error").mockImplementation(() => {});
+
+  // Mock fs to isolate tests from disk I/O
+  jest.spyOn(fs, "existsSync").mockReturnValue(false);
+  jest.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+  jest.spyOn(fs, "mkdirSync").mockImplementation(() => "");
+  jest.spyOn(fs, "readFileSync").mockReturnValue("");
 
   // Create fresh instance for each test
   mem = new SessionMemory();

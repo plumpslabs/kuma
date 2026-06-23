@@ -4,7 +4,7 @@ import { z } from "zod";
 // Tool handlers
 import { handleSmartGrep } from "./tools/smartGrep.js";
 import { handleSmartFilePicker } from "./tools/smartFilePicker.js";
-import { handlePreciseDiffEditor } from "./tools/preciseDiffEditor.js";
+import { handlePreciseDiffEditor, handleRollbackEdit } from "./tools/preciseDiffEditor.js";
 import { handleBatchFileWriter } from "./tools/batchFileWriter.js";
 import { handleSafeTerminalExec } from "./tools/safeTerminalExec.js";
 import { handleCodeReviewer } from "./agents/codeReviewer.js";
@@ -134,6 +134,30 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
+  // 4b. rollback_last_edit
+  // ============================================================
+  server.tool(
+    "rollback_last_edit",
+    "Rolls back the last edit of a file by restoring it from the most recent backup in .agent-backups.",
+    {
+      filePath: z.string().min(1).describe("Path to the file to rollback"),
+    },
+    async (params) => {
+      try {
+        const result = await handleRollbackEdit(params);
+        return {
+          content: [{ type: "text", text: result }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error in rollback_last_edit: ${err}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ============================================================
   // 5. batch_file_writer
   // ============================================================
   server.tool(
@@ -194,7 +218,7 @@ export function registerAllTools(server: McpServer): void {
     "code_reviewer",
     "Specialized agent for reviewing modified code. Separation of concerns: reviewer is NOT the same AI that wrote the code.",
     {
-      files: z.array(z.string().min(1)).min(1).max(10).describe("Files to review"),
+      files: z.array(z.string().min(1)).max(10).optional().describe("Files to review (if omitted/empty, auto-detects changed files via git diff)"),
       focus: z.enum(["correctness", "conventions", "security", "performance"]).optional().default("correctness").describe("Review focus"),
       customCriteria: z.string().optional().describe("Custom review criteria/rules to check (e.g. 'Ensure all API endpoints follow RESTful standards')"),
     },
@@ -276,6 +300,29 @@ export function registerAllTools(server: McpServer): void {
       } catch (err) {
         return {
           content: [{ type: "text", text: `Error in context_pruner_advice: ${err}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ============================================================
+  // 10b. context_prune_execute
+  // ============================================================
+  server.tool(
+    "context_prune_execute",
+    "Clears the session search history and trims tool call records in session memory to save context window tokens.",
+    {},
+    async () => {
+      try {
+        const { handleContextPrunerExecute } = await import("./engine/contextPruner.js");
+        const result = handleContextPrunerExecute();
+        return {
+          content: [{ type: "text", text: result }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Error in context_prune_execute: ${err}` }],
           isError: true,
         };
       }

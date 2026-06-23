@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 // ============================================================
 // SESSION MEMORY — State tracker & Knowledge graph mini proyek
 // ============================================================
@@ -41,6 +44,33 @@ export class SessionMemory {
   private initialized = false;
 
   init(config: { projectRoot: string; startTime: number }): void {
+    const kumaDir = path.join(config.projectRoot, ".kuma");
+    const sessionFile = path.join(kumaDir, "session.json");
+
+    if (fs.existsSync(sessionFile)) {
+      try {
+        const raw = fs.readFileSync(sessionFile, "utf-8");
+        const parsed = JSON.parse(raw);
+        this.state = {
+          projectRoot: parsed.projectRoot || config.projectRoot,
+          startTime: parsed.startTime || config.startTime,
+          currentGoal: parsed.currentGoal || "",
+          completedSteps: parsed.completedSteps || [],
+          modifiedFiles: new Map(parsed.modifiedFiles || []),
+          failedFiles: new Map(parsed.failedFiles || []),
+          searchResults: new Map(parsed.searchResults || []),
+          dependencyGraph: new Map(parsed.dependencyGraph || []),
+          toolCalls: parsed.toolCalls || [],
+          conventions: parsed.conventions,
+        };
+        this.initialized = true;
+        console.error(`[SessionMemory] Loaded persistent session from .kuma/session.json`);
+        return;
+      } catch (err) {
+        console.error(`[SessionMemory] Failed to load persistent session: ${err}. Re-initializing.`);
+      }
+    }
+
     this.state = {
       projectRoot: config.projectRoot,
       startTime: config.startTime,
@@ -53,19 +83,46 @@ export class SessionMemory {
       toolCalls: [],
     };
     this.initialized = true;
-
+    this.save();
     console.error(`[SessionMemory] Initialized at ${new Date(config.startTime).toISOString()}`);
+  }
+
+  private save(): void {
+    if (!this.initialized || !this.state) return;
+    try {
+      const kumaDir = path.join(this.state.projectRoot, ".kuma");
+      if (!fs.existsSync(kumaDir)) {
+        fs.mkdirSync(kumaDir, { recursive: true });
+      }
+      const serialized = {
+        projectRoot: this.state.projectRoot,
+        startTime: this.state.startTime,
+        currentGoal: this.state.currentGoal,
+        completedSteps: this.state.completedSteps,
+        modifiedFiles: Array.from(this.state.modifiedFiles.entries()),
+        failedFiles: Array.from(this.state.failedFiles.entries()),
+        searchResults: Array.from(this.state.searchResults.entries()),
+        dependencyGraph: Array.from(this.state.dependencyGraph.entries()),
+        toolCalls: this.state.toolCalls,
+        conventions: this.state.conventions,
+      };
+      fs.writeFileSync(path.join(kumaDir, "session.json"), JSON.stringify(serialized, null, 2), "utf-8");
+    } catch (err) {
+      console.error(`[SessionMemory] Failed to save session: ${err}`);
+    }
   }
 
   setGoal(goal: string): void {
     this.ensureInit();
     this.state.currentGoal = goal;
+    this.save();
   }
 
   addCompletedStep(step: string): void {
     this.ensureInit();
     if (!this.state.completedSteps.includes(step)) {
       this.state.completedSteps.push(step);
+      this.save();
     }
   }
 
@@ -82,6 +139,7 @@ export class SessionMemory {
         status: "modified",
       });
     }
+    this.save();
   }
 
   addCreatedFile(filePath: string): void {
@@ -91,6 +149,7 @@ export class SessionMemory {
       modifiedAt: Date.now(),
       status: "created",
     });
+    this.save();
   }
 
   addFailedFile(task: string, error: string): void {
@@ -103,16 +162,22 @@ export class SessionMemory {
       resolved: false,
     });
     this.state.failedFiles.set(task, failures);
+    this.save();
   }
 
   markFailureResolved(task: string): void {
     this.ensureInit();
     const failures = this.state.failedFiles.get(task);
     if (failures) {
+      let changed = false;
       for (const f of failures) {
         if (!f.resolved) {
           f.resolved = true;
+          changed = true;
         }
+      }
+      if (changed) {
+        this.save();
       }
     }
   }
@@ -120,6 +185,7 @@ export class SessionMemory {
   addSearchResult(query: string, files: string[]): void {
     this.ensureInit();
     this.state.searchResults.set(query, files);
+    this.save();
   }
 
   addDependency(file: string, dependsOn: string): void {
@@ -127,8 +193,9 @@ export class SessionMemory {
     const deps = this.state.dependencyGraph.get(file) ?? [];
     if (!deps.includes(dependsOn)) {
       deps.push(dependsOn);
+      this.state.dependencyGraph.set(file, deps);
+      this.save();
     }
-    this.state.dependencyGraph.set(file, deps);
   }
 
   recordToolCall(toolName: string, params: Record<string, unknown>): void {
@@ -143,11 +210,21 @@ export class SessionMemory {
     if (this.state.toolCalls.length > 100) {
       this.state.toolCalls = this.state.toolCalls.slice(-100);
     }
+    this.save();
   }
 
   setConventions(conventions: Record<string, unknown>): void {
     this.ensureInit();
     this.state.conventions = conventions;
+    this.save();
+  }
+
+  pruneMemory(): void {
+    this.ensureInit();
+    this.state.toolCalls = this.state.toolCalls.slice(-3);
+    this.state.searchResults.clear();
+    this.state.completedSteps = [];
+    this.save();
   }
 
   getSummary(): Record<string, unknown> {
@@ -168,6 +245,7 @@ export class SessionMemory {
       currentGoal: this.state.currentGoal,
       completedSteps: this.state.completedSteps,
       modifiedFiles: Array.from(this.state.modifiedFiles.values()),
+      unfailures: unresolvedFailures, // Backward compatibility or simple helper
       unresolvedFailures,
       toolCallCount: this.state.toolCalls.length,
       recentSearches: Array.from(this.state.searchResults.keys()).slice(-5),

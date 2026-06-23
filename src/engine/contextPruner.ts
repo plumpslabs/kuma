@@ -113,3 +113,12 @@ export function generateContextSummary(): string {
     "======================",
   ].join("\n");
 }
+
+export function handleContextPrunerExecute(): string {
+  try {
+    sessionMemory.pruneMemory();
+    return `🧹 **Context Pruning Successful!**\n\nMemory cleared:\n- Search query logs deleted.\n- Completed steps history cleared.\n- Tool call history trimmed to last 3 entries.\n\nSubsequent calls to 'get_session_memory' will now use significantly fewer tokens.`;
+  } catch (err) {
+    return `Error: Gagal melakukan pruning context memory: ${err}`;
+  }
+}
