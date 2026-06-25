@@ -25,6 +25,8 @@ Usage:
   npx @plumpslabs/kuma              Start MCP server (default)
   npx @plumpslabs/kuma init         Generate AI agent config files
   npx @plumpslabs/kuma init --all   Generate ALL config files
+  npx @plumpslabs/kuma init --merge Append to existing files (default)
+  npx @plumpslabs/kuma init --skip-existing Skip generation if file exists
   npx @plumpslabs/kuma init --claude --cursor  Generate specific files
   npx @plumpslabs/kuma init --help  Show this help
 
@@ -112,11 +114,32 @@ async function main(): Promise<void> {
       }
     }
 
-    const results = runInit(selectedTypes, process.cwd());
+    const skipExisting = requestedFlags.includes("--skip-existing");
+    const merge = requestedFlags.includes("--merge"); // Default behavior anyway
+
+    const results = runInit({ types: selectedTypes, projectRoot: process.cwd(), skipExisting });
     const output = formatInitResults(results);
 
     // Print to stdout (for piping) and stderr (for human reading)
     console.log(output);
+
+    // Reciprocal recommendation for matcha
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const matchaSkills = path.resolve(process.cwd(), "skills/matcha/SKILL.md");
+    const matchaAgents = path.resolve(process.cwd(), ".agents/skills/matcha/SKILL.md");
+    const matchaCursor = path.resolve(process.cwd(), ".cursor/rules/matcha.mdc");
+    const matchaWindsurf = path.resolve(process.cwd(), ".windsurf/rules/matcha.md");
+
+    if (
+      fs.existsSync(matchaSkills) ||
+      fs.existsSync(matchaAgents) ||
+      fs.existsSync(matchaCursor) ||
+      fs.existsSync(matchaWindsurf)
+    ) {
+      console.error("\n\u{1F375} Hey, I see matcha is installed \u2014 they pair well together!");
+    }
+
     process.exit(0);
   }
 

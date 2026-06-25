@@ -15,6 +15,7 @@ interface CodeReviewerParams {
   focus?: "correctness" | "conventions" | "security" | "performance" | "over-engineering";
   customCriteria?: string;
   format?: "text" | "json";
+  convention?: "matcha" | "none";
 }
 
 interface ReviewIssue {
@@ -60,7 +61,7 @@ function getGitChangedFiles(): string[] {
 export async function handleCodeReviewer(
   params: CodeReviewerParams,
 ): Promise<string> {
-  const { files: inputFiles, focus = "correctness", customCriteria, format = "text" } = params;
+  const { files: inputFiles, focus = "correctness", customCriteria, format = "text", convention } = params;
 
   let files = inputFiles ?? [];
   let isAutoDetected = false;
@@ -128,6 +129,11 @@ export async function handleCodeReviewer(
           checkOverEngineering(filePath, content, allIssues);
           break;
       }
+
+      // Matcha specific conventions
+      if (convention === "matcha") {
+        checkMatchaConventions(filePath, content, allIssues);
+      }
     } catch (err) {
       allIssues.push({
         file: filePath,
@@ -157,6 +163,7 @@ export async function handleCodeReviewer(
       filesReviewed,
       filesRequested: files.length,
       focus,
+      convention,
       autoDetected: isAutoDetected,
       ...(customCriteria ? { customCriteria } : {}),
     };
@@ -799,8 +806,8 @@ function collectBlockLines(lines: string[], startIdx: number): string[] {
   let depth = 0;
   let started = false;
   const block: string[] = [];
-  for (let j = startIdx; j < lines.length; j++) {
-    const line = lines[j];
+  for (let i = startIdx; i < lines.length; i++) {
+    const line = lines[i];
     block.push(line);
     for (const ch of line) {
       if (ch === "{") { depth++; started = true; }
@@ -815,6 +822,87 @@ function extractBodyAfter(lines: string[], match: RegExpMatchArray): string {
   const startIdx = lines.findIndex(l => l.includes(match[0].trim().split(/\s+/).pop() ?? ""));
   if (startIdx < 0) return "";
   return collectBlockLines(lines, startIdx).join("\n");
+}
+
+// ============================================================
+// MATCHA CONVENTIONS CHECKS
+// ============================================================
+
+function checkMatchaConventions(filePath: string, content: string, issues: ReviewIssue[]): void {
+  const lines = content.split("\n");
+  const text = content.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = stripCommentsAndStrings(lines[i]);
+    const lineNum = i + 1;
+
+    // Hardcoded values (magic numbers/strings that aren't 0, 1, or obvious)
+    if (/\b(?:const|let|var)\s+\w+\s*=\s*(?:[2-9]|\d{2,})\b/.test(line)) {
+      if (!/eslint-disable/.test(lines[i])) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "info",
+          rule: "matcha/no-hardcoded-values",
+          message: "Possible hardcoded numeric value (magic number)",
+          suggestion: "Extract to a named constant",
+        });
+      }
+    }
+
+    // Env vars should use APPNAME_ prefix (rough check: process.env.SOMETHING)
+    const envMatch = line.match(/process\.env\.([A-Z0-9_]+)/);
+    if (envMatch) {
+      const envName = envMatch[1];
+      if (!envName.includes("_")) {
+        issues.push({
+          file: filePath,
+          line: lineNum,
+          severity: "warning",
+          rule: "matcha/env-prefix",
+          message: `Environment variable "${envName}" doesn't seem to have a prefix`,
+          suggestion: "Use an APPNAME_ prefix for environment variables",
+        });
+      }
+    }
+  }
+
+  // Abstraction without 2nd use case (similar to over-engineering single-impl)
+  const interfaceNames: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(export\s+)?interface\s+(\w+)/);
+    if (m) interfaceNames.push(m[2]);
+  }
+  for (const iface of interfaceNames) {
+    const implCount = (text.match(new RegExp(`implements\\s+.*\\b${iface}\\b`, "g")) || []).length;
+    if (implCount <= 1) {
+      const lineNum = lines.findIndex(l => l.includes(`interface ${iface}`)) + 1;
+      issues.push({
+        file: filePath,
+        line: lineNum,
+        severity: "info",
+        rule: "matcha/no-premature-abstraction",
+        message: `Interface "${iface}" has only 1 implementation — premature abstraction?`,
+        suggestion: "Wait for a 2nd use case before abstracting",
+      });
+    }
+  }
+  
+  // Functions doing >1 thing: long functions (>40 lines)
+  const funcBodies = findBlockBodies(lines, /^\s*(export\s+)?(async\s+)?function\s+\w+/);
+  for (const { body, nameLine, name } of funcBodies) {
+    const nonEmptyLines = body.split("\n").filter(l => l.trim()).length;
+    if (nonEmptyLines > 40) {
+      issues.push({
+        file: filePath,
+        line: nameLine,
+        severity: "warning",
+        rule: "matcha/single-responsibility",
+        message: `Function "${name}" is ${nonEmptyLines} lines long — might be doing >1 thing`,
+        suggestion: "Extract into smaller, focused functions",
+      });
+    }
+  }
 }
 
 // ============================================================
