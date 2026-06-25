@@ -10,6 +10,7 @@ export interface WorkspacePackage {
   path: string;            // relative to project root
   name: string;
   framework: string;
+  packageManager: string;  // per-workspace package manager (pnpm, npm, yarn, bun)
 }
 
 export interface ProjectConventions {
@@ -25,6 +26,7 @@ export interface ProjectConventions {
   features: string[];
   isMonorepo: boolean;
   workspaces: WorkspacePackage[];
+  workspacePackageManagers?: Record<string, string>; // workspace path → package manager
 }
 
 let cachedConventions: ProjectConventions | null = null;
@@ -222,10 +224,12 @@ function detectWorkspaces(root: string): WorkspacePackage[] {
       const pkgPath = path.join(dir, entry.name, "package.json");
       const subPkg = readJsonSafe(pkgPath);
       if (!subPkg) continue;
+      const workspacePath = path.join(dir, entry.name);
       results.push({
-        path: path.relative(root, path.join(dir, entry.name)),
+        path: path.relative(root, workspacePath),
         name: (subPkg.name as string) ?? entry.name,
-        framework: detectFramework(path.join(dir, entry.name)),
+        framework: detectFramework(workspacePath),
+        packageManager: detectPackageManagerForDir(workspacePath),
       });
     }
   }
@@ -355,11 +359,28 @@ function detectLintRules(root: string): string[] {
 
 function detectPackageManager(): string {
   const root = getProjectRoot();
+  return detectPackageManagerForDir(root);
+}
 
-  if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs.existsSync(path.join(root, "yarn.lock"))) return "yarn";
-  if (fs.existsSync(path.join(root, "package-lock.json"))) return "npm";
-  if (fs.existsSync(path.join(root, "bun.lockb"))) return "bun";
+/**
+ * Detect package manager for a specific directory by checking lockfiles.
+ * Falls back to parent directory if no lockfile found, up to project root.
+ */
+export function detectPackageManagerForDir(dir: string): string {
+  const root = getProjectRoot();
+  let currentDir = path.resolve(dir);
+
+  // Walk up from the given directory to find the nearest lockfile
+  while (currentDir.startsWith(root)) {
+    if (fs.existsSync(path.join(currentDir, "pnpm-lock.yaml"))) return "pnpm";
+    if (fs.existsSync(path.join(currentDir, "yarn.lock"))) return "yarn";
+    if (fs.existsSync(path.join(currentDir, "package-lock.json"))) return "npm";
+    if (fs.existsSync(path.join(currentDir, "bun.lockb"))) return "bun";
+
+    // Stop at the project root — don't go above
+    if (currentDir === root) break;
+    currentDir = path.dirname(currentDir);
+  }
 
   return "npm"; // Default
 }

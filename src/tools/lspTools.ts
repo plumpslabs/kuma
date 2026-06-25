@@ -470,6 +470,30 @@ async function fallbackGrepReferences(symbolName: string, _filePath: string, _li
       "",
     ];
 
+    // Warn about ambiguity when matches span multiple files or appear in different scopes
+    if (grouped.size > 1) {
+      const fileList = [...grouped.keys()].map(f => path.relative(projectRoot, f)).join(", ");
+      lines.push(`⚠️ **Ambiguity warning:** Found matches across ${grouped.size} different files (${fileList}).`);
+      lines.push(`   Regex fallback cannot distinguish between different scopes with the same symbol name.`);
+      lines.push(`   If you intended only one scope, clarify which file or location you mean.`);
+      lines.push(`   💡 Install typescript-language-server for scope-aware disambiguation.`);
+      lines.push("");
+    } else if (results.length > 1) {
+      // Single file, multiple matches — could still be different scopes (different functions)
+      const filePath = [...grouped.keys()][0];
+      const refs = grouped.get(filePath)!;
+      // Check if matches span more than 15 lines apart (likely different scopes)
+      const matchLines = refs.map(r => r.line);
+      const minLine = Math.min(...matchLines);
+      const maxLine = Math.max(...matchLines);
+      if (maxLine - minLine > 15) {
+        lines.push(`⚠️ **Ambiguity warning:** Found ${results.length} matches for "${symbolName}" spanning lines ${minLine}-${maxLine} in the same file.`);
+        lines.push(`   They may be in different function scopes — regex cannot distinguish them.`);
+        lines.push(`   💡 Verify each match is the intended symbol before editing.`);
+        lines.push("");
+      }
+    }
+
     for (const [file, refs] of grouped) {
       const relPath = path.relative(projectRoot, file);
       lines.push(`**📄 ${relPath}:**`);

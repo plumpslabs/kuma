@@ -82,6 +82,25 @@ export function validateFilePath(
       }
     }
 
+    // Resolve symlinks to prevent symlink escape attacks.
+    // If a symlink points outside the project root, block access.
+    try {
+      if (fs.existsSync(resolvedPath)) {
+        const realPath = fs.realpathSync(resolvedPath);
+        const normalizedRealPath = path.normalize(realPath).toLowerCase();
+        if (!normalizedRealPath.startsWith(normalizedRoot)) {
+          return {
+            valid: false,
+            error: new Error(
+              `PATH_TRAVERSAL: Symlink escape detected. Path "${filePath}" resolves to "${realPath}" which is outside project root "${resolvedRoot}".`,
+            ),
+          };
+        }
+      }
+    } catch {
+      // realpathSync throws ENOENT for non-existent files — fall through
+    }
+
     // Check: node_modules access (read-only allowed but warn)
     if (normalizedPath.includes("node_modules")) {
       return {

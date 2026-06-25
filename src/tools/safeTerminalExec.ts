@@ -3,6 +3,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import { circuitBreaker } from "../utils/errorHandler.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
+import { detectPackageManagerForDir } from "../utils/conventionsDetector.js";
 import { spawnShell, type ProcessResult } from "../utils/processRunner.js";
 
 // ============================================================
@@ -17,13 +18,20 @@ interface TerminalExecParams {
   workspace?: string;
 }
 
-// Map task → command
-const TASK_COMMANDS: Record<string, string> = {
-  test: "npm test",
-  build: "npm run build",
-  lint: "npm run lint",
-  typecheck: "npx tsc --noEmit",
-};
+/** Build a task command with the correct package manager prefix for the working directory */
+function buildTaskCommand(task: string, cwd: string): string {
+  const pm = detectPackageManagerForDir(cwd);
+  const prefix = pm === "pnpm" ? "pnpm" : pm === "yarn" ? "yarn" : pm === "bun" ? "bun" : "npm";
+  const npx = pm === "pnpm" ? "pnpm" : pm === "bun" ? "bunx" : "npx";
+
+  switch (task) {
+    case "test": return `${prefix} test`;
+    case "build": return `${prefix} run build`;
+    case "lint": return `${prefix} run lint`;
+    case "typecheck": return `${npx} tsc --noEmit`;
+    default: return `${prefix} test`;
+  }
+}
 
 const DANGEROUS_PATTERNS = [
   "rm -rf",
@@ -53,21 +61,9 @@ export async function handleSafeTerminalExec(params: TerminalExecParams): Promis
     return "Error: Task 'custom' requires the 'customCommand' parameter.";
   }
 
-  const command = task === "custom" ? customCommand! : TASK_COMMANDS[task];
-
-  const cbResult = circuitBreaker.check("safe_terminal_exec", { task, command });
-  if (!cbResult.allowed) {
-    return `⚠️ Circuit breaker: ${cbResult.reason}\n\nFix the code first before running the task again.`;
-  }
-
-  const dangerousPattern = DANGEROUS_PATTERNS.find((p) => command.toLowerCase().includes(p.toLowerCase()));
-  if (dangerousPattern) {
-    return `🚫 BLOCKED: Command contains a dangerous pattern: "${dangerousPattern}".\nThis command is not permitted.`;
-  }
-
   const projectRoot = getProjectRoot();
 
-  // Resolve working directory
+  // Resolve working directory first (needed for per-workspace package manager detection)
   let workingDir = projectRoot;
   let resolvedFrom = "root";
 
@@ -100,6 +96,19 @@ Available workspaces: ${workspaces?.map(w => `"${w.name}" (${w.path})`).join(", 
 
     workingDir = resolved;
     resolvedFrom = `cwd: ${inputCwd}`;
+  }
+
+  // Build command with per-directory package manager detection
+  const command = task === "custom" ? customCommand! : buildTaskCommand(task, workingDir);
+
+  const cbResult = circuitBreaker.check("safe_terminal_exec", { task, command });
+  if (!cbResult.allowed) {
+    return `⚠️ Circuit breaker: ${cbResult.reason}\n\nFix the code first before running the task again.`;
+  }
+
+  const dangerousPattern = DANGEROUS_PATTERNS.find((p) => command.toLowerCase().includes(p.toLowerCase()));
+  if (dangerousPattern) {
+    return `🚫 BLOCKED: Command contains a dangerous pattern: "${dangerousPattern}".\nThis command is not permitted.`;
   }
 
   try {
