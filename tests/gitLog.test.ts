@@ -1,6 +1,14 @@
 import { jest } from "@jest/globals";
-import { handleGitLog } from "../src/tools/gitLog.js";
-import child_process from "node:child_process";
+import type { Mock } from "jest-mock";
+
+jest.unstable_mockModule("../src/utils/gitUtils.js", () => ({
+  runGitCommand: jest.fn(),
+  isGitRepo: jest.fn().mockReturnValue(true),
+  getGitRoot: jest.fn().mockReturnValue("/test"),
+}));
+
+const { handleGitLog } = await import("../src/tools/gitLog.js");
+const gitUtils = await import("../src/utils/gitUtils.js");
 
 describe("gitLog", () => {
   afterEach(() => {
@@ -8,7 +16,7 @@ describe("gitLog", () => {
   });
 
   test("returns commit log successfully", async () => {
-    jest.spyOn(child_process, "execSync").mockReturnValue(
+    (gitUtils.runGitCommand as Mock).mockReturnValue(
       "a1b2c3d feat: initial commit\n5e6f7g8 chore: bump version"
     );
 
@@ -18,14 +26,14 @@ describe("gitLog", () => {
   });
 
   test("handles empty git history", async () => {
-    jest.spyOn(child_process, "execSync").mockReturnValue("");
+    (gitUtils.runGitCommand as Mock).mockReturnValue("");
 
     const result = await handleGitLog({ filePath: "nonexistent.ts" });
     expect(result).toContain("No commit history found");
   });
 
   test("handles execution errors gracefully", async () => {
-    jest.spyOn(child_process, "execSync").mockImplementation(() => {
+    (gitUtils.runGitCommand as Mock).mockImplementation(() => {
       throw new Error("Command failed");
     });
 

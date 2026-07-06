@@ -166,6 +166,31 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 
 ---
 
+---
+
+## 🍵 Pair with Matcha
+
+**Kuma keeps AI agents safe. Matcha keeps AI agents deliberate.**
+
+[Matcha](https://github.com/plumpslabs/matcha) is an engineering philosophy
+ruleset that enforces deliberate thinking before, during, and after coding:
+
+- **5W1H Gate** — Why are we doing this? Is there a simpler path?
+- **Reuse Before Write** — Never write what already exists
+- **Clean Finish** — No temp, no debug, no unused code
+
+Where Kuma provides **runtime safety** (rollback, circuit breaker, sandbox),
+Matcha provides **session discipline** (planning gate, cleanup scan, intensity levels).
+
+```bash
+# Try them together
+npx @plumpslabs/matcha init     # Install matcha philosophy
+npx @plumpslabs/kuma init --all  # Install kuma safety tools
+```
+
+Both tools are designed to complement each other — Kuma handles the
+"can't break things" layer while Matcha handles the "think before you act" layer.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.

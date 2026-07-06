@@ -1,6 +1,6 @@
 {
   "name": "@plumpslabs/kuma",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "description": "Zero-setup safety toolkit for AI coding agents. MCP server with code review, git analysis, file editing, session memory, and static analysis — works with Claude Code, Cursor, Gemini CLI.",
   "type": "module",
   "main": "dist/index.js",
@@ -33,6 +33,7 @@
     "@types/node": "^22.0.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.2",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3"
   },

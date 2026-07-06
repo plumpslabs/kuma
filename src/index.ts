@@ -141,20 +141,22 @@ async function main(): Promise<void> {
       process.cwd(),
       ".agents/skills/matcha/SKILL.md",
     );
-    const matchaCursor = path.resolve(
+    const matchaRootSkills = path.resolve(
       process.cwd(),
-      ".cursor/rules/matcha.mdc",
+      "skills/matcha/SKILL.md",
     );
-    const matchaWindsurf = path.resolve(
+    const matchaAgentsMd = path.resolve(process.cwd(), "AGENTS.md");
+    const matchaWindsurfRules = path.resolve(
       process.cwd(),
-      ".windsurf/rules/matcha.md",
+      ".windsurfrules",
     );
 
     if (
       fs.existsSync(matchaSkills) ||
       fs.existsSync(matchaAgents) ||
-      fs.existsSync(matchaCursor) ||
-      fs.existsSync(matchaWindsurf)
+      fs.existsSync(matchaRootSkills) ||
+      fs.existsSync(matchaAgentsMd) ||
+      fs.existsSync(matchaWindsurfRules)
     ) {
       console.error(
         "\n\u{1F375} Hey, I see matcha is installed \u2014 they pair well together!",

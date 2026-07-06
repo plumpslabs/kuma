@@ -1,20 +1,68 @@
 import { jest } from "@jest/globals";
-import { handleKumaGuard } from "../src/tools/kumaGuard.js";
-import { sessionMemory } from "../src/engine/sessionMemory.js";
-import childProcess from "node:child_process";
-import fs from "node:fs";
-import * as pathValidator from "../src/utils/pathValidator.js";
-import * as antiPatternDetector from "../src/guards/antiPatternDetector.js";
+import type { Mock } from "jest-mock";
 
-// ============================================================
-// KUMA GUARD — Unit Tests
-// ============================================================
+// ESM-compatible mocking — jest.unstable_mockModule intercepts imports before resolution
+jest.unstable_mockModule("../src/utils/pathValidator.js", () => ({
+  getProjectRoot: jest.fn().mockReturnValue("/test/project"),
+  validateFilePath: jest.fn().mockReturnValue({ valid: true, resolvedPath: "/test/project/file.ts" }),
+}));
+
+jest.unstable_mockModule("../src/guards/antiPatternDetector.js", () => ({
+  detectAllAntiPatterns: jest.fn().mockReturnValue([]),
+}));
+
+jest.unstable_mockModule("node:child_process", () => ({
+  execSync: jest.fn().mockReturnValue(""),
+}));
+
+jest.unstable_mockModule("node:fs", () => {
+  const fsMock = {
+    existsSync: jest.fn().mockReturnValue(true),
+    mkdirSync: jest.fn().mockReturnValue(""),
+    writeFileSync: jest.fn(),
+    readFileSync: jest.fn().mockReturnValue("{}"),
+    readdirSync: jest.fn().mockReturnValue([]),
+    statSync: jest.fn().mockReturnValue({}),
+  };
+  return { ...fsMock, default: fsMock };
+});
+
+jest.unstable_mockModule("node:fs", () => {
+  const fsMock = {
+    existsSync: jest.fn().mockReturnValue(true),
+    mkdirSync: jest.fn().mockReturnValue(""),
+    writeFileSync: jest.fn(),
+    readFileSync: jest.fn().mockReturnValue("{}"),
+    readdirSync: jest.fn().mockReturnValue([]),
+    statSync: jest.fn().mockReturnValue({}),
+  };
+  return { ...fsMock, default: fsMock };
+});
+
+jest.unstable_mockModule("node:fs", () => {
+  const fsMock = {
+    existsSync: jest.fn().mockReturnValue(true),
+    mkdirSync: jest.fn().mockReturnValue(""),
+    writeFileSync: jest.fn(),
+    readFileSync: jest.fn().mockReturnValue("{}"),
+    readdirSync: jest.fn().mockReturnValue([]),
+    statSync: jest.fn().mockReturnValue({}),
+  };
+  return { ...fsMock, default: fsMock };
+});
+
+const { handleKumaGuard } = await import("../src/tools/kumaGuard.js");
+const { sessionMemory } = await import("../src/engine/sessionMemory.js");
+const antiPatternDetector = await import("../src/guards/antiPatternDetector.js");
+const fs = await import("node:fs");
 
 type MockGuardWarning = {
   severity: string;
   pattern: string;
   message: string;
   suggestion: string;
+  filePath?: string;
+  evidence?: string;
 };
 
 function parseReport(result: string): Record<string, unknown> {
@@ -25,7 +73,6 @@ describe("handleKumaGuard", () => {
   beforeEach(() => {
     jest.spyOn(console, "error").mockImplementation(() => {});
 
-    // Mock session memory default state
     jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
       projectRoot: "/test/project",
       currentGoal: "",
@@ -40,13 +87,8 @@ describe("handleKumaGuard", () => {
     jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([]);
     jest.spyOn(sessionMemory, "getFailedFiles").mockReturnValue([]);
 
-    // Mock project root (used by kumaGuard's execSync for git diff)
-    jest.spyOn(pathValidator, "getProjectRoot").mockReturnValue("/test/project");
+    // pathValidator, antiPatternDetector, and child_process are mocked via jest.unstable_mockModule
 
-    // Mock execSync for git diff — use default import pattern (same as fs mock in sessionMemory test)
-    jest.spyOn(childProcess as any, "execSync").mockReturnValue("" as any);
-
-    // Mock fs for context snapshot support
     jest.spyOn(fs, "existsSync").mockReturnValue(true);
     jest.spyOn(fs, "mkdirSync").mockImplementation(() => "");
     jest.spyOn(fs, "writeFileSync").mockImplementation(() => {});
@@ -54,8 +96,8 @@ describe("handleKumaGuard", () => {
     jest.spyOn(fs, "readdirSync").mockImplementation(() => []);
     jest.spyOn(fs, "statSync").mockImplementation(() => ({} as any));
 
-    // Mock anti-pattern detector - no warnings by default
-    jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([]);
+    // Reset antiPatternDetector mock to default (no warnings)
+    (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -63,7 +105,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: "all" (default)
+  // CHECK: \"all\" (default)
   // ============================================================
   describe('check: "all" (default mode)', () => {
     test("returns onTrack: true when nothing wrong", async () => {
@@ -93,13 +135,13 @@ describe("handleKumaGuard", () => {
     });
 
     test("detects script-patching anti-pattern with high severity", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
           message: "Created script file that modifies other files: patch.py",
           suggestion:
-            "Use **precise_diff_editor** instead — it has fuzzy matching, auto-backup, and rollback support",
+            "Use **precise_diff_editor** instead \u2014 it has fuzzy matching, auto-backup, and rollback support",
           evidence: "File: patch.py contains 'writeFileSync'",
           filePath: "patch.py",
         },
@@ -115,7 +157,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("anti-pattern warning includes file path and evidence", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -135,13 +177,13 @@ describe("handleKumaGuard", () => {
     });
 
     test("detects bash-grep anti-pattern", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "medium",
           pattern: "bash-grep",
           message: "Used bash grep instead of smart_grep",
           suggestion:
-            "Use **smart_grep** — it returns line numbers + context, caches results, respects .gitignore",
+            "Use **smart_grep** \u2014 it returns line numbers + context, caches results, respects .gitignore",
           evidence: "Command: grep -rn 'auth' src/",
         },
       ]);
@@ -267,9 +309,12 @@ describe("handleKumaGuard", () => {
     });
 
     test("handles git not available gracefully", async () => {
-      (childProcess.execSync as jest.Mock).mockImplementation(() => {
-        throw new Error("not a git repository");
-      });
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([]);
+    // execSync is already mocked via jest.unstable_mockModule - override for this test
+    const cp = await import("node:child_process");
+    (cp.execSync as Mock).mockImplementation(() => {
+      throw new Error("not a git repository");
+    });
 
       const result = await handleKumaGuard({ goal: "test" });
       const report = parseReport(result);
@@ -280,7 +325,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: "anti-pattern"
+  // CHECK: \"anti-pattern\"
   // ============================================================
   describe('check: "anti-pattern"', () => {
     test("only runs anti-pattern detection, not loop or drift", async () => {
@@ -303,7 +348,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("reports anti-pattern warnings when detected", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -322,11 +367,11 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: "loop"
+  // CHECK: \"loop\"
   // ============================================================
   describe('check: "loop"', () => {
     test("only runs loop detection, not anti-pattern or drift", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -367,7 +412,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: "drift"
+  // CHECK: \"drift\"
   // ============================================================
   describe('check: "drift"', () => {
     test("only runs drift detection, not anti-pattern or loop", async () => {
@@ -376,7 +421,7 @@ describe("handleKumaGuard", () => {
         toolName: "smart_grep",
         message: "Loop detected",
       });
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -443,7 +488,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: "context" (creates snapshot, returns markdown)
+  // CHECK: \"context\" (creates snapshot, returns markdown)
   // ============================================================
   describe('check: "context" (creates snapshot)', () => {
     test("returns formatted snapshot with goal", async () => {
@@ -458,7 +503,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("does not include drift or loop info (short-circuits guard report)", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -474,20 +519,16 @@ describe("handleKumaGuard", () => {
 
       const result = await handleKumaGuard({ check: "context" as any });
 
-      // Should not contain guard report fields
       expect(result).not.toContain("onTrack");
       expect(result).not.toContain("script-patching");
       expect(result).not.toContain("tool-loop");
-      // Should contain snapshot fields
       expect(result).toContain("Context Snapshot");
     });
 
     test("returns error message when snapshot creation fails", async () => {
-      // Make mkdir throw to simulate filesystem error
-      (fs.mkdirSync as jest.Mock).mockImplementation(() => {
+      (fs.mkdirSync as Mock).mockImplementation(() => {
         throw new Error("EACCES: permission denied");
       });
-      // But we need existsSync to return false so it tries to mkdir
       jest.spyOn(fs, "existsSync").mockReturnValue(false);
 
       const result = await handleKumaGuard({ check: "context" as any });
@@ -543,7 +584,7 @@ describe("handleKumaGuard", () => {
   // ============================================================
   describe("suggestion priority", () => {
     test("script-patching takes highest priority", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -601,7 +642,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("bash-grep suggestion when grep detected", async () => {
-      jest.spyOn(antiPatternDetector, "detectAllAntiPatterns").mockReturnValue([
+      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
         {
           severity: "medium",
           pattern: "bash-grep",

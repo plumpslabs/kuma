@@ -144,7 +144,10 @@ type AvailableTool = "eslint" | "tsc" | "prettier" | "ruff";
 function detectAvailableTools(root: string): AvailableTool[] {
   const tools: AvailableTool[] = [];
   const pkg = readPackageJson(root);
-  const allDeps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) } as Record<string, string>;
+  const allDeps = {
+    ...((pkg?.dependencies as Record<string, string>) ?? {}),
+    ...((pkg?.devDependencies as Record<string, string>) ?? {}),
+  };
   const depNames = new Set(Object.keys(allDeps));
 
   // ESLint: check config files AND package.json dependency

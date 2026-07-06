@@ -1,6 +1,14 @@
 import { jest } from "@jest/globals";
-import { handleGitDiff } from "../src/tools/gitDiff.js";
-import child_process from "node:child_process";
+import type { Mock } from "jest-mock";
+
+jest.unstable_mockModule("../src/utils/gitUtils.js", () => ({
+  runGitCommand: jest.fn(),
+  isGitRepo: jest.fn().mockReturnValue(true),
+  getGitRoot: jest.fn().mockReturnValue("/test"),
+}));
+
+const { handleGitDiff } = await import("../src/tools/gitDiff.js");
+const gitUtils = await import("../src/utils/gitUtils.js");
 
 describe("handleGitDiff", () => {
   afterEach(() => {
@@ -23,7 +31,7 @@ describe("handleGitDiff", () => {
       '',
     ].join('\n');
 
-    jest.spyOn(child_process, "execSync").mockReturnValue(sampleDiff);
+    (gitUtils.runGitCommand as Mock).mockReturnValue(sampleDiff);
 
     const result = await handleGitDiff({});
     expect(result).toContain("**Git Diff**");
@@ -33,14 +41,14 @@ describe("handleGitDiff", () => {
   });
 
   test("handles no uncommitted changes", async () => {
-    jest.spyOn(child_process, "execSync").mockReturnValue("");
+    (gitUtils.runGitCommand as Mock).mockReturnValue("");
 
     const result = await handleGitDiff({});
     expect(result).toContain("No uncommitted changes");
   });
 
   test("handles no staged changes", async () => {
-    jest.spyOn(child_process, "execSync").mockReturnValue("");
+    (gitUtils.runGitCommand as Mock).mockReturnValue("");
 
     const result = await handleGitDiff({ staged: true });
     expect(result).toContain("No staged changes");
@@ -59,7 +67,7 @@ describe("handleGitDiff", () => {
       '+}',
     ].join('\n');
 
-    jest.spyOn(child_process, "execSync").mockReturnValue(diff);
+    (gitUtils.runGitCommand as Mock).mockReturnValue(diff);
 
     const result = await handleGitDiff({ staged: true });
     expect(result).toContain("[New file]");
@@ -77,7 +85,7 @@ describe("handleGitDiff", () => {
       '-const oldCode = "remove me";',
     ].join('\n');
 
-    jest.spyOn(child_process, "execSync").mockReturnValue(diff);
+    (gitUtils.runGitCommand as Mock).mockReturnValue(diff);
 
     const result = await handleGitDiff({});
     expect(result).toContain("[Deleted file]");
@@ -85,7 +93,7 @@ describe("handleGitDiff", () => {
   });
 
   test("handles not a git repository error", async () => {
-    jest.spyOn(child_process, "execSync").mockImplementation(() => {
+    (gitUtils.runGitCommand as Mock).mockImplementation(() => {
       throw new Error("fatal: not a git repository");
     });
 
@@ -94,7 +102,7 @@ describe("handleGitDiff", () => {
   });
 
   test("handles execution errors gracefully", async () => {
-    jest.spyOn(child_process, "execSync").mockImplementation(() => {
+    (gitUtils.runGitCommand as Mock).mockImplementation(() => {
       throw new Error("Command failed: git diff");
     });
 
@@ -113,7 +121,7 @@ describe("handleGitDiff", () => {
       '+new',
     ].join('\n');
 
-    jest.spyOn(child_process, "execSync").mockReturnValue(diff);
+    (gitUtils.runGitCommand as Mock).mockReturnValue(diff);
 
     const result = await handleGitDiff({ filePath: "src/index.ts" });
     expect(result).toContain("src/index.ts");
@@ -132,12 +140,12 @@ describe("handleGitDiff", () => {
       ' line4',
     ].join('\n');
 
-    jest.spyOn(child_process, "execSync").mockReturnValue(diff);
+    (gitUtils.runGitCommand as Mock).mockReturnValue(diff);
 
     const result = await handleGitDiff({});
     expect(result).toContain("Summary:");
-    expect(result).toContain("+2");  // 2 additions
-    expect(result).toContain("/ -1"); // 1 deletion
+    expect(result).toContain("+2");
+    expect(result).toContain("/ -1");
   });
 
   test("handles multiple files in diff", async () => {
@@ -156,7 +164,7 @@ describe("handleGitDiff", () => {
       '+new_b',
     ].join('\n');
 
-    jest.spyOn(child_process, "execSync").mockReturnValue(diff);
+    (gitUtils.runGitCommand as Mock).mockReturnValue(diff);
 
     const result = await handleGitDiff({});
     expect(result).toContain("src/a.ts");

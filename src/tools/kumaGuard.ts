@@ -1,13 +1,12 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { execSync } from "node:child_process";
-import { getProjectRoot } from "../utils/pathValidator.js";
 import { detectAllAntiPatterns, type GuardWarning } from "../guards/antiPatternDetector.js";
 import { saveSnapshot, formatSnapshot } from "../engine/contextSnapshot.js";
-
-// ============================================================
-// KUMA GUARD — Context safety net for AI agents
-// Combines anti-pattern detection + loop detection + drift analysis
-// ============================================================
+import {
+  getSessionStats,
+  getGitDiffStat,
+  getUnresolvedCount,
+  buildDriftMessages,
+} from "../utils/kumaShared.js";
 
 interface GuardParams {
   check?: "all" | "anti-pattern" | "loop" | "drift" | "context";
@@ -32,23 +31,17 @@ interface GuardReport {
 
 export async function handleKumaGuard(params: GuardParams): Promise<string> {
   const { check = "all", goal: inputGoal } = params;
-  const summary = sessionMemory.getSummary();
-  const goal = inputGoal || (summary.currentGoal as string) || "";
+  sessionMemory.recordToolCall("kuma_guard", { check, goal: inputGoal });
 
-  // Record the check
-  sessionMemory.recordToolCall("kuma_guard", { check, goal });
+  const stats = getSessionStats(inputGoal);
 
-  // ============================================================
-  // 1. Anti-pattern detection (file scanning + bash grep detection)
-  // ============================================================
+  // 1. Anti-pattern detection
   const warnings: GuardWarning[] = [];
   if (check === "all" || check === "anti-pattern") {
     warnings.push(...detectAllAntiPatterns());
   }
 
-  // ============================================================
-  // 2. Loop detection (from session memory)
-  // ============================================================
+  // 2. Loop detection
   const loop = check === "all" || check === "loop"
     ? sessionMemory.detectLoop()
     : { isLooping: false };
@@ -57,63 +50,36 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     warnings.push({
       severity: "high",
       pattern: "tool-loop",
-      message: loop.message ?? "Detected potential tool call loop",
+      message: (loop as any).message ?? "Detected potential tool call loop",
       suggestion: "Switch approach — try reading the file first with smart_file_picker",
     });
   }
 
-  // ============================================================
-  // 3. Drift detection (from session memory + git)
-  // ============================================================
+  // 3. Drift detection
   const drifts: string[] = [];
-  const toolCalls = sessionMemory.getToolCallHistory(50);
-  const hasRunTests = toolCalls.some((c) => c.toolName === "execute_safe_test");
-
   if (check === "all" || check === "drift") {
-    const modifiedFiles = sessionMemory.getModifiedFiles();
-    const failedFiles = sessionMemory.getFailedFiles();
+    const unresolvedCount = getUnresolvedCount(stats.failedFiles);
+    const gitStat = getGitDiffStat();
+    const editCalls = stats.toolCalls.filter(
+      (c: any) => c.toolName === "precise_diff_editor" || c.toolName === "batch_file_writer",
+    ).length;
 
-    // Unresolved failures
-    let unresolvedCount = 0;
-    for (const f of failedFiles) {
-      for (const ff of f.failures) {
-        if (!ff.resolved) unresolvedCount++;
-      }
-    }
+    drifts.push(...buildDriftMessages(
+      stats.modifiedFiles.length,
+      stats.hasRunTests,
+      unresolvedCount,
+      gitStat,
+    ));
 
-    if (modifiedFiles.length > 0 && !hasRunTests) {
-      drifts.push(`${modifiedFiles.length} file(s) edited but no test run`);
+    if (stats.modifiedFiles.length > 0 && !stats.hasRunTests) {
       warnings.push({
         severity: "medium",
         pattern: "no-test-after-edit",
-        message: `${modifiedFiles.length} file(s) modified without running tests`,
+        message: `${stats.modifiedFiles.length} file(s) modified without running tests`,
         suggestion: "Run execute_safe_test({ task: \"typecheck\" }) to verify changes",
       });
     }
 
-    if (unresolvedCount > 0) {
-      drifts.push(`${unresolvedCount} unresolved failure(s)`);
-    }
-
-    // Git diff
-    try {
-      const root = getProjectRoot();
-      const gitStat = execSync("git diff --stat", {
-        cwd: root,
-        encoding: "utf-8",
-        timeout: 3000,
-      }).trim();
-      if (gitStat) {
-        drifts.push(`Git diff: ${gitStat}`);
-      }
-    } catch {
-      // Not a git repo or git not available
-    }
-
-    // Edit count check (Ladder philosophy)
-    const editCalls = toolCalls.filter(
-      (c) => c.toolName === "precise_diff_editor" || c.toolName === "batch_file_writer",
-    ).length;
     if (editCalls > 5) {
       warnings.push({
         severity: "low",
@@ -124,24 +90,21 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     }
   }
 
-  // ============================================================
   // 4. Context snapshot
-  // ============================================================
   if (check === "context") {
-    const snapshot = saveSnapshot(goal);
+    const snapshot = saveSnapshot(stats.goal);
     if (!snapshot) {
       return "⚠️ Could not create context snapshot. The .kuma directory might not be accessible.";
     }
     return formatSnapshot(snapshot);
   }
 
-  // ============================================================
   // 5. Build report
-  // ============================================================
   const hasWarnings = warnings.length > 0;
   const hasDrifts = drifts.length > 0;
   const onTrack = !hasWarnings && !hasDrifts;
 
+  // Build suggestion matching original kumaGuard priority order
   let suggestion: string;
   if (warnings.some((w) => w.severity === "high" && w.pattern === "script-patching")) {
     suggestion = "Remove patch scripts and use precise_diff_editor for all file modifications";
@@ -153,7 +116,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     suggestion = "Use smart_grep for code search instead of bash grep";
   } else if (warnings.some((w) => w.pattern === "excessive-edits")) {
     suggestion = "Pause and review: are all these edits necessary?";
-  } else if (!goal) {
+  } else if (!stats.goal) {
     suggestion = "No goal set — use goal parameter or setGoal to track intent";
   } else {
     suggestion = "On track — continue with current approach";
@@ -166,14 +129,12 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     drifts,
     suggestion,
     stats: {
-      goal,
-      modifiedFiles: (summary.modifiedFiles as Array<unknown>).length,
-      toolCalls: (summary.toolCallCount as number) ?? 0,
-      unresolvedFailures: summary.unresolvedFailures
-        ? (summary.unresolvedFailures as Array<unknown>).length
-        : 0,
+      goal: stats.goal,
+      modifiedFiles: stats.modifiedFiles.length,
+      toolCalls: stats.toolCallCount,
+      unresolvedFailures: getUnresolvedCount(stats.failedFiles),
       hasLoop: loop.isLooping,
-      hasRunTests,
+      hasRunTests: stats.hasRunTests,
     },
   };
 
