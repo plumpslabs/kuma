@@ -49,7 +49,7 @@ describe("handleSafeTerminalExec — circuit breaker", () => {
   });
 
   test("timeout returns timeout message", async () => {
-    const result = await handleSafeTerminalExec({ task: "custom", customCommand: "sleep 10", timeout: 1 });
+    const result = await handleSafeTerminalExec({ task: "custom", customCommand: "sleep 2", timeout: 1 });
     expect(result).toContain("TIMEOUT");
   }, 5000);
 
