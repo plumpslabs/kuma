@@ -15,10 +15,27 @@ import {
 } from "./engine/kumaRouter.js";
 import { handlePreciseDiffEditor } from "./tools/preciseDiffEditor.js";
 import { wrapWithSafety } from "./engine/kumaSafetyProxy.js";
+import { formatOutput, buildCacheKey } from "./utils/kumaOutput.js";
+
+/**
+ * Wrapper: applies compact mode, adaptive compression, and dedup to all tool outputs.
+ */
+function wrapOutput(text: string, toolName: string, params: Record<string, unknown>): string {
+  const compact = (params as any).compact === true;
+  const responseBudget = (params as any).responseBudget as number | undefined;
+  const cacheKey = buildCacheKey(toolName, params);
+  return formatOutput(text, { compact, responseBudget, cacheKey });
+}
+
+/** Shared compact + responseBudget schema for all tools */
+const compactSchema = {
+  compact: z.boolean().optional().default(false).describe("Compact output mode (strips emojis/formatting, saves ~50% tokens)"),
+  responseBudget: z.number().min(100).max(10000).optional().describe("Max tokens for response (auto-compresses if exceeded)"),
+};
 
 export function registerAllTools(server: McpServer): void {
   // ============================================================
-  // 🔵 kuma_init — Session initialization (Call FIRST)
+  // kuma_init — Session initialization (Call FIRST)
   // ============================================================
   server.tool(
     "kuma_init",
@@ -28,11 +45,12 @@ export function registerAllTools(server: McpServer): void {
       projectRoot: z.string().optional().describe("Project root path (auto-detected)"),
       forceRescan: z.boolean().optional().default(false).describe("Force rescan for conventions"),
       depth: z.number().min(1).max(6).optional().default(3).describe("Tree depth for structure"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleInit(params.action || "init", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_init", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_init: ${err}` }], isError: true };
       }
@@ -40,7 +58,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 🟢 kuma_core — Core editing tools
+  // kuma_core — Core editing tools
   // ============================================================
   const safeEditHandler = wrapWithSafety("precise_diff_editor", handlePreciseDiffEditor, {
     extractFilePath: (p) => (p as any).filePath,
@@ -83,17 +101,17 @@ export function registerAllTools(server: McpServer): void {
       character: z.number().min(0).optional().describe("Character position (0-indexed) for LSP"),
       lspAction: z.enum(["def", "refs", "type", "rename"]).optional().describe("LSP sub-action"),
       newName: z.string().optional().describe("New name for rename action"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const action = params.action || "grep";
-        // Edit action goes through safety proxy
         if (action === "edit") {
           const text = await safeEditHandler(params as any);
-          return { content: [{ type: "text", text }] };
+          return { content: [{ type: "text", text: wrapOutput(text, "kuma_core", params) }] };
         }
         const text = await handleCore(action, params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_core", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_core: ${err}` }], isError: true };
       }
@@ -101,7 +119,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 🟡 kuma_verify — Testing, review, linting
+  // kuma_verify — Testing, review, linting
   // ============================================================
   server.tool(
     "kuma_verify",
@@ -122,11 +140,12 @@ export function registerAllTools(server: McpServer): void {
       // lint params
       tool: z.enum(["eslint", "tsc", "prettier", "ruff", "all"]).optional().default("all").describe("Lint tool"),
       autoFix: z.boolean().optional().default(false).describe("Auto-fix issues"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleVerify(params.action || "test", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_verify", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_verify: ${err}` }], isError: true };
       }
@@ -134,7 +153,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 🔴 kuma_safety — Safety checks & risk prediction
+  // kuma_safety — Safety checks & risk prediction
   // ============================================================
   server.tool(
     "kuma_safety",
@@ -152,6 +171,7 @@ export function registerAllTools(server: McpServer): void {
       packageName: z.string().optional().describe("Package name for dependency guard"),
       packageVersion: z.string().optional().describe("Package version for dependency guard"),
       actionCheck: z.string().optional().describe("Check sub-action (e.g. 'edit')"),
+      ...compactSchema,
     },
     async (params) => {
       try {
@@ -161,7 +181,7 @@ export function registerAllTools(server: McpServer): void {
           actionCheck: params.actionCheck || params.action,
           contextAction: (params as any).contextAction || (action === "context" ? "save" : undefined),
         });
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_safety", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_safety: ${err}` }], isError: true };
       }
@@ -169,7 +189,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 🟣 kuma_graph — Knowledge graph navigation & queries
+  // kuma_graph — Knowledge graph navigation & queries
   // ============================================================
   server.tool(
     "kuma_graph",
@@ -188,11 +208,12 @@ export function registerAllTools(server: McpServer): void {
       toolName: z.string().optional().describe("Tool name for experience errors"),
       intentAction: z.enum(["suggest"]).optional().describe("Intent sub-action"),
       intent: z.string().optional().describe("Intent description"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleGraph(params.action || "query", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_graph", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_graph: ${err}` }], isError: true };
       }
@@ -200,7 +221,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 🧠 kuma_memory — Session & persistent memory
+  // kuma_memory — Session & persistent memory
   // ============================================================
   server.tool(
     "kuma_memory",
@@ -218,11 +239,12 @@ export function registerAllTools(server: McpServer): void {
       rationale: z.string().optional().describe("Decision rationale for record"),
       outcome: z.string().optional().describe("Decision outcome for record"),
       healAction: z.enum(["check", "heal"]).optional().default("heal").describe("Heal sub-action"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleMemory(params.action || "get", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_memory", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_memory: ${err}` }], isError: true };
       }
@@ -230,7 +252,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 📊 kuma_analytics — Session analytics & reflection
+  // kuma_analytics — Session analytics & reflection
   // ============================================================
   server.tool(
     "kuma_analytics",
@@ -241,11 +263,12 @@ export function registerAllTools(server: McpServer): void {
       context: z.string().optional().describe("Context for predict"),
       target: z.string().optional().describe("Target for confidence"),
       sessionStats: z.boolean().optional().default(false).describe("Include session stats in heatmap"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleAnalytics(params.action || "reflect", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_analytics", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_analytics: ${err}` }], isError: true };
       }
@@ -253,7 +276,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // ⏳ kuma_history — Git & code time machine
+  // kuma_history — Git & code time machine
   // ============================================================
   server.tool(
     "kuma_history",
@@ -269,11 +292,12 @@ export function registerAllTools(server: McpServer): void {
       contextLines: z.number().min(1).max(20).optional().default(3).describe("Context lines for diff"),
       baseRef: z.string().optional().describe("Base git ref for diff"),
       targetRef: z.string().optional().describe("Target git ref for diff"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleHistory(params.action || "log", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_history", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_history: ${err}` }], isError: true };
       }
@@ -281,7 +305,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // 🔒 kuma_lock — Multi-agent file locking
+  // kuma_lock — Multi-agent file locking
   // ============================================================
   server.tool(
     "kuma_lock",
@@ -290,11 +314,12 @@ export function registerAllTools(server: McpServer): void {
       action: z.enum(["acquire", "release", "list", "clean"]).describe("Lock action"),
       filePath: z.string().optional().describe("File path for acquire/release"),
       agentId: z.string().optional().describe("Agent identifier for lock"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleLock(params.action || "list", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_lock", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_lock: ${err}` }], isError: true };
       }
@@ -302,7 +327,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // ⚙️ kuma_advanced — Maintenance & advanced features
+  // kuma_advanced — Maintenance & advanced features
   // ============================================================
   server.tool(
     "kuma_advanced",
@@ -326,11 +351,12 @@ export function registerAllTools(server: McpServer): void {
       template: z.string().optional().describe("Template ID for marketplace install"),
       // query params
       query: z.string().optional().describe("Query for failure query"),
+      ...compactSchema,
     },
     async (params) => {
       try {
         const text = await handleAdvanced(params.action || "marketplace", params);
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: wrapOutput(text, "kuma_advanced", params) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in kuma_advanced: ${err}` }], isError: true };
       }
