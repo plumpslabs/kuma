@@ -23,6 +23,8 @@ import { handleSmartGrep } from "../tools/smartGrep.js";
 import { handleSmartFilePicker } from "../tools/smartFilePicker.js";
 import { handlePreciseDiffEditor } from "../tools/preciseDiffEditor.js";
 import { handleBatchFileWriter } from "../tools/batchFileWriter.js";
+import { handleKumaFind } from "../tools/kumaFind.js";
+import { handleKumaStats } from "../tools/kumaStats.js";
 import { handleSafeTerminalExec } from "../tools/safeTerminalExec.js";
 import { handleCodeReviewer } from "../agents/codeReviewer.js";
 import { handleProjectConventions } from "../agents/projectConventions.js";
@@ -101,7 +103,9 @@ export async function handleCore(action: string, params: Record<string, unknown>
     case "edit": return await handlePreciseDiffEditor(params as any);
     case "batch": return await handleBatchFileWriter(params as any);
     case "lsp": return await handleLspQuery(({ ...params, action: params.lspAction }) as any);
-    default: return `⚠️ Unknown action "${action}" for kuma_core. Use: grep, read, edit, batch, lsp`;
+    case "find": return await handleKumaFind(params as any);
+    case "stats": return await handleKumaStats(params as any);
+    default: return `⚠️ Unknown action "${action}" for kuma_core. Use: grep, read, edit, batch, lsp, find, stats`;
   }
 }
 

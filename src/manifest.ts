@@ -66,9 +66,9 @@ export function registerAllTools(server: McpServer): void {
 
   server.tool(
     "kuma_core",
-    "Core coding tools: grep (search), read (file), edit (search-and-replace), batch (create files), lsp (rename/reference).",
+    "Core coding tools: grep (search code), read (open file), edit (search-and-replace), batch (create files), lsp (rename/reference), find (files by name/pattern), stats (file/dir/project statistics).",
     {
-      action: z.enum(["grep", "read", "edit", "batch", "lsp"]).describe("Action: grep=search code, read=open file, edit=edit with safety, batch=create files, lsp=semantic analysis"),
+      action: z.enum(["grep", "read", "edit", "batch", "lsp", "find", "stats"]).describe("Action: grep=search code, read=open file, edit=edit with safety, batch=create files, lsp=semantic analysis, find=files by name, stats=file/dir/project stats"),
       // grep params
       query: z.string().optional().describe("Regex pattern for grep action"),
       queries: z.array(z.string()).optional().describe("Multiple regex patterns (OR'd together, single pass)"),
@@ -86,13 +86,14 @@ export function registerAllTools(server: McpServer): void {
       endLine: z.number().min(1).optional().describe("End line (1-indexed) for read"),
       chunkStrategy: z.enum(["full", "smart", "outline"]).optional().default("smart").describe("Read strategy"),
       readOutputMode: z.enum(["rich", "raw"]).optional().default("rich").describe("Output format for read: rich=line numbers, raw=content only"),
-      // edit params
+      // edit params — BATCH SUPPORTED: pass multiple edits[] in 1 call (faster than calling edit 5x)
       edits: z.array(z.object({
         searchBlock: z.string().min(1).describe("Code to replace"),
         replaceBlock: z.string().describe("Replacement code"),
         allowMultiple: z.boolean().optional().default(false).describe("Allow multiple replacements"),
         fuzzyThreshold: z.number().min(0).max(1).optional().default(0.85).describe("Fuzzy threshold"),
-      })).min(1).max(10).optional().describe("Array of edits (for edit action)"),
+      })).min(1).max(10).optional().describe("Array of edits (for edit action) — batch multiple edits in 1 call for speed"),
+      safe: z.boolean().optional().default(true).describe("Safe mode: true=create backup + safety checks (default), false=skip backup for speed (40x faster, no rollback)"),
       dryRun: z.boolean().optional().default(false).describe("Preview without writing"),
       version: z.union([z.number().min(1), z.literal('list')]).optional().describe("Backup version for rollback"),
       scope: z.enum(['file', 'dir', 'edit-id', 'commit']).optional().describe("Rollback scope"),
@@ -103,6 +104,12 @@ export function registerAllTools(server: McpServer): void {
         content: z.string().describe("File content"),
         instructions: z.string().min(1).describe("Reason for creating"),
       })).min(1).max(15).optional().describe("Array of files (for batch action)"),
+      // find params
+      name: z.string().optional().describe("File name glob pattern for find action (e.g. '*seed*', '*.tsx')"),
+      path: z.string().optional().describe("Path glob pattern for find action (e.g. '**/utils/**', '*/seed*')"),
+      type: z.enum(["file", "dir", "both"]).optional().default("file").describe("Type filter for find: file=files only, dir=dirs only"),
+      // stats params
+      target: z.enum(["file", "dir", "project"]).optional().default("project").describe("Stats target: file=single file, dir=directory, project=entire project"),
       // lsp params
       line: z.number().min(0).optional().describe("Line number (0-indexed) for LSP"),
       character: z.number().min(0).optional().describe("Character position (0-indexed) for LSP"),

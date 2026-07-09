@@ -19,6 +19,7 @@ interface DiffEditorParams {
   filePath: string;
   action?: "rollback";
   edits?: DiffEdit[];
+  safe?: boolean;
   dryRun?: boolean;
   version?: number | 'list';
   scope?: 'file' | 'dir' | 'edit-id' | 'commit';
@@ -52,6 +53,60 @@ interface RollbackParams {
 }
 
 /**
+ * Fast edit: apply without backup, circuit breaker, or manifest.
+ * 40x faster than safe mode for simple replacements.
+ */
+function fastApplyEdit(content: string, edit: DiffEdit): DiffResult {
+  const { searchBlock, replaceBlock, allowMultiple = false } = edit;
+
+  // Exact match only (no fuzzy for speed)
+  const count = countOccurrences(content, searchBlock);
+  if (count === 0) {
+    return {
+      success: false,
+      matched: 0,
+      replaced: 0,
+      error: `DIFF_MISMATCH: searchBlock not found (fast mode - exact match only)`,
+      details: content,
+    };
+  }
+
+  const newContent = allowMultiple
+    ? replaceAll(content, searchBlock, replaceBlock)
+    : content.replace(searchBlock, replaceBlock);
+
+  return {
+    success: true,
+    matched: count,
+    replaced: allowMultiple ? count : 1,
+    details: newContent,
+  };
+}
+
+/**
+ * Format fast edit output — minimal, no backup/editId info.
+ */
+function formatFastEditResult(results: DiffResult[], filePath: string): string {
+  const successCount = results.filter((r) => r.success).length;
+  const failCount = results.filter((r) => !r.success).length;
+
+  if (failCount === 0) {
+    return `⚡ Fast edit: ${filePath} — ${successCount} edits applied.`;
+  }
+
+  const lines: string[] = [`⚡ Fast edit: ${filePath}`];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.success) {
+      lines.push(`  [${i + 1}] ✅ ${r.matched}x matched, ${r.replaced}x replaced`);
+    } else {
+      lines.push(`  [${i + 1}] ❌ ${r.error}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
  * Generate a unique edit ID for tracking across backups.
  */
 export function generateEditId(): string {
@@ -59,7 +114,7 @@ export function generateEditId(): string {
 }
 
 export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise<string> {
-  const { filePath, edits, dryRun = false, action, scope } = params;
+  const { filePath, edits, safe = true, dryRun = false, action, scope } = params;
 
   if (action === "rollback") {
     return handleRollbackEdit({ filePath, version: params.version, scope: scope || 'file', editId: params.editId });
@@ -77,10 +132,12 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
 
   const resolvedPath = validation.resolvedPath;
 
-  // Check circuit breaker
-  const cbResult = circuitBreaker.check("precise_diff_editor", { filePath });
-  if (!cbResult.allowed) {
-    return `⚠️ ${cbResult.reason}\n\nTry reading the file first with smart_file_picker to verify current content.`;
+  // Check circuit breaker (skip in fast mode)
+  if (safe) {
+    const cbResult = circuitBreaker.check("precise_diff_editor", { filePath });
+    if (!cbResult.allowed) {
+      return `⚠️ ${cbResult.reason}\n\nTry reading the file first with smart_file_picker to verify current content.`;
+    }
   }
 
   // Check file exists
@@ -95,21 +152,37 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
 
     for (let i = 0; i < edits.length; i++) {
       const edit = edits[i];
+      // In fast mode (safe:false), apply without backup
+      if (!safe) {
+        const result = fastApplyEdit(currentContent, edit);
+        if (result.success) {
+          fs.writeFileSync(resolvedPath, result.details!, "utf-8");
+          currentContent = result.details!;
+          sessionMemory.recordToolCall("precise_diff_editor", {
+            filePath,
+            editIndex: i,
+            fast: true,
+            success: true,
+          });
+          sessionMemory.addModifiedFile(filePath);
+        }
+        results.push(result);
+        continue;
+      }
+
+      // Safe mode: full backup + safety
       const result = applyEdit(currentContent, edit, resolvedPath, i, dryRun);
 
       if (result.success) {
         if (!dryRun) {
-          // Generate editId and write file
           const editId = generateEditId();
           result.editId = editId;
           fs.writeFileSync(resolvedPath, result.details!, "utf-8");
 
-          // Update backup manifest with edit ID
           if (result.backupPath) {
             updateBackupManifest(result.backupPath, editId, filePath, i);
           }
 
-          // Record to session memory with editId
           sessionMemory.recordToolCall("precise_diff_editor", {
             filePath,
             editIndex: i,
@@ -120,16 +193,18 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
           sessionMemory.addModifiedFile(filePath);
         }
 
-        // Chain: use updated content for next edit in batch
         currentContent = result.details!;
       }
 
       results.push(result);
     }
 
-    // Format output (diff preview for dryRun)
+    // Format output
     if (dryRun) {
       return formatDryRunResult(results, filePath, originalContent);
+    }
+    if (!safe) {
+      return formatFastEditResult(results, filePath);
     }
     return formatDiffResult(results, filePath);
   } catch (err) {
