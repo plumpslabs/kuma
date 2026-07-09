@@ -55,13 +55,13 @@ Or add Kuma MCP server manually to any MCP client:
 | 🔵 `kuma_init` | `init`, `conventions`, `structure` | **Call first** every session |
 | 🟢 `kuma_core` | `grep`, `read`, `edit`, `batch`, `lsp` | During active coding |
 | 🟡 `kuma_verify` | `test`, `review`, `lint` | After every edit |
-| 🔴 `kuma_safety` | `guard` (anti-patterns, loops, drift), `score` (0-100 health), `check` (pre-exec safety), `policy` (`.kuma/policy.yml`), `risk` (impact prediction), `dependency` (native JS alternatives) | Before risky ops |
+| 🔴 `kuma_safety` | `guard` (anti-patterns, loops, drift), `score` (0-100 health), `check` (pre-exec safety), `policy` (`.kuma/policy.yml`), `risk` (impact prediction), `dependency` (native JS alternatives), `audit` (safety audit trail), `stats` (audit statistics), `override` (bypass safety) | Before risky ops |
 | 🟣 `kuma_graph` | `query` (nodes/edges/stats/search), `navigate`, `diagram`, `investigate`, `arch` (capture/diff/diagram/fs/graph/profiles), `experience` (suggest/errors/prune), `intent` (suggest/patterns) | Codebase understanding — powered by **SQLite knowledge graph** |
 | 🧠 `kuma_memory` | `get`, `search`, `write`, `decision`, `context`, `heal` | Persist/retrieve context |
 | 📊 `kuma_analytics` | `reflect`, `analytics`, `health`, `replay`, `heatmap`, `learn`, `predict`, `confidence`, `dna` | Session review |
 | ⏳ `kuma_history` | `timeline`, `log`, `diff` | Git/time analysis |
 | 🔒 `kuma_lock` | `acquire`, `release`, `list`, `clean` | Multi-agent coordination |
-| ⚙️ `kuma_advanced` | `failure`, `compress`, `shadow`, `collective`, `marketplace` | Maintenance |
+| ⚙️ `kuma_advanced` | `failure`, `compress`, `shadow`, `collective` (sync patterns to VPS), `marketplace` (install templates) | Maintenance |
 
 ```bash
 # Example workflow
@@ -166,6 +166,7 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 | Tool | Description |
 |------|-------------|
 | `kuma_guard` | **Context safety net.** Detects anti-patterns (script patching, bash grep), tool loops, drift (edits without tests, unresolved failures). Run this after every few edits. Checks: `all`, `anti-pattern`, `loop`, `drift`, `context`. |
+| `kuma_safety` | **Safety AI Layer.** Actions: `audit` (query trail), `stats` (audit statistics), `override` (bypass safety, logged). `precise_diff_editor` auto-wrapped with safety proxy. |
 
 ---
 
@@ -203,18 +204,19 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 
 ```
 .kuma/
-├── kuma.db          # SQLite database (knowledge graph, sessions, experiences)
-├── init.md           # Behavioral rules for AI agents (auto-generated)
-├── memory.json       # Session state (modified files, failures, tool history)
-└── memories/         # Persistent knowledge files
+├── kuma.db           # SQLite database (knowledge graph, sessions, experiences)
+├── init.md            # Behavioral rules for AI agents (auto-generated)
+├── config.json        # Per-project config (collective endpoint, autoSync, etc.)
+├── memory.json        # Session state (modified files, failures, tool history)
+└── memories/          # Persistent knowledge files
     ├── architecture.md
     ├── conventions.md
     ├── decisions.md
     ├── glossary.md
     └── known-issues.md
 
-.kuma/backups/        # Versioned backups from precise_diff_editor
-└── <timestamp>/      # One backup snapshot per edit
+.kuma/backups/         # Versioned backups from precise_diff_editor
+└── <timestamp>/       # One backup snapshot per edit
     └── <relative-file-path>
 ```
 
@@ -227,6 +229,231 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 3. **Graceful degradation, not crash** — Every tool has a fallback before it fails. LSP unavailable? Regex. File not found? Show resolved paths. Diff mismatch? Whitespace→fuzzy retry. Test fails? Circuit breaker stops the loop. FTS5 unavailable? Full-text search disabled gracefully.
 4. **Opinionated workflow** — Tools designed to be used together: `kuma_init → kuma_core → kuma_verify → kuma_safety → kuma_analytics`.
 5. **Minimal surface** — 19 focused tools. Each tool has one job and does it well. No overlap, no confusion.
+
+---
+
+## 🐻 Kolektif — Collective Intelligence
+
+Kolektif allows Kuma instances across different projects to share anonymized patterns. Data is sent to **your own VPS server** — not to a public server.
+
+### Architecture
+
+```
+Project A (Laptop) ──────┐
+                          ├──► Your VPS (Hono + better-sqlite3)
+Project B (Laptop) ──────┘    Port 3001
+```
+
+**Data sent (safe):**
+- `errorType`: "type_error" / "build_error" — generic category
+- `tools`: ["smart_grep", "lsp_query"] — tool names only
+- `language`: "typescript" — programming language
+- `count`, `successRate` — anonymous numbers
+
+**Data NEVER sent:**
+- ❌ Source code
+- ❌ File names / function names
+- ❌ Raw error messages
+- ❌ Git history / commit messages
+- ❌ User identity
+
+### Quick Deploy (VPS)
+
+Requires a VPS (1GB RAM is enough) with Node.js 18+.
+
+```bash
+# 1. Clone repo
+ssh user@vps-ip
+git clone https://github.com/plumpslabs/kuma.git kolektif
+cd kolektif/server
+
+# 2. Install + build
+npm install
+npx tsc
+
+# 3. Start via PM2
+pm2 start dist/index.js --name kuma-server
+pm2 save
+
+# 4. Open firewall
+sudo ufw allow 3001/tcp
+```
+
+Or use the one-command deploy script:
+```bash
+ssh user@vps-ip 'bash -s' < server/deploy.sh
+```
+
+### Client Setup
+
+Set the environment variable on your laptop:
+```bash
+export KUMA_COLLECTIVE_URL=http://<vps-ip>:3001
+```
+
+Or via `.kuma/config.json`:
+```json
+{
+  "collective": {
+    "url": "http://<vps-ip>:3001",
+    "autoSync": true,
+    "syncIntervalMinutes": 60
+  }
+}
+```
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/v1/patterns` | Submit anonymized patterns |
+| `GET` | `/api/v1/patterns?lang=go` | Get global patterns by language |
+| `GET` | `/api/v1/stats` | Dashboard statistics |
+
+### Usage from Kuma
+
+```bash
+# Sync patterns to your VPS
+kuma_advanced({ action: "collective", collectiveAction: "sync" })
+
+# Export anonymized preview
+kuma_advanced({ action: "collective", collectiveAction: "export" })
+
+# Discover patterns from VPS
+kuma_advanced({ action: "collective" })
+```
+
+---
+
+## 📦 Knowledge Marketplace
+
+Marketplace provides **pre-built knowledge graph templates** for popular frameworks. Installing a template means Kuma instantly understands the framework's structure without having to learn from scratch.
+
+### What happens when you install a template?
+
+Templates inject nodes (modules, files, functions) and edges (depends_on, imports) into Kuma's SQLite graph. Results:
+
+| Before Installing | After Installing `graph:laravel` |
+|-------------------|----------------------------------|
+| Kuma doesn't know if `User.php` is a Model or Controller | Kuma knows `User.php` extends `Authenticatable` → Model |
+| `kuma_graph({ action: "navigate", query: "find controllers" })` fails | Can answer: "AuthController, UserController in app/Http/Controllers/" |
+| Empty graph — Kuma starts from zero | Graph knows Laravel MVC architecture from the start |
+| Intent prediction is less accurate | Predictions improve — knows Controller → Service → Repository patterns |
+
+### Usage
+
+```bash
+# List all templates
+kuma_advanced({ action: "marketplace" })
+
+# Install Laravel template — Kuma instantly understands Laravel MVC
+kuma_advanced({ action: "marketplace", marketplaceAction: "install", template: "graph:laravel" })
+```
+
+### Available Templates
+
+#### 🔷 TypeScript / JavaScript
+
+| Template | Framework | Knows | Nodes | Edges |
+|----------|-----------|-------|-------|-------|
+| `graph:hono` | Hono | Middleware chain, RPC mode, typed routes, HonoX, JSX middleware | 35 | 90 |
+| `graph:fastify` | Fastify | Plugin system, hooks lifecycle, schema validation, encapsulation | 40 | 100 |
+| `graph:elysia` | Elysia (Bun) | Plugin system, Eden Treaty, schema validation, state/derive pattern | 28 | 70 |
+| `graph:nextjs` | Next.js App Router | App Router, Server Components, layout structure, route groups | 45 | 120 |
+| `graph:nextjs-pages` | Next.js Pages Router | Pages Router, getServerSideProps, API routes, ISR pattern | 38 | 95 |
+| `graph:remix` | Remix | Loaders, actions, forms pattern, nested routes, resource routes | 32 | 80 |
+| `graph:express` | Express.js | Middleware chain, route handlers, error patterns, app structure | 30 | 85 |
+
+#### ⚛️ React Ecosystem
+
+| Template | Library | Knows | Nodes | Edges |
+|----------|---------|-------|-------|-------|
+| `graph:tanstack-query` | TanStack Query | Query/mutation pattern, cache invalidation, optimistic updates, infinite queries | 36 | 88 |
+| `graph:tanstack-router` | TanStack Router | File-based routing, loaders, search params, route guards, devtools | 30 | 75 |
+| `graph:tanstack-table` | TanStack Table | Column definitions, sorting, filtering, pagination, row selection | 22 | 55 |
+| `graph:zustand` | Zustand | Store pattern, middleware (persist, devtools, immer), subscribe, slice pattern | 18 | 42 |
+| `graph:shadcn` | shadcn/ui | Component structure, Radix primitives, tailwind classes, registry pattern | 50 | 130 |
+
+#### 🗄️ Database (JS/TS)
+
+| Template | ORM | Knows | Nodes | Edges |
+|----------|-----|-------|-------|-------|
+| `graph:prisma` | Prisma | Schema models, relations, migrations, client queries, middleware hooks | 35 | 85 |
+| `graph:drizzle` | Drizzle | Schema definition, relations, SQL-like queries, migrations, Drizzle Kit | 30 | 72 |
+
+#### Other Languages
+
+| Template | Framework | Knows | Nodes | Edges |
+|----------|-----------|-------|-------|-------|
+| `graph:laravel` | Laravel (PHP) | Controllers, Services, Repositories, Middleware, Blade, Eloquent | 50 | 140 |
+| `graph:spring` | Spring Boot (Java) | Controllers, Services, JPA Repositories, Entities, Config | 55 | 150 |
+| `graph:django` | Django (Python) | Views, Models, Serializers, URLs, Admin | 40 | 110 |
+| `graph:gin` | Gin (Go) | Handlers, Services, Repositories, Middleware, Models | 25 | 65 |
+| `graph:axum` | Axum (Rust) | Handlers, Extractors, Services, Repositories, State | 20 | 55 |
+
+### Distribution via npm
+
+Templates can also be installed via npm to persist across projects:
+```bash
+npm install @kuma-templates/laravel-graph
+```
+
+---
+
+## 🔄 Self-Healing (3.4)
+
+Kuma automatically detects and repairs issues in the knowledge graph:
+
+```bash
+# Check for stale entries
+kuma_memory({ action: "heal", healAction: "check" })
+
+# Auto-heal — remove stale nodes/edges
+kuma_memory({ action: "heal" })
+```
+
+| Feature | Description |
+|---------|-------------|
+| **Content Hash** | Detects files that changed since last scan |
+| **All-Node Scan** | Scans all nodes, not just modified ones |
+| **Cascading Edges** | Removes edges when their source node is deleted (cascade) |
+| **Incremental Heal** | Batch processing — 50 nodes per cycle, non-blocking |
+| **Auto-Heal Hook** | Runs automatically after edits — no manual action needed |
+
+---
+
+## 🛡️ Safety AI Layer
+
+The Safety layer sits between AI agents and the filesystem. Every tool call goes through: policy check, path validation, audit logging.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Safety Audit** | Every tool call is recorded in SQLite (`safety_audit`). Queryable. |
+| **Safety Proxy** | `precise_diff_editor` is auto-wrapped — runs preCheck before execution. |
+| **Risk Assessment** | Path validation, policy checks, dangerous command detection. |
+| **Override Logging** | Safety bypasses are logged with reasons — audit trail stays clean. |
+
+### Usage
+
+```bash
+# Query audit trail (20 most recent entries)
+kuma_safety({ action: "audit", limit: 20 })
+
+# Audit statistics
+kuma_safety({ action: "stats" })
+
+# Bypass safety (logged with reason)
+kuma_safety({ action: "override", tool: "precise_diff_editor", reason: "trusted edit" })
+```
+
+### Full Safety Check
+```bash
+# Full safety check before execution
+kuma_safety({ action: "check", actionCheck: "edit", filePath: "config.ts" })
+```
 
 ---
 
