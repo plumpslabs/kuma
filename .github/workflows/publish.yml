@@ -13,10 +13,10 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: npx tsc --noEmit
@@ -34,10 +34,10 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
@@ -59,10 +59,10 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://npm.pkg.github.com"
           scope: "@plumpslabs"
           cache: "pnpm"
