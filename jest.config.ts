@@ -29,6 +29,11 @@ const config: Config = {
     "src/engine/sessionMemory.ts",
   ],
   coverageReporters: ["text", "lcov"],
+  modulePathIgnorePatterns: ["<rootDir>/.agent-backups"],
+  testPathIgnorePatterns: [
+    "<rootDir>/node_modules/",
+    "<rootDir>/.agent-backups/",
+  ],
 };
 
 export default config;

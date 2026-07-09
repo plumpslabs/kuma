@@ -1,60 +1,34 @@
 import { jest } from "@jest/globals";
-import type { Mock } from "jest-mock";
 
-// ESM-compatible mocking — jest.unstable_mockModule intercepts imports before resolution
+// ============================================================
+// Shared mutable mock refs — use unstable_mockModule for ESM
+// compatibility with --experimental-vm-modules
+// ============================================================
+
+const mockGetProjectRoot = jest.fn<any>().mockReturnValue("/tmp/kuma-test");
+const mockValidateFilePath = jest
+  .fn<any>()
+  .mockReturnValue({ valid: true, resolvedPath: "/tmp/kuma-test/file.ts" });
+const mockDetectAllAntiPatterns = jest.fn<any>().mockReturnValue([]);
+const mockExecSync = jest.fn<any>().mockReturnValue("");
+
 jest.unstable_mockModule("../src/utils/pathValidator.js", () => ({
-  getProjectRoot: jest.fn().mockReturnValue("/test/project"),
-  validateFilePath: jest.fn().mockReturnValue({ valid: true, resolvedPath: "/test/project/file.ts" }),
+  getProjectRoot: mockGetProjectRoot,
+  validateFilePath: mockValidateFilePath,
 }));
 
 jest.unstable_mockModule("../src/guards/antiPatternDetector.js", () => ({
-  detectAllAntiPatterns: jest.fn().mockReturnValue([]),
+  detectAllAntiPatterns: mockDetectAllAntiPatterns,
 }));
 
 jest.unstable_mockModule("node:child_process", () => ({
-  execSync: jest.fn().mockReturnValue(""),
+  execSync: mockExecSync,
 }));
 
-jest.unstable_mockModule("node:fs", () => {
-  const fsMock = {
-    existsSync: jest.fn().mockReturnValue(true),
-    mkdirSync: jest.fn().mockReturnValue(""),
-    writeFileSync: jest.fn(),
-    readFileSync: jest.fn().mockReturnValue("{}"),
-    readdirSync: jest.fn().mockReturnValue([]),
-    statSync: jest.fn().mockReturnValue({}),
-  };
-  return { ...fsMock, default: fsMock };
-});
-
-jest.unstable_mockModule("node:fs", () => {
-  const fsMock = {
-    existsSync: jest.fn().mockReturnValue(true),
-    mkdirSync: jest.fn().mockReturnValue(""),
-    writeFileSync: jest.fn(),
-    readFileSync: jest.fn().mockReturnValue("{}"),
-    readdirSync: jest.fn().mockReturnValue([]),
-    statSync: jest.fn().mockReturnValue({}),
-  };
-  return { ...fsMock, default: fsMock };
-});
-
-jest.unstable_mockModule("node:fs", () => {
-  const fsMock = {
-    existsSync: jest.fn().mockReturnValue(true),
-    mkdirSync: jest.fn().mockReturnValue(""),
-    writeFileSync: jest.fn(),
-    readFileSync: jest.fn().mockReturnValue("{}"),
-    readdirSync: jest.fn().mockReturnValue([]),
-    statSync: jest.fn().mockReturnValue({}),
-  };
-  return { ...fsMock, default: fsMock };
-});
+// We DON'T mock node:fs globally — real fs operations work fine with /tmp/ paths
 
 const { handleKumaGuard } = await import("../src/tools/kumaGuard.js");
 const { sessionMemory } = await import("../src/engine/sessionMemory.js");
-const antiPatternDetector = await import("../src/guards/antiPatternDetector.js");
-const fs = await import("node:fs");
 
 type MockGuardWarning = {
   severity: string;
@@ -82,22 +56,16 @@ describe("handleKumaGuard", () => {
     } as any);
 
     jest.spyOn(sessionMemory, "recordToolCall").mockImplementation(() => {});
-    jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({ isLooping: false });
+    jest
+      .spyOn(sessionMemory, "detectLoop")
+      .mockReturnValue({ isLooping: false });
     jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([]);
     jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([]);
     jest.spyOn(sessionMemory, "getFailedFiles").mockReturnValue([]);
 
-    // pathValidator, antiPatternDetector, and child_process are mocked via jest.unstable_mockModule
-
-    jest.spyOn(fs, "existsSync").mockReturnValue(true);
-    jest.spyOn(fs, "mkdirSync").mockImplementation(() => "");
-    jest.spyOn(fs, "writeFileSync").mockImplementation(() => {});
-    jest.spyOn(fs, "readFileSync").mockImplementation(() => "{}");
-    jest.spyOn(fs, "readdirSync").mockImplementation(() => []);
-    jest.spyOn(fs, "statSync").mockImplementation(() => ({} as any));
-
-    // Reset antiPatternDetector mock to default (no warnings)
-    (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([]);
+    // Reset shared mock refs to prevent state leakage between tests
+    mockDetectAllAntiPatterns.mockReturnValue([]);
+    mockExecSync.mockReturnValue("");
   });
 
   afterEach(() => {
@@ -105,7 +73,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: \"all\" (default)
+  // CHECK: "all" (default)
   // ============================================================
   describe('check: "all" (default mode)', () => {
     test("returns onTrack: true when nothing wrong", async () => {
@@ -123,7 +91,7 @@ describe("handleKumaGuard", () => {
       const report = parseReport(result);
 
       expect(report.suggestion).toBe(
-        "No goal set \u2014 use goal parameter or setGoal to track intent"
+        "No goal set \u2014 use goal parameter or setGoal to track intent",
       );
       expect(report.stats).toMatchObject({
         goal: "",
@@ -135,7 +103,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("detects script-patching anti-pattern with high severity", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -152,12 +120,14 @@ describe("handleKumaGuard", () => {
 
       expect(report.onTrack).toBe(false);
       expect(report.warnings).toHaveLength(1);
-      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe("script-patching");
+      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe(
+        "script-patching",
+      );
       expect(report.suggestion).toContain("Remove patch scripts");
     });
 
     test("anti-pattern warning includes file path and evidence", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -177,7 +147,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("detects bash-grep anti-pattern", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "medium",
           pattern: "bash-grep",
@@ -208,22 +178,34 @@ describe("handleKumaGuard", () => {
 
       expect(report.onTrack).toBe(false);
       expect(report.stats).toMatchObject({ hasLoop: true });
-      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe("tool-loop");
+      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe(
+        "tool-loop",
+      );
       expect(report.suggestion).toContain("Switch approach");
     });
 
     test("detects no-test-after-edit drift", async () => {
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
-        { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+        {
+          filePath: "src/auth.ts",
+          modifiedAt: Date.now(),
+          status: "modified",
+        },
       ] as any);
-      jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([
-        { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
-      ] as any);
+      jest
+        .spyOn(sessionMemory, "getToolCallHistory")
+        .mockReturnValue([
+          { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+        ] as any);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
         currentGoal: "refactor auth",
         modifiedFiles: [
-          { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+          {
+            filePath: "src/auth.ts",
+            modifiedAt: Date.now(),
+            status: "modified",
+          },
         ],
         toolCallCount: 1,
         unresolvedFailures: [],
@@ -234,7 +216,9 @@ describe("handleKumaGuard", () => {
 
       expect(report.onTrack).toBe(false);
       expect(report.drifts).toContain("1 file(s) edited but no test run");
-      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe("no-test-after-edit");
+      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe(
+        "no-test-after-edit",
+      );
       expect(report.suggestion).toContain("Run tests");
     });
 
@@ -243,7 +227,12 @@ describe("handleKumaGuard", () => {
         {
           task: "typecheck",
           failures: [
-            { task: "typecheck", error: "Type error in auth.ts:15", timestamp: 1, resolved: false },
+            {
+              task: "typecheck",
+              error: "Type error in auth.ts:15",
+              timestamp: 1,
+              resolved: false,
+            },
           ],
         },
       ]);
@@ -260,7 +249,9 @@ describe("handleKumaGuard", () => {
         params: {},
         timestamp: i,
       }));
-      jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue(editCalls);
+      jest
+        .spyOn(sessionMemory, "getToolCallHistory")
+        .mockReturnValue(editCalls);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
         currentGoal: "refactor",
@@ -272,9 +263,11 @@ describe("handleKumaGuard", () => {
       const result = await handleKumaGuard({ goal: "refactor" });
       const report = parseReport(result);
 
-      expect((report.warnings as MockGuardWarning[]).some(
-        (w) => w.pattern === "excessive-edits"
-      )).toBe(true);
+      expect(
+        (report.warnings as MockGuardWarning[]).some(
+          (w) => w.pattern === "excessive-edits",
+        ),
+      ).toBe(true);
       expect(report.suggestion).toContain("Pause");
     });
 
@@ -290,13 +283,21 @@ describe("handleKumaGuard", () => {
     });
 
     test("onTrack is true when all checks pass with goal set", async () => {
-      jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([
-        { toolName: "execute_safe_test", params: {}, timestamp: 1 },
-      ] as any);
+      jest
+        .spyOn(sessionMemory, "getToolCallHistory")
+        .mockReturnValue([
+          { toolName: "execute_safe_test", params: {}, timestamp: 1 },
+        ] as any);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
         currentGoal: "refactor",
-        modifiedFiles: [{ filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" }],
+        modifiedFiles: [
+          {
+            filePath: "src/auth.ts",
+            modifiedAt: Date.now(),
+            status: "modified",
+          },
+        ],
         toolCallCount: 1,
         unresolvedFailures: [],
       } as any);
@@ -305,16 +306,16 @@ describe("handleKumaGuard", () => {
       const report = parseReport(result);
 
       expect(report.onTrack).toBe(true);
-      expect(report.suggestion).toBe("On track \u2014 continue with current approach");
+      expect(report.suggestion).toBe(
+        "On track \u2014 continue with current approach",
+      );
     });
 
     test("handles git not available gracefully", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([]);
-    // execSync is already mocked via jest.unstable_mockModule - override for this test
-    const cp = await import("node:child_process");
-    (cp.execSync as Mock).mockImplementation(() => {
-      throw new Error("not a git repository");
-    });
+      mockDetectAllAntiPatterns.mockReturnValue([]);
+      mockExecSync.mockImplementation(() => {
+        throw new Error("not a git repository");
+      });
 
       const result = await handleKumaGuard({ goal: "test" });
       const report = parseReport(result);
@@ -325,7 +326,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: \"anti-pattern\"
+  // CHECK: "anti-pattern"
   // ============================================================
   describe('check: "anti-pattern"', () => {
     test("only runs anti-pattern detection, not loop or drift", async () => {
@@ -335,20 +336,26 @@ describe("handleKumaGuard", () => {
         message: "Loop detected",
       });
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
-        { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+        {
+          filePath: "src/auth.ts",
+          modifiedAt: Date.now(),
+          status: "modified",
+        },
       ] as any);
 
       const result = await handleKumaGuard({ check: "anti-pattern" });
       const report = parseReport(result);
 
-      expect((report.warnings as MockGuardWarning[]).filter(
-        (w) => w.pattern === "tool-loop"
-      )).toHaveLength(0);
+      expect(
+        (report.warnings as MockGuardWarning[]).filter(
+          (w) => w.pattern === "tool-loop",
+        ),
+      ).toHaveLength(0);
       expect(report.drifts).toHaveLength(0);
     });
 
     test("reports anti-pattern warnings when detected", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -367,11 +374,11 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: \"loop\"
+  // CHECK: "loop"
   // ============================================================
   describe('check: "loop"', () => {
     test("only runs loop detection, not anti-pattern or drift", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -398,7 +405,9 @@ describe("handleKumaGuard", () => {
       const report = parseReport(result);
 
       expect(report.warnings).toHaveLength(1);
-      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe("tool-loop");
+      expect((report.warnings as MockGuardWarning[])[0].pattern).toBe(
+        "tool-loop",
+      );
       expect(report.stats).toMatchObject({ hasLoop: true });
       expect(report.suggestion).toContain("Switch approach");
     });
@@ -412,7 +421,7 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: \"drift\"
+  // CHECK: "drift"
   // ============================================================
   describe('check: "drift"', () => {
     test("only runs drift detection, not anti-pattern or loop", async () => {
@@ -421,7 +430,7 @@ describe("handleKumaGuard", () => {
         toolName: "smart_grep",
         message: "Loop detected",
       });
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -433,9 +442,11 @@ describe("handleKumaGuard", () => {
       const result = await handleKumaGuard({ check: "drift" });
       const report = parseReport(result);
 
-      expect((report.warnings as MockGuardWarning[]).filter(
-        (w) => w.pattern === "script-patching" || w.pattern === "tool-loop"
-      )).toHaveLength(0);
+      expect(
+        (report.warnings as MockGuardWarning[]).filter(
+          (w) => w.pattern === "script-patching" || w.pattern === "tool-loop",
+        ),
+      ).toHaveLength(0);
       expect(report.stats).toMatchObject({ hasLoop: false });
     });
 
@@ -444,9 +455,11 @@ describe("handleKumaGuard", () => {
         { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
         { filePath: "src/user.ts", modifiedAt: Date.now(), status: "modified" },
       ] as any);
-      jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([
-        { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
-      ] as any);
+      jest
+        .spyOn(sessionMemory, "getToolCallHistory")
+        .mockReturnValue([
+          { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+        ] as any);
 
       const result = await handleKumaGuard({ check: "drift" });
       const report = parseReport(result);
@@ -456,17 +469,27 @@ describe("handleKumaGuard", () => {
 
     test("does not report drift when tests have been run", async () => {
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
-        { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+        {
+          filePath: "src/auth.ts",
+          modifiedAt: Date.now(),
+          status: "modified",
+        },
       ] as any);
       jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([
         { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
-        { toolName: "execute_safe_test", params: { task: "typecheck" }, timestamp: 2 },
+        {
+          toolName: "execute_safe_test",
+          params: { task: "typecheck" },
+          timestamp: 2,
+        },
       ] as any);
 
       const result = await handleKumaGuard({ check: "drift" });
       const report = parseReport(result);
 
-      expect(report.drifts).not.toContain(expect.stringContaining("edited but no test"));
+      expect(report.drifts).not.toContain(
+        expect.stringContaining("edited but no test"),
+      );
       expect(report.stats).toMatchObject({ hasRunTests: true });
     });
 
@@ -475,7 +498,12 @@ describe("handleKumaGuard", () => {
         {
           task: "typecheck",
           failures: [
-            { task: "typecheck", error: "Error", timestamp: 1, resolved: false },
+            {
+              task: "typecheck",
+              error: "Error",
+              timestamp: 1,
+              resolved: false,
+            },
           ],
         },
       ]);
@@ -488,11 +516,14 @@ describe("handleKumaGuard", () => {
   });
 
   // ============================================================
-  // CHECK: \"context\" (creates snapshot, returns markdown)
+  // CHECK: "context" (creates snapshot, returns markdown)
   // ============================================================
   describe('check: "context" (creates snapshot)', () => {
     test("returns formatted snapshot with goal", async () => {
-      const result = await handleKumaGuard({ check: "context" as any, goal: "refactor auth" });
+      const result = await handleKumaGuard({
+        check: "context" as any,
+        goal: "refactor auth",
+      });
 
       expect(result).toContain("Context Snapshot");
       expect(result).toContain("refactor auth");
@@ -503,7 +534,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("does not include drift or loop info (short-circuits guard report)", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -526,11 +557,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("returns error message when snapshot creation fails", async () => {
-      (fs.mkdirSync as Mock).mockImplementation(() => {
-        throw new Error("EACCES: permission denied");
-      });
-      jest.spyOn(fs, "existsSync").mockReturnValue(false);
-
+      mockGetProjectRoot.mockReturnValueOnce("/nonexistent");
       const result = await handleKumaGuard({ check: "context" as any });
 
       expect(result).toContain("Could not create context snapshot");
@@ -584,7 +611,7 @@ describe("handleKumaGuard", () => {
   // ============================================================
   describe("suggestion priority", () => {
     test("script-patching takes highest priority", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "high",
           pattern: "script-patching",
@@ -598,7 +625,11 @@ describe("handleKumaGuard", () => {
         message: "Loop detected",
       });
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
-        { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+        {
+          filePath: "src/auth.ts",
+          modifiedAt: Date.now(),
+          status: "modified",
+        },
       ] as any);
 
       const result = await handleKumaGuard({});
@@ -622,15 +653,27 @@ describe("handleKumaGuard", () => {
 
     test("no-test-after-edit suggestion when edits without tests", async () => {
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
-        { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+        {
+          filePath: "src/auth.ts",
+          modifiedAt: Date.now(),
+          status: "modified",
+        },
       ] as any);
-      jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([
-        { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
-      ] as any);
+      jest
+        .spyOn(sessionMemory, "getToolCallHistory")
+        .mockReturnValue([
+          { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+        ] as any);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
         currentGoal: "test",
-        modifiedFiles: [{ filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" }],
+        modifiedFiles: [
+          {
+            filePath: "src/auth.ts",
+            modifiedAt: Date.now(),
+            status: "modified",
+          },
+        ],
         toolCallCount: 1,
         unresolvedFailures: [],
       } as any);
@@ -642,7 +685,7 @@ describe("handleKumaGuard", () => {
     });
 
     test("bash-grep suggestion when grep detected", async () => {
-      (antiPatternDetector.detectAllAntiPatterns as Mock).mockReturnValue([
+      mockDetectAllAntiPatterns.mockReturnValue([
         {
           severity: "medium",
           pattern: "bash-grep",
@@ -667,7 +710,9 @@ describe("handleKumaGuard", () => {
       const report = parseReport(result);
 
       expect(typeof report.timestamp).toBe("string");
-      expect(new Date(report.timestamp as string).toISOString()).toBe(report.timestamp);
+      expect(new Date(report.timestamp as string).toISOString()).toBe(
+        report.timestamp,
+      );
     });
 
     test("has all required stats fields", async () => {

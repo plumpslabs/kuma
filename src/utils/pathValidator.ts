@@ -220,3 +220,16 @@ export function ensureBackupDir(): string {
   }
   return backupDir;
 }
+
+/**
+ * Gets the .kuma directory path (used for database and session storage).
+ * Creates it if it doesn't exist.
+ */
+export function getKumaDir(): string {
+  const root = getProjectRoot();
+  return path.join(root, ".kuma");
+}
+
+export function getKumaBackupsDir(): string {
+  return path.join(getKumaDir(), "backups");
+}

@@ -1,14 +1,13 @@
 import { jest } from "@jest/globals";
-import type { Mock } from "jest-mock";
 
-// Mock processRunner at module level (ESM-compatible)
+const mockSpawnProcess = jest.fn<(...args: any[]) => Promise<any>>();
+
 jest.unstable_mockModule("../src/utils/processRunner.js", () => ({
-  spawnProcess: jest.fn(),
+  spawnProcess: mockSpawnProcess,
   spawnShell: jest.fn(),
 }));
 
 const { handleStaticAnalysis } = await import("../src/tools/staticAnalysis.js");
-const processRunner = await import("../src/utils/processRunner.js");
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -18,7 +17,6 @@ describe("handleStaticAnalysis", () => {
   let origRoot: string | undefined;
 
   beforeAll(() => {
-    // Create a minimal project with config files
     fs.writeFileSync(
       path.join(tmpDir, "package.json"),
       JSON.stringify({
@@ -34,11 +32,7 @@ describe("handleStaticAnalysis", () => {
     fs.writeFileSync(path.join(tmpDir, "tsconfig.json"), "{}", "utf-8");
     fs.writeFileSync(path.join(tmpDir, ".eslintrc.json"), "{}", "utf-8");
     fs.writeFileSync(path.join(tmpDir, ".prettierrc"), "{}", "utf-8");
-    fs.writeFileSync(
-      path.join(tmpDir, "src"),
-      "export const x: number = 1;",
-      "utf-8",
-    );
+    fs.writeFileSync(path.join(tmpDir, "src"), "export const x: number = 1;", "utf-8");
   });
 
   afterAll(() => {
@@ -69,7 +63,6 @@ describe("handleStaticAnalysis", () => {
   });
 
   test("detects no tools when packages are missing despite config files", async () => {
-    // Create config files but no package.json with deps
     const noDepDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-nodep-"));
     try {
       fs.writeFileSync(path.join(noDepDir, ".eslintrc.json"), "{}", "utf-8");
@@ -89,14 +82,12 @@ describe("handleStaticAnalysis", () => {
   });
 
   test("reports when requested tool is not available", async () => {
-    // Only eslint is available (tsconfig exists but no typescript dep... wait, we have typescript dep)
-    // Actually, let's override: only detect ruff which won't be found
     const result = await handleStaticAnalysis({ tool: "ruff" });
     expect(result).toContain("not available");
   });
 
   // ============================================================
-  // ESLINT PARSING (unit test via mock)
+  // ESLINT PARSING
   // ============================================================
 
   test("parses eslint unix format correctly", async () => {
@@ -106,7 +97,7 @@ describe("handleStaticAnalysis", () => {
       "src/utils/helper.ts:5:15: error Missing return type on function [@typescript-eslint/explicit-function-return-type]",
     ].join("\n");
 
-    jest.mocked(processRunner.spawnProcess).mockResolvedValue({
+    mockSpawnProcess.mockResolvedValue({
       stdout: eslintOutput + "\n",
       stderr: "",
       exitCode: 1,
@@ -131,7 +122,7 @@ describe("handleStaticAnalysis", () => {
       "src/app.ts(5,3): error TS2554: Expected 2 arguments, but got 1.",
     ].join("\n");
 
-    jest.mocked(processRunner.spawnProcess).mockResolvedValue({
+    mockSpawnProcess.mockResolvedValue({
       stdout: "",
       stderr: tscOutput,
       exitCode: 2,
@@ -155,7 +146,7 @@ describe("handleStaticAnalysis", () => {
       "src/app.ts [error] Code style issues found",
     ].join("\n");
 
-    jest.mocked(processRunner.spawnProcess).mockResolvedValue({
+    mockSpawnProcess.mockResolvedValue({
       stdout: prettierOutput,
       stderr: "",
       exitCode: 1,
@@ -165,7 +156,6 @@ describe("handleStaticAnalysis", () => {
     const result = await handleStaticAnalysis({ tool: "prettier" });
     expect(result).toContain("[WARN]");
     expect(result).toContain("Formatting issue");
-    expect(result).toContain("[WARN]");
   });
 
   // ============================================================
@@ -173,7 +163,7 @@ describe("handleStaticAnalysis", () => {
   // ============================================================
 
   test("returns clean result when no issues found", async () => {
-    jest.mocked(processRunner.spawnProcess).mockResolvedValue({
+    mockSpawnProcess.mockResolvedValue({
       stdout: "",
       stderr: "",
       exitCode: 0,
@@ -189,7 +179,7 @@ describe("handleStaticAnalysis", () => {
   // ============================================================
 
   test("handles spawn errors gracefully", async () => {
-    jest.mocked(processRunner.spawnProcess).mockResolvedValue({
+    mockSpawnProcess.mockResolvedValue({
       stdout: "",
       stderr: "Failed to spawn process: eslint",
       exitCode: -1,
@@ -197,7 +187,6 @@ describe("handleStaticAnalysis", () => {
     });
 
     const result = await handleStaticAnalysis({ tool: "eslint" });
-    // Should show that the tool failed to execute with exit code -1
     expect(result).toContain("exit: -1");
   });
 
@@ -206,12 +195,7 @@ describe("handleStaticAnalysis", () => {
   // ============================================================
 
   test("passes file filter to tool command", async () => {
-    // Note: when eslint is not installed locally, source falls back to npx with "." target
-    // File filter is only forwarded when eslint binary is found locally.
-    // This test verifies the tool is called at all — file filtering behavior depends
-    // on the local environment having the tool installed.
-
-    jest.mocked(processRunner.spawnProcess).mockResolvedValue({
+    mockSpawnProcess.mockResolvedValue({
       stdout: "",
       stderr: "",
       exitCode: 0,
@@ -223,7 +207,7 @@ describe("handleStaticAnalysis", () => {
       files: ["src/index.ts", "src/app.ts"],
     });
 
-    expect(processRunner.spawnProcess).toHaveBeenCalled();
+    expect(mockSpawnProcess).toHaveBeenCalled();
   });
 
   // ============================================================
@@ -231,7 +215,6 @@ describe("handleStaticAnalysis", () => {
   // ============================================================
 
   test("handles explicit ruff tool not detected gracefully", async () => {
-    // Ruff not configured in test project, should show not available
     const result = await handleStaticAnalysis({ tool: "ruff" });
     expect(result).toContain("not available");
   });

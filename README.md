@@ -46,6 +46,35 @@ Or add Kuma MCP server manually to any MCP client:
 
 ---
 
+## Unified Tool Router (10 Groups)
+
+> **Kuma consolidates 46+ individual operations into 10 grouped tools.** AI agents scan 10 groups instead of 46 tools — simpler, faster, less context.
+
+| Group | Actions | When to call |
+|-------|---------|-------------|
+| 🔵 `kuma_init` | `init`, `conventions`, `structure` | **Call first** every session |
+| 🟢 `kuma_core` | `grep`, `read`, `edit`, `batch`, `lsp` | During active coding |
+| 🟡 `kuma_verify` | `test`, `review`, `lint` | After every edit |
+| 🔴 `kuma_safety` | `guard` (anti-patterns, loops, drift), `score` (0-100 health), `check` (pre-exec safety), `policy` (`.kuma/policy.yml`), `risk` (impact prediction), `dependency` (native JS alternatives) | Before risky ops |
+| 🟣 `kuma_graph` | `query`, `navigate`, `diagram`, `investigate`, `arch`, `experience`, `intent` | Codebase understanding |
+| 🧠 `kuma_memory` | `get`, `search`, `write`, `decision`, `context`, `heal` | Persist/retrieve context |
+| 📊 `kuma_analytics` | `reflect`, `analytics`, `health`, `replay`, `heatmap`, `learn`, `predict`, `confidence`, `dna` | Session review |
+| ⏳ `kuma_history` | `timeline`, `log`, `diff` | Git/time analysis |
+| 🔒 `kuma_lock` | `acquire`, `release`, `list`, `clean` | Multi-agent coordination |
+| ⚙️ `kuma_advanced` | `failure`, `compress`, `shadow`, `collective`, `marketplace` | Maintenance |
+
+```bash
+# Example workflow
+kuma_init({ action: "init" })                            # Load project context
+kuma_core({ action: "grep", query: "handleAuth" })      # Find code
+kuma_core({ action: "edit", filePath: "auth.ts", ... }) # Edit safely
+kuma_verify({ action: "test" })                         # Verify didn't break
+kuma_safety({ action: "guard", goal: "refactor auth" })  # Safety check
+kuma_analytics({ action: "reflect" })                   # Reflect on progress
+```
+
+---
+
 ## Supported Agents
 
 `kuma init` generates native config files for **13 AI coding agents** — no manual hunting for file formats:
@@ -80,16 +109,19 @@ Every tool in Kuma has a safety net built-in — not as an afterthought, but as 
 | # | When this happens... | Kuma does this... |
 |---|---|---|
 | 1 | LSP server is not installed | **Falls back to regex** — never hard fails |
-| 2 | An edit breaks something | **Rollback to any version** — versioned backups |
-| 3 | AI loops on a test failure | **Circuit breaker stops it** — prevents infinite retries |
-| 4 | A file path doesn't resolve | **Shows where it looked** — CWD vs project root |
-| 5 | A command is dangerous | **Blocks it** — `rm -rf`, `git push --force`, `curl \| bash` |
+| 2 | An edit breaks something | **Rollback to any version** — versioned backups, dry-run preview, version list |
+| 3 | AI loops on a test failure | **Circuit breaker stops it** — prevents infinite retries after 3 identical failures |
+| 4 | A file path doesn't resolve | **Shows where it looked** — CWD vs project root with resolved paths |
+| 5 | A command is dangerous | **Blocks it** — `rm -rf`, `git push --force`, `curl \| bash`, plus shell obfuscation detection |
+| 6 | AI keeps repeating the same tool | **Tool-loop detection** — flags if same tool called 4+ times in last 10 calls |
+| 7 | You need to undo an edit | **Versioned rollback** — `action: "rollback"` with `version: N` or `version: "list"` |
+| 8 | A diff doesn't match | **Fuzzy fallback** — exact → whitespace-normalized → fuzzy match with configurable threshold |
 
 Most tools make AI smarter. **Kuma makes AI not break things.**
 
 ---
 
-## Tools (17)
+## Tools (19)
 
 ### 🔍 Context — Understand the codebase
 
@@ -99,15 +131,16 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 | `smart_file_picker` | Read files with smart chunking: `full` (entire file), `smart` (signatures + tail), `outline` (exports only). |
 | `project_structure` | Tree view of project layout. Depth control, folder-only mode, include/exclude patterns. |
 | `git_log` | Structured commit history with optional file filter. |
-| `git_diff` | Structured diff output. Supports staged/unstaged, file filter, ref ranges. |
-| `lsp_query` | Go-to-definition, find references, get type info, or rename symbols via TypeScript Language Server. **Falls back to regex when LSP unavailable.** |
+| `git_diff` | Structured diff output. Supports staged/unstaged, file filter, ref ranges, and context line control. |
+| `lsp_query` | Go-to-definition, find references, get type info, **or rename symbols** via TypeScript Language Server. **Falls back to regex when LSP unavailable.** |
 | `project_conventions` | Auto-detect framework, test runner, package manager, import aliases, **monorepo workspaces**. |
+| `kuma_init` | **Call FIRST** every session. Loads `.kuma/init.md` rules, `.kuma/memories/`, and previous session state. After this, you can work without re-detecting conventions. |
 
 ### ✏️ Execution — Make changes safely
 
 | Tool | Description |
 |------|-------------|
-| `precise_diff_editor` | Search-and-replace with exact → whitespace → fuzzy fallback. **Auto-backup before every edit.** Use `action: "rollback"` to undo. |
+| `precise_diff_editor` | Search-and-replace with exact → whitespace → fuzzy fallback. **Auto-backup before every edit.** Supports **dry-run preview**, **versioned rollback** (`version: N`, `version: "list"`), and **batch edits** (up to 10 at once). |
 | `batch_file_writer` | Create up to 15 files in one call. Validates paths before writing. |
 | `static_analysis` | Run ESLint / TypeScript / Prettier / Ruff and **parse output into structured results.** Auto-detects tools from project config. |
 
@@ -115,8 +148,8 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 
 | Tool | Description |
 |------|-------------|
-| `execute_safe_test` | Run `test`/`build`/`lint`/`typecheck` with **timeout, circuit breaker, and process tree kill.** |
-| `code_reviewer` | Senior-level static analysis. Focus modes: correctness, conventions, security, performance, and **over-engineering detection.** |
+| `execute_safe_test` | Run `test`/`build`/`lint`/`typecheck`/`custom` with **timeout, circuit breaker, and process tree kill.** Supports **monorepo workspaces** via `workspace` param or relative `cwd`. |
+| `code_reviewer` | Senior-level static analysis. Focus modes: correctness, conventions, security, performance, and **over-engineering detection.** Supports JSON output. |
 
 ### 🧠 Memory — Know what happened
 
@@ -127,6 +160,12 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 | `write_memory` | Persist project knowledge (decisions, glossary) to `.kuma/memories/`. Append, prepend, or overwrite. |
 | `kuma_reflect` | **Reflection tool** — checks if you're on track, detects drift (edits without tests, loops, unresolved failures), and suggests the next action. |
 | `kuma_context` | **Snapshot manager** — save/restore project state (modified files, errors, git diff) before risky operations. |
+
+### 🛡️ Safety — Stay on track
+
+| Tool | Description |
+|------|-------------|
+| `kuma_guard` | **Context safety net.** Detects anti-patterns (script patching, bash grep), tool loops, drift (edits without tests, unresolved failures). Run this after every few edits. Checks: `all`, `anti-pattern`, `loop`, `drift`, `context`. |
 
 ---
 
@@ -139,18 +178,23 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 | **Circuit breaker** | Stops after 3 identical failures. Prevents AI loops. |
 | **Timeout** | All commands have configurable timeout (max 180s). Process tree kill on timeout. |
 | **Command whitelist** | Only `test`, `build`, `lint`, `typecheck`, and explicit custom commands. |
-| **Dangerous pattern blocking** | `rm -rf`, `git push --force`, `npm publish`, `curl \| bash` blocked by default. |
+| **Dangerous pattern blocking** | `rm -rf`, `git push --force`, `npm publish`, `curl \| bash` blocked by default. **Shell obfuscation detection** catches hidden dangerous commands. |
 | **LSP graceful degradation** | When TypeScript Language Server is not installed, LSP tools **fall back to regex** instead of hard failing. |
+| **Multi-agent lock** | File-level locks prevent multiple AI agents from editing the same file simultaneously. |
+| **Safety score** | Aggregate 0-100 score across 9 dimensions: git status, backups, LSP, tests, modified files, loops, failures, conventions, goal. |
 
 ---
 
 ## What Makes Kuma Unique
 
-- **Workflow combo** — `project_conventions + smart_grep + smart_file_picker + precise_diff_editor + execute_safe_test + code_reviewer` as a seamless pipeline.
+- **Router groups** — 46+ operations consolidated into 10 grouped tools. AI scans 10 groups instead of 46 tools.
+- **Workflow combo** — `kuma_init → kuma_core → kuma_verify → kuma_safety → kuma_reflect` as a seamless pipeline.
 - **Safety is default, not optional** — Rollback, circuit breaker, sandbox, timeout, dangerous pattern blocking are built into every tool.
 - **Graceful degradation** — When dependencies are missing (LSP, linters), Kuma falls back instead of crashing.
 - **Over-engineering detection** — `code_reviewer` with `focus: "over-engineering"` catches unnecessary abstractions.
-- **Drift detection** — `kuma_reflect` catches edits without tests, tool-call loops, unresolved failures.
+- **Drift detection** — `kuma_guard` catches edits without tests, tool-call loops, unresolved failures.
+- **Impact prediction** — `kuma_risk` tells you how many files reference a symbol before you change it.
+- **Dependency guard** — Before adding npm packages, checks for native JS alternatives and existing similar packages.
 - **Persistent memory** — Knowledge survives across sessions via `.kuma/memories/`. Auto-generates architecture & conventions docs.
 - **Monorepo awareness** — Detects workspaces, scans `apps/*`, `packages/*`, `services/*`, and pnpm/yarn/npm workspaces.
 
@@ -161,10 +205,8 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 1. **Zero setup, zero friction** — Built-in tools that work without config. No DB, no API key.
 2. **Safety first** — Every tool has a safety net: timeout, circuit breaker, rollback, sandbox.
 3. **Graceful degradation, not crash** — Every tool has a fallback before it fails. LSP unavailable? Regex. File not found? Show resolved paths. Diff mismatch? Whitespace→fuzzy retry. Test fails? Circuit breaker stops the loop.
-4. **Opinionated workflow** — Tools designed to be used together: `conventions → grep → pick → diff → test → review`.
-5. **Minimal surface** — 17 focused tools. Each tool has one job and does it well. No overlap, no confusion.
-
----
+4. **Opinionated workflow** — Tools designed to be used together: `kuma_init → kuma_core → kuma_verify → kuma_safety → kuma_reflect`.
+5. **Minimal surface** — 19 focused tools. Each tool has one job and does it well. No overlap, no confusion.
 
 ---
 
@@ -205,6 +247,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 **Made with 🐻 for AI agents everywhere**
 
-[Report Bug](https://github.com/farhank15/kuma/issues) · [Request Feature](https://github.com/farhank15/kuma/issues)
+[Report Bug](https://github.com/plumpslabs/kuma/issues) · [Request Feature](https://github.com/plumpslabs/kuma/issues)
 
 </div>

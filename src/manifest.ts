@@ -398,5 +398,5 @@ export function registerAllTools(server: McpServer): void {
     }
   );
 
-  console.error("[Manifest] Registered 18 tools.");
+  console.error("[Manifest] Registered 19 tools.");
 }
