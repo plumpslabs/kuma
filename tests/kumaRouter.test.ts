@@ -227,11 +227,15 @@ describe("kumaRouter", () => {
   describe("handleCore", () => {
     test("grep calls handleSmartGrep", async () => {
       await handleCore("grep", { query: "test" });
-      expect(mockHandleSmartGrep).toHaveBeenCalledWith({ query: "test" });
+      expect(mockHandleSmartGrep).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "test", outputMode: "rich" })
+      );
     });
     test("read calls handleSmartFilePicker", async () => {
       await handleCore("read", { filePath: "test.ts" });
-      expect(mockHandleSmartFilePicker).toHaveBeenCalledWith({ filePath: "test.ts" });
+      expect(mockHandleSmartFilePicker).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: "test.ts", outputMode: "rich" })
+      );
     });
     test("edit calls handlePreciseDiffEditor", async () => {
       await handleCore("edit", { filePath: "test.ts" });

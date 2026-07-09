@@ -71,14 +71,21 @@ export function registerAllTools(server: McpServer): void {
       action: z.enum(["grep", "read", "edit", "batch", "lsp"]).describe("Action: grep=search code, read=open file, edit=edit with safety, batch=create files, lsp=semantic analysis"),
       // grep params
       query: z.string().optional().describe("Regex pattern for grep action"),
+      queries: z.array(z.string()).optional().describe("Multiple regex patterns (OR'd together, single pass)"),
       targetFolder: z.string().optional().describe("Target folder for grep"),
       maxResults: z.number().min(1).max(100).optional().default(30).describe("Max results"),
       extensions: z.array(z.string()).optional().describe("File extensions filter"),
+      contextLines: z.number().min(0).max(20).optional().default(1).describe("Context lines around match (grep) or jump-to-line (read)"),
+      filenamesOnly: z.boolean().optional().default(false).describe("Only show matching filenames (like grep -l)"),
+      countOnly: z.boolean().optional().default(false).describe("Only show match count per file (like grep -c)"),
+      grepOutputMode: z.enum(["rich", "raw", "json"]).optional().default("rich").describe("Output format for grep: rich=emojis, raw=compact, json=parseable"),
       // read params
       filePath: z.string().optional().describe("File path for read/edit/batch actions"),
+      filePaths: z.array(z.string()).optional().describe("Multiple file paths to read in one call"),
       startLine: z.number().min(1).optional().describe("Start line (1-indexed) for read"),
       endLine: z.number().min(1).optional().describe("End line (1-indexed) for read"),
       chunkStrategy: z.enum(["full", "smart", "outline"]).optional().default("smart").describe("Read strategy"),
+      readOutputMode: z.enum(["rich", "raw"]).optional().default("rich").describe("Output format for read: rich=line numbers, raw=content only"),
       // edit params
       edits: z.array(z.object({
         searchBlock: z.string().min(1).describe("Code to replace"),

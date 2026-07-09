@@ -86,8 +86,18 @@ export async function handleInit(action: string, params: Record<string, unknown>
 // ============================================================
 export async function handleCore(action: string, params: Record<string, unknown>): Promise<string> {
   switch (action) {
-    case "grep": return await handleSmartGrep(params as any);
-    case "read": return await handleSmartFilePicker(params as any);
+    case "grep": {
+      const p = { ...params, outputMode: (params as any).grepOutputMode || (params as any).outputMode || "rich" };
+      return await handleSmartGrep(p as any);
+    }
+    case "read": {
+      // Map filePaths → files (for multi-file read), and readOutputMode → outputMode
+      const readParams: Record<string, unknown> = { ...params, outputMode: (params as any).readOutputMode || (params as any).outputMode || "rich" };
+      if ((params as any).filePaths) {
+        readParams.files = (params as any).filePaths;
+      }
+      return await handleSmartFilePicker(readParams as any);
+    }
     case "edit": return await handlePreciseDiffEditor(params as any);
     case "batch": return await handleBatchFileWriter(params as any);
     case "lsp": return await handleLspQuery(({ ...params, action: params.lspAction }) as any);

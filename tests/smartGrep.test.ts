@@ -185,10 +185,12 @@ function authenticate() {}
   beforeEach(() => {
     origRoot = process.env.AGENT_PROJECT_ROOT;
     process.env.AGENT_PROJECT_ROOT = tmpDir;
+    process.env.KUMA_DISABLE_RG = "1";
   });
 
   afterEach(() => {
     process.env.AGENT_PROJECT_ROOT = origRoot;
+    delete process.env.KUMA_DISABLE_RG;
   });
 
   test("finds authenticate function in source files", async () => {
