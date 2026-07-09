@@ -193,6 +193,52 @@ async function main(): Promise<void> {
     }
   })();
 
+  // Auto-detect AI agent and create its native skill file if missing
+  (async () => {
+    try {
+      const { detectAgent, getSkillPath, getAgentLabel } = await import("./utils/agentDetector.js");
+      const { generateSkill, getSecondaryFiles } = await import("./utils/skillGenerator.js");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+
+      const detection = detectAgent();
+      if (!detection.primary) {
+        console.error(`[${SERVER_NAME}] No AI agent detected — skipping auto-skill creation`);
+        return;
+      }
+
+      const agentType = detection.primary;
+      const skillPath = getSkillPath(agentType);
+      const fullPath = path.resolve(process.cwd(), skillPath);
+
+      // Skip if skill file already exists
+      if (fs.existsSync(fullPath)) {
+        console.error(`[${SERVER_NAME}] Skill exists for ${getAgentLabel(agentType)} — skipping`);
+        return;
+      }
+
+      // Create directory and write skill file
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(fullPath, generateSkill(agentType), "utf-8");
+      console.error(`[${SERVER_NAME}] Auto-created ${skillPath} for ${getAgentLabel(agentType)}`);
+
+      // Create secondary files (e.g., mcp_config.json, settings.json)
+      const secondaryFiles = getSecondaryFiles(agentType);
+      for (const sf of secondaryFiles) {
+        const sfPath = path.resolve(process.cwd(), sf.path);
+        const sfDir = path.dirname(sfPath);
+        if (!fs.existsSync(sfPath)) {
+          if (!fs.existsSync(sfDir)) fs.mkdirSync(sfDir, { recursive: true });
+          fs.writeFileSync(sfPath, sf.content, "utf-8");
+          console.error(`[${SERVER_NAME}] Auto-created ${sf.path}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[${SERVER_NAME}] Failed to auto-create skill file: ${err}`);
+    }
+  })();
+
   const server = new McpServer(
     {
       name: SERVER_NAME,

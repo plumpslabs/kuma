@@ -1,14 +1,26 @@
 // ============================================================
 // KUMA SAFETY LAYER — Safety AI Layer (Phase 8.4)
 // ============================================================
-// Universal safety layer that sits between AI agents and
-// the filesystem. Every action passes through: policy check,
-// risk prediction, impact analysis, backup, verification.
+// Unified safety layer that sits between AI agents and
+// the filesystem. Every action passes through:
+//   ✅ Policy check (.kuma/policy.yml)
+//   ✅ Path validation (sandbox protection)
+//   ✅ Risk prediction (failures, locks, git state)
+//   ✅ Audit trail (all operations logged)
+//   ✅ Proxy wrapper (all Kuma tools auto-checked)
 // ============================================================
 
 import { isLocked } from "./kumaLock.js";
 import { getDb } from "./kumaDb.js";
 import { sessionMemory } from "./sessionMemory.js";
+import { recordAudit } from "./safetyAudit.js";
+import { preCheck, type SafetyVerdict } from "./kumaSafetyProxy.js";
+
+export type { SafetyVerdict };
+
+// ============================================================
+// SAFETY CHECK — Full safety check (used by kuma_safety tool)
+// ============================================================
 
 interface SafetyCheckResult {
   action: string;
@@ -20,7 +32,8 @@ interface SafetyCheckResult {
 }
 
 /**
- * Run safety checks on an action before execution.
+ * Run comprehensive safety checks on an action before execution.
+ * This is the full version called by kuma_safety({ action: "check" }).
  */
 export async function safetyCheck(
   action: string,
@@ -52,71 +65,67 @@ export async function safetyCheck(
       checks.push({
         name: "Uncommitted Changes",
         passed: changes < 10,
-        detail:
-          changes > 0
-            ? `📝 ${changes} uncommitted change(s)`
-            : "✅ Clean working tree",
+        detail: changes > 0 ? `📝 ${changes} uncommitted change(s)` : "✅ Clean working tree",
       });
     } catch {
-      checks.push({
-        name: "Uncommitted Changes",
-        passed: true,
-        detail: "✅ Could not check",
-      });
+      checks.push({ name: "Uncommitted Changes", passed: true, detail: "✅ Could not check" });
     }
 
-    // Check 3: Safety score
-    const safetyScore =
-      (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) ||
-      0;
-    checks.push({
-      name: "Knowledge Graph Health",
-      passed: safetyScore > 0,
-      detail:
-        safetyScore > 0
-          ? `✅ ${safetyScore} nodes in graph`
-          : "⚠️ Empty knowledge graph",
-    });
+    // Check 3: Safety score from proxy preCheck
+    if (action && filePath) {
+      const verdict = await preCheck(action, { filePath: filePath as any, action } as any, {
+        extractFilePath: (p) => p.filePath as string,
+      });
+      checks.push({
+        name: "Policy & Path Safety",
+        passed: verdict.allowed,
+        detail: verdict.allowed
+          ? `✅ ${verdict.policyViolations} violations`
+          : `❌ ${verdict.policyViolations} violation(s) — ${verdict.messages[0] || "blocked"}`,
+      });
+    }
 
     // Check 4: Recent failures
     let recentFailures = 0;
     try {
-      const failureResult = db.exec(
-        "SELECT COUNT(*) as c FROM failure_kb WHERE resolved = 0",
-      );
+      const failureResult = db.exec("SELECT COUNT(*) as c FROM failure_kb WHERE resolved = 0");
       recentFailures = (failureResult[0]?.values[0][0] as number) || 0;
     } catch {}
     checks.push({
       name: "Recent Failures",
       passed: recentFailures === 0,
-      detail:
-        recentFailures > 0
-          ? `❌ ${recentFailures} unresolved failure(s)`
-          : "✅ No recent failures",
+      detail: recentFailures > 0 ? `❌ ${recentFailures} unresolved failure(s)` : "✅ No recent failures",
     });
 
     // Check 5: Dangerous command
     if (command) {
-      const dangerous = ["rm -rf", "git push --force", "npm publish", "npx"]; // simplified
+      const dangerous = ["rm -rf", "git push --force", "npm publish", "| bash", "shred"];
       const isDangerous = dangerous.some((d) => command.includes(d));
       checks.push({
         name: "Command Safety",
         passed: !isDangerous,
-        detail: isDangerous
-          ? "❌ Command flagged as dangerous"
-          : "✅ Command looks safe",
+        detail: isDangerous ? "❌ Command flagged as dangerous" : "✅ Command looks safe",
       });
+    }
+
+    // Check 6: Knowledge Graph Health
+    try {
+      const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) || 0;
+      checks.push({
+        name: "Knowledge Graph Health",
+        passed: nodeCount > 0,
+        detail: nodeCount > 0 ? `✅ ${nodeCount} nodes in graph` : "⚠️ Empty knowledge graph",
+      });
+    } catch {
+      checks.push({ name: "Knowledge Graph Health", passed: true, detail: "⚠️ Could not check" });
     }
 
     // Overall assessment
     const failed = checks.filter((c) => !c.passed);
     const riskLevel: SafetyCheckResult["riskLevel"] =
-      failed.length >= 3
-        ? "critical"
-        : failed.length >= 2
-          ? "high"
-          : failed.length >= 1
-            ? "medium"
+      failed.length >= 3 ? "critical"
+        : failed.length >= 2 ? "high"
+          : failed.length >= 1 ? "medium"
             : "low";
     const allowed = failed.length === 0;
     const recommendation = allowed
@@ -127,29 +136,67 @@ export async function safetyCheck(
           ? "🟠 High risk — Resolve issues before proceeding."
           : "🟡 Medium risk — Proceed with caution.";
 
-    const result: SafetyCheckResult = {
+    const result: SafetyCheckResult = { action, filePath, allowed, checks, riskLevel, recommendation };
+
+    // Record in audit trail
+    await recordAudit({
+      timestamp: Math.floor(Date.now() / 1000),
+      toolName: "kuma_safety_check",
       action,
       filePath,
-      allowed,
-      checks,
       riskLevel,
-      recommendation,
-    };
+      policyViolations: failed.length,
+      allowed,
+      durationMs: 0,
+      metadata: { checkType: "full" },
+    });
+
     return formatSafetyCheck(result, command);
   } catch (err) {
     return `Error in safety check: ${err}`;
   }
 }
 
+// ============================================================
+// SAFETY OVERRIDE — Bypass safety for a specific operation
+// ============================================================
+
+/**
+ * Temporarily override safety for a specific tool/target.
+ * Recorded in audit trail for accountability.
+ */
+export function safetyOverride(tool: string, reason?: string): string {
+  const entry = {
+    timestamp: Math.floor(Date.now() / 1000),
+    toolName: "safety_override",
+    action: "override",
+    riskLevel: "high" as const,
+    policyViolations: 1,
+    allowed: true,
+    durationMs: 0,
+    metadata: { override: true, tool, reason: reason || "No reason provided" },
+  };
+
+  // Fire-and-forget audit (non-blocking)
+  recordAudit(entry).catch(() => {});
+
+  return [
+    `⚠️ **Safety Override** — Bypassing safety for "${tool}"`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    "",
+    `📝 Reason: ${reason || "No reason provided"}`,
+    "",
+    "⚠️ This override is recorded in the safety audit trail.",
+    "⚠️ Use sparingly — overrides reduce project safety.",
+  ].join("\n");
+}
+
+// ============================================================
+// FORMATTING
+// ============================================================
+
 function formatSafetyCheck(r: SafetyCheckResult, command?: string): string {
-  const emoji =
-    r.riskLevel === "critical"
-      ? "🔴"
-      : r.riskLevel === "high"
-        ? "🟠"
-        : r.riskLevel === "medium"
-          ? "🟡"
-          : "🟢";
+  const emoji = r.riskLevel === "critical" ? "🔴" : r.riskLevel === "high" ? "🟠" : r.riskLevel === "medium" ? "🟡" : "🟢";
   const lines: string[] = [
     `${emoji} **Safety AI Layer** — ${r.allowed ? "✅ Allowed" : "⛔ Blocked"}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━`,

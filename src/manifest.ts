@@ -20,6 +20,7 @@ import { handleKumaInit } from "./tools/kumaInit.js";
 import { getSessionMemory, handleWriteMemory, searchSessionMemory, MemoryTopic } from "./engine/sessionMemory.js";
 
 import { handleLspQuery } from "./tools/lspTools.js";
+import { wrapWithSafety } from "./engine/kumaSafetyProxy.js";
 
 const MEMORY_TOPICS = ["decisions", "glossary", "architecture", "conventions", "known-issues"] as const;
 
@@ -65,6 +66,10 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // 3. precise_diff_editor (includes rollback via action param)
+  // ⚡ Wrapped with Safety Proxy (Phase 8.4) — auto-checks policy, path, risk
+  const safeEditHandler = wrapWithSafety("precise_diff_editor", handlePreciseDiffEditor, {
+    extractFilePath: (p) => (p as any).filePath,
+  });
   server.tool(
     "precise_diff_editor",
     "Edit code with safety net. Search-and-replace with fuzzy fallback + automatic versioned backup. Use action:'rollback' to undo edits.",
@@ -81,10 +86,12 @@ export function registerAllTools(server: McpServer): void {
       }).min(1).max(10).optional().describe("Array of edits (max 10). Each edit has: searchBlock (code to find), replaceBlock (new code)"),
       dryRun: z.boolean().optional().default(false).describe("Preview changes without writing to disk. Set dryRun: true to preview first."),
       version: z.union([z.number().min(1), z.literal('list')]).optional().describe("Backup version to restore (1=newest, omit=latest, 'list'=show versions)"),
+      scope: z.enum(['file', 'dir', 'edit-id', 'commit']).optional().describe("Rollback scope: file (default), dir (directory). Requires filePath. edit-id (by edit ID). Requires editId. commit (git-based)."),
+      editId: z.string().optional().describe("Edit ID for edit-id scoped rollback. Use scope:'edit-id' with version:'list' to see all tracked edit IDs."),
     },
     async (params) => {
       try {
-        const result = await handlePreciseDiffEditor(params);
+        const result = await safeEditHandler(params as any);
         return { content: [{ type: "text", text: result }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error in precise_diff_editor: ${err}` }], isError: true };

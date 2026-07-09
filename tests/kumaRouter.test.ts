@@ -48,7 +48,10 @@ jest.unstable_mockModule("../src/engine/safetyScore.js", () => ({
   formatSafetyScore: jest.fn<() => string>().mockReturnValue("score: 85"),
 }));
 const mockSafetyCheck = jest.fn<() => Promise<string>>().mockResolvedValue("safety done");
-jest.unstable_mockModule("../src/engine/kumaSafetyLayer.js", () => ({ safetyCheck: mockSafetyCheck }));
+jest.unstable_mockModule("../src/engine/kumaSafetyLayer.js", () => ({
+  safetyCheck: mockSafetyCheck,
+  safetyOverride: jest.fn<() => string>().mockReturnValue("override done"),
+}));
 
 // kuma_graph group — local refs for tested functions
 jest.unstable_mockModule("../src/engine/kumaGraph.js", () => ({
@@ -93,6 +96,11 @@ jest.unstable_mockModule("../src/engine/kumaArchGuard.js", () => ({
 
 // kuma_memory group — local refs for tested functions
 jest.unstable_mockModule("../src/engine/sessionMemory.js", () => ({
+  sessionMemory: {
+    getToolCallHistory: jest.fn<() => Array<{ toolName: string; params: Record<string, unknown> }>>().mockReturnValue([]),
+    getSummary: jest.fn<() => { modifiedFiles: string[]; currentGoal?: string }>().mockReturnValue({ modifiedFiles: [], currentGoal: undefined }),
+    recordToolCall: jest.fn(),
+  },
   getSessionMemory: jest.fn<() => {}>().mockReturnValue({}),
   handleWriteMemory: jest.fn<() => string>().mockReturnValue("written"),
   searchSessionMemory: jest.fn<() => string>().mockReturnValue("searched"),
@@ -170,6 +178,7 @@ jest.unstable_mockModule("../src/engine/kumaShadow.js", () => ({ simulateChange:
 jest.unstable_mockModule("../src/engine/kumaCollective.js", () => ({
   discoverCollectivePatterns: jest.fn<() => Promise<string>>().mockResolvedValue("collective done"),
   exportAnonymizedPatterns: jest.fn<() => string>().mockReturnValue("export done"),
+  syncCollective: jest.fn<() => Promise<string>>().mockResolvedValue("sync done"),
 }));
 const mockListMarketplace = jest.fn<() => Promise<string>>().mockResolvedValue("marketplace");
 jest.unstable_mockModule("../src/engine/kumaMarketplace.js", () => ({

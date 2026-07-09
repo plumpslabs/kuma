@@ -29,10 +29,10 @@ const config: Config = {
     "src/engine/sessionMemory.ts",
   ],
   coverageReporters: ["text", "lcov"],
-  modulePathIgnorePatterns: ["<rootDir>/.agent-backups"],
+  modulePathIgnorePatterns: ["<rootDir>/.kuma/backups"],
   testPathIgnorePatterns: [
     "<rootDir>/node_modules/",
-    "<rootDir>/.agent-backups/",
+    "<rootDir>/.kuma/backups/",
   ],
 };
 

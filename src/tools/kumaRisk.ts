@@ -52,7 +52,6 @@ export async function handleKumaRisk(params: RiskParams): Promise<string> {
     "**/dist/**",
     "**/build/**",
     "**/.git/**",
-    "**/.agent-backups/**",
     "**/.kuma/backups/**",
     "**/*.min.js",
     "**/*.bundle.js",

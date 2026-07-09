@@ -64,8 +64,9 @@ import { generateDNA } from "./kumaDNA.js";
 import { recordFailure, queryFailures, failureStats } from "./kumaFailureKB.js";
 import { compressGraph } from "./kumaSemantic.js";
 import { simulateChange } from "./kumaShadow.js";
-import { safetyCheck } from "./kumaSafetyLayer.js";
-import { discoverCollectivePatterns, exportAnonymizedPatterns } from "./kumaCollective.js";
+import { safetyCheck, safetyOverride } from "./kumaSafetyLayer.js";
+import { handleSafetyCheck } from "../tools/kumaSafetyCheck.js";
+import { discoverCollectivePatterns, exportAnonymizedPatterns, syncCollective } from "./kumaCollective.js";
 import { listMarketplace, installTemplate } from "./kumaMarketplace.js";
 
 // ============================================================
@@ -118,7 +119,10 @@ export async function handleSafety(action: string, params: Record<string, unknow
     case "risk": return await handleKumaRisk(params as any);
     case "dependency": return await handleDependencyGuard(params as any);
     case "context": return await handleKumaContext({ ...params, action: params.contextAction as "save" | "list" });
-    default: return `⚠️ Unknown action "${action}" for kuma_safety. Use: guard, score, check, policy, risk, dependency, context`;
+    case "audit": return await handleSafetyCheck(params as any);
+    case "stats": return await handleSafetyCheck(params as any);
+    case "override": return safetyOverride(params.tool as string, params.reason as string);
+    default: return `⚠️ Unknown action "${action}" for kuma_safety. Use: guard, score, check, policy, risk, dependency, context, audit, stats, override`;
   }
 }
 
@@ -314,6 +318,7 @@ export async function handleAdvanced(action: string, params: Record<string, unkn
     case "shadow": return await simulateChange(params.shadowType as any || "modify", params.target as string, params.newName as string | undefined);
     case "collective": {
       if (params.collectiveAction === "export") return exportAnonymizedPatterns();
+      if (params.collectiveAction === "sync") return await syncCollective();
       return await discoverCollectivePatterns();
     }
     case "marketplace": {

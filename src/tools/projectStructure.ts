@@ -18,7 +18,7 @@ const DEFAULT_IGNORE = [
   "node_modules",
   ".git",
   ".kuma",
-  ".agent-backups",
+  ".kuma/backups",
   "dist",
   ".next",
   "build",

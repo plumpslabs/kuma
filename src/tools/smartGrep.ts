@@ -23,7 +23,7 @@ const IGNORE_PATTERNS = [
   "**/build/**",
   "**/.git/**",
   "**/.cache/**",
-  "**/.agent-backups/**",
+  "**/.kuma/backups/**",
   "**/*.min.js",
   "**/*.bundle.js",
   "**/*.map",

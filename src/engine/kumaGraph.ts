@@ -5,6 +5,7 @@
 // Every smart_grep, lsp_query, precise_diff_editor adds edges.
 
 import { getDb, saveDb } from "./kumaDb.js";
+import { healOnQuery } from "./kumaSelfHeal.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable";
 export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by";
@@ -171,6 +172,11 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
   try {
     const db = await getDb();
     const { type = "nodes", query, limit = 20 } = params;
+
+    // Auto-heal: if query looks like a file path (no :: separator), check staleness
+    if (query && !query.includes("::")) {
+      try { await healOnQuery([query]); } catch { /* non-critical */ }
+    }
 
     if (type === "nodes") {
       // Search nodes by name or type

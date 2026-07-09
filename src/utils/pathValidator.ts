@@ -206,15 +206,15 @@ export function getBackupPath(filePath: string, timestamp?: number): string {
   const ts = timestamp ?? Date.now();
   const root = getProjectRoot();
   const relativePath = path.relative(root, filePath);
-  return path.join(root, ".agent-backups", String(ts), relativePath);
+  return path.join(root, ".kuma", "backups", String(ts), relativePath);
 }
 
 /**
- * Ensure .agent-backups directory exists
+ * Ensure .kuma/backups directory exists
  */
 export function ensureBackupDir(): string {
   const root = getProjectRoot();
-  const backupDir = path.join(root, ".agent-backups");
+  const backupDir = path.join(root, ".kuma", "backups");
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }

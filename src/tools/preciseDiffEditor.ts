@@ -21,6 +21,8 @@ interface DiffEditorParams {
   edits?: DiffEdit[];
   dryRun?: boolean;
   version?: number | 'list';
+  scope?: 'file' | 'dir' | 'edit-id' | 'commit';
+  editId?: string;
 }
 
 interface DiffResult {
@@ -28,15 +30,39 @@ interface DiffResult {
   matched: number;
   replaced: number;
   backupPath?: string;
+  editId?: string;
   error?: string;
   details?: string;
 }
 
+interface BackupManifest {
+  timestamp: number;
+  edits: Array<{
+    editId: string;
+    filePath: string;
+    editIndex: number;
+  }>;
+}
+
+interface RollbackParams {
+  filePath?: string;
+  version?: number | 'list';
+  scope?: 'file' | 'dir' | 'edit-id' | 'commit';
+  editId?: string;
+}
+
+/**
+ * Generate a unique edit ID for tracking across backups.
+ */
+export function generateEditId(): string {
+  return `edit-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+}
+
 export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise<string> {
-  const { filePath, edits, dryRun = false, action } = params;
+  const { filePath, edits, dryRun = false, action, scope } = params;
 
   if (action === "rollback") {
-    return handleRollbackEdit({ filePath, version: params.version });
+    return handleRollbackEdit({ filePath, version: params.version, scope: scope || 'file', editId: params.editId });
   }
 
   if (!edits || edits.length === 0) {
@@ -73,13 +99,21 @@ export async function handlePreciseDiffEditor(params: DiffEditorParams): Promise
 
       if (result.success) {
         if (!dryRun) {
-          // Write file after successful edit
+          // Generate editId and write file
+          const editId = generateEditId();
+          result.editId = editId;
           fs.writeFileSync(resolvedPath, result.details!, "utf-8");
 
-          // Record to session memory
+          // Update backup manifest with edit ID
+          if (result.backupPath) {
+            updateBackupManifest(result.backupPath, editId, filePath, i);
+          }
+
+          // Record to session memory with editId
           sessionMemory.recordToolCall("precise_diff_editor", {
             filePath,
             editIndex: i,
+            editId,
             success: true,
             matched: result.matched,
           });
@@ -359,6 +393,32 @@ function createBackup(filePath: string): string {
   return backupPath;
 }
 
+/**
+ * Update or create the backup manifest for a timestamp directory.
+ * Stores all edit IDs and their associated file paths.
+ */
+function updateBackupManifest(backupPath: string, editId: string, filePath: string, editIndex: number): void {
+  try {
+    const backupDir = path.dirname(backupPath);
+    const manifestPath = path.join(backupDir, "backup_manifest.json");
+    let manifest: BackupManifest;
+
+    if (fs.existsSync(manifestPath)) {
+      const existing = fs.readFileSync(manifestPath, "utf-8");
+      manifest = JSON.parse(existing);
+    } else {
+      const tsDir = path.basename(backupDir);
+      manifest = { timestamp: Number(tsDir) || Date.now(), edits: [] };
+    }
+
+    manifest.edits.push({ editId, filePath, editIndex });
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+  } catch (err) {
+    // Non-critical — manifest is informational, don't crash on write failure
+    console.error(`[BackupManifest] Failed to update manifest: ${err}`);
+  }
+}
+
 function formatDryRunResult(results: DiffResult[], filePath: string, originalContent: string): string {
   const lines: string[] = [
     `🔍 **DRY RUN** — ${filePath}`,
@@ -477,6 +537,9 @@ function formatDiffResult(results: DiffResult[], filePath: string): string {
         const relativePath = path.relative(getProjectRoot(), r.backupPath);
         lines.push(`    Backup: ${relativePath}`);
       }
+      if (r.editId) {
+        lines.push(`    editId: \`${r.editId}\``);
+      }
     } else {
       lines.push(`[${i + 1}] ❌ ${r.error}`);
       if (r.details) {
@@ -489,6 +552,7 @@ function formatDiffResult(results: DiffResult[], filePath: string): string {
     "",
     `💡 Use smart_file_picker to read the file and verify edit results.`,
     `💡 Or execute_safe_test({task: "typecheck"}) to check if edits broke anything.`,
+    `💡 Rollback options: { action: "rollback", version: <N> } | { scope: "edit-id", editId: "<id>" } | { scope: "dir", ... }`,
   );
 
   return lines.join("\n");
@@ -505,10 +569,26 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-export async function handleRollbackEdit(params: { filePath: string; version?: number | 'list' }): Promise<string> {
-  const { filePath, version } = params;
+export async function handleRollbackEdit(params: RollbackParams): Promise<string> {
+  const { filePath, version, scope = 'file', editId } = params;
 
-  // Validate path
+  if (scope === 'commit') {
+    return handleCommitRollback(filePath, version);
+  }
+
+  if (scope === 'edit-id') {
+    return handleEditIdRollback(editId, version);
+  }
+
+  if (scope === 'dir') {
+    return handleDirRollback(filePath, version);
+  }
+
+  // scope === 'file' (default)
+  if (!filePath) {
+    return "Error: 'filePath' is required for file-scoped rollback.";
+  }
+
   const validation = validateFilePath(filePath);
   if (!validation.valid) {
     return `Error: ${validation.error.message}`;
@@ -517,25 +597,17 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
   const resolvedPath = validation.resolvedPath;
   const root = getProjectRoot();
   const relativePath = path.relative(root, resolvedPath);
-  const backupRoot = path.join(root, ".agent-backups");
+  const backupRoot = path.join(root, ".kuma", "backups");
 
   if (!fs.existsSync(backupRoot)) {
-    return `Error: No backup folder (.agent-backups) found in project root.`;
+    return `Error: No backup folder (.kuma/backups) found in project root.`;
   }
 
   try {
-    // List all directories in .agent-backups
-    const dirs = fs.readdirSync(backupRoot).filter((name) => {
-      const fullPath = path.join(backupRoot, name);
-      return fs.statSync(fullPath).isDirectory() && /^\d+$/.test(name);
-    });
-
+    const dirs = getBackupTimestamps(backupRoot);
     if (dirs.length === 0) {
-      return `Error: No valid backup found in .agent-backups folder.`;
+      return `Error: No valid backup found in .kuma/backups folder.`;
     }
-
-    // Sort directories by timestamp descending (newest first)
-    dirs.sort((a, b) => Number(b) - Number(a));
 
     // Collect all backup versions for this file
     const backupVersions: { dir: string; backupPath: string }[] = [];
@@ -552,30 +624,19 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
 
     // Handle version === 'list': return formatted list of all versions
     if (version === 'list') {
-      const lines: string[] = [`📋 Backup Versions for "${filePath}":`];
-      backupVersions.forEach((v, i) => {
-        const ts = Number(v.dir);
-        const date = new Date(ts).toISOString();
-        const relative = formatRelativeTime(ts);
-        lines.push(`  [${i + 1}] ${date} (${relative})`);
-      });
-      lines.push('');
-      lines.push(`💡 Use rollback_last_edit({ filePath: "${filePath}", version: <N> }) to restore a specific version.`);
-      return lines.join('\n');
+      return formatBackupVersionList(backupVersions, filePath);
     }
 
     // Determine which version to restore
-    let selectedIndex = 0; // default: newest (index 0)
+    let selectedIndex = 0;
     if (typeof version === 'number') {
       if (version < 1 || version > backupVersions.length) {
         return `Error: Version ${version} is invalid. ${backupVersions.length} backups available (1-${backupVersions.length}).`;
       }
-      selectedIndex = version - 1; // 1-indexed to 0-indexed
+      selectedIndex = version - 1;
     }
 
     const selected = backupVersions[selectedIndex];
-
-    // Restore file from backup
     fs.copyFileSync(selected.backupPath, resolvedPath);
 
     // Record to session memory
@@ -583,6 +644,7 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
       filePath,
       backupTimestamp: selected.dir,
       version: version ?? 1,
+      scope: 'file',
       success: true,
     });
 
@@ -591,4 +653,288 @@ export async function handleRollbackEdit(params: { filePath: string; version?: n
   } catch (err) {
     return `Error performing rollback for "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
   }
+}
+
+/**
+ * Rollback: git-based commit rollback.
+ */
+async function handleCommitRollback(filePath?: string, version?: number | 'list'): Promise<string> {
+  try {
+    const { execSync } = await import("node:child_process");
+    const root = getProjectRoot();
+
+    // If version === 'list', show recent commits
+    if (version === 'list') {
+      const log = execSync('git log --oneline -20', { cwd: root, encoding: "utf-8" });
+      const lines = log.trim().split("\n").map((l: string) => `  ${l}`).join("\n");
+      return [
+        `📋 **Recent Commits:**`,
+        "",
+        lines,
+        "",
+        `💡 Use { action: "rollback", scope: "commit", version: <N> } to restore a specific commit.`,
+      ].join("\n");
+    }
+
+    // Check for uncommitted changes before destructive git checkout
+    const status = execSync('git status --porcelain', { cwd: root, encoding: "utf-8" }).trim();
+    if (status) {
+      return [
+        `⚠️ **Uncommitted changes detected.**`,
+        `Running \`git checkout HEAD~N\` would destroy these changes.`,
+        "",
+        `Options:`,
+        `  1. Stash changes first: run \`git stash\``,
+        `  2. Commit changes: run \`git commit -m "..."\``,
+        `  3. Use file-scoped rollback instead: { action: "rollback", scope: "file", ... }`,
+        "",
+        `💡 Run \`git stash\` first, then retry the commit rollback.`,
+      ].join("\n");
+    }
+
+    // Determine target: if version is N, get the Nth recent commit
+    let target = "";
+    if (typeof version === 'number' && version >= 1) {
+      target = `HEAD~${version}`;
+    } else {
+      target = "HEAD~1"; // default: previous commit
+    }
+
+    if (filePath) {
+      // Rollback specific file to a previous commit
+      execSync(`git checkout ${target} -- "${filePath}"`, { cwd: root, encoding: "utf-8" });
+      return `✅ **Commit Rollback** — File "${filePath}" restored from ${target}.`;
+    } else {
+      // Hard rollback to commit
+      execSync(`git checkout ${target}`, { cwd: root, encoding: "utf-8" });
+      return `✅ **Commit Rollback** — Project restored to ${target}.`;
+    }
+  } catch (err) {
+    return `Error performing git rollback: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/**
+ * Rollback: by edit ID — find the backup by scanning manifests.
+ */
+async function handleEditIdRollback(editId?: string, version?: number | 'list'): Promise<string> {
+  if (!editId && version !== 'list') {
+    return "Error: 'editId' is required for edit-id scoped rollback.";
+  }
+
+  const root = getProjectRoot();
+  const backupRoot = path.join(root, ".kuma", "backups");
+  const dirs = getBackupTimestamps(backupRoot);
+
+  if (dirs.length === 0) {
+    return "Error: No backups found.";
+  }
+
+  // Scan all manifests for the matching edit ID
+  const matchingEdits: Array<{ dir: string; editId: string; filePath: string }> = [];
+  const allEdits: Array<{ dir: string; editId: string; filePath: string }> = [];
+
+  for (const dir of dirs) {
+    const manifestPath = path.join(backupRoot, dir, "backup_manifest.json");
+    if (!fs.existsSync(manifestPath)) continue;
+
+    try {
+      const manifest: BackupManifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+      for (const edit of manifest.edits) {
+        allEdits.push({ dir, editId: edit.editId, filePath: edit.filePath });
+        if (edit.editId === editId) {
+          matchingEdits.push({ dir, editId: edit.editId, filePath: edit.filePath });
+        }
+      }
+    } catch {}
+  }
+
+  // version === 'list': show all tracked edit IDs
+  if (version === 'list') {
+    if (allEdits.length === 0) {
+      return "📋 **Edit IDs** — No edit IDs found in backup manifests.\n\nNew edits will be tracked with editId going forward.";
+    }
+    const lines: string[] = ["📋 **Tracked Edit IDs:**", ""];
+    for (const e of allEdits.slice(0, 30)) {
+      const ts = new Date(Number(e.dir)).toISOString();
+      lines.push(`  • \`${e.editId}\` — ${e.filePath} (${ts})`);
+    }
+    if (allEdits.length > 30) lines.push(`  ... +${allEdits.length - 30} more`);
+    lines.push("", `💡 Use { action: "rollback", scope: "edit-id", editId: "<id>" } to restore a specific edit.`);
+    return lines.join("\n");
+  }
+
+  // Restore specific edit
+  if (matchingEdits.length === 0) {
+    return `⚠️ **Edit ID not found** — "${editId}" not in backup manifests.\n\nEdit IDs are tracked for new edits. To rollback by file, use scope: "file".`;
+  }
+
+  const results: string[] = [];
+  for (const match of matchingEdits) {
+    const backupFilePath = path.join(backupRoot, match.dir, match.filePath);
+    if (fs.existsSync(backupFilePath)) {
+      const resolvedPath = path.join(root, match.filePath);
+      fs.copyFileSync(backupFilePath, resolvedPath);
+      results.push(`  ✅ \`${match.filePath}\` restored`);
+    }
+  }
+
+  sessionMemory.recordToolCall("rollback_last_edit", {
+    editId,
+    filesRestored: matchingEdits.length,
+    success: true,
+  });
+
+  return [
+    `✅ **Edit Rollback** — Restored ${matchingEdits.length} file(s) for edit "${editId}":`,
+    "",
+    ...results,
+  ].join("\n");
+}
+
+/**
+ * Rollback: by directory — restore all files in a directory.
+ */
+async function handleDirRollback(dirPath?: string, version?: number | 'list'): Promise<string> {
+  if (!dirPath) {
+    return "Error: 'filePath' (directory path) is required for dir-scoped rollback.";
+  }
+
+  const root = getProjectRoot();
+  const backupRoot = path.join(root, ".kuma", "backups");
+  const dirs = getBackupTimestamps(backupRoot);
+
+  if (dirs.length === 0) {
+    return "Error: No backups found.";
+  }
+
+  // Normalize the directory path
+  const normalizedDir = dirPath.replace(/\\/g, "/").replace(/\/$/, "");
+
+  // Collect all files in this directory from backups
+  const backupFiles: Array<{ dir: string; relativePath: string; fullPath: string }> = [];
+  for (const dir of dirs) {
+    const backupDirPath = path.join(backupRoot, dir);
+    const files = walkBackupDir(backupDirPath);
+    for (const file of files) {
+      const relative = path.relative(backupDirPath, file);
+      if (relative.startsWith(normalizedDir) || relative.startsWith(normalizedDir.replace(/^\//, ""))) {
+        backupFiles.push({ dir, relativePath: relative, fullPath: file });
+      }
+    }
+  }
+
+  if (version === 'list') {
+    // Group by timestamp
+    const timestampFiles = new Map<string, string[]>();
+    for (const bf of backupFiles) {
+      if (!timestampFiles.has(bf.dir)) timestampFiles.set(bf.dir, []);
+      timestampFiles.get(bf.dir)!.push(bf.relativePath);
+    }
+
+    const lines: string[] = [`📋 **Backup Snapshots for directory "${dirPath}":**`, ""];
+    for (const [ts, files] of timestampFiles) {
+      const date = new Date(Number(ts)).toISOString();
+      lines.push(`  📁 ${date} — ${files.length} file(s)`);
+      for (const f of files.slice(0, 5)) {
+        lines.push(`     • ${f}`);
+      }
+      if (files.length > 5) lines.push(`     ... +${files.length - 5} more`);
+    }
+    lines.push("", `💡 Use { action: "rollback", scope: "dir", filePath: "${dirPath}", version: <N> } to restore.`);
+    return lines.join("\n");
+  }
+
+  // Group by timestamp, pick the one to restore
+  const byTimestamp = new Map<string, typeof backupFiles>();
+  for (const bf of backupFiles) {
+    if (!byTimestamp.has(bf.dir)) byTimestamp.set(bf.dir, []);
+    byTimestamp.get(bf.dir)!.push(bf);
+  }
+
+  const sortedTimestamps = [...byTimestamp.keys()].sort((a, b) => Number(b) - Number(a));
+  let selectedTs: string;
+  if (typeof version === 'number' && version >= 1) {
+    if (version > sortedTimestamps.length) {
+      return `Error: Version ${version} is invalid. ${sortedTimestamps.length} snapshots available (1-${sortedTimestamps.length}).`;
+    }
+    selectedTs = sortedTimestamps[version - 1];
+  } else {
+    selectedTs = sortedTimestamps[0]; // newest
+  }
+
+  const filesToRestore = byTimestamp.get(selectedTs) || [];
+  let restoredCount = 0;
+  for (const bf of filesToRestore) {
+    const targetPath = path.join(root, bf.relativePath);
+    try {
+      fs.copyFileSync(bf.fullPath, targetPath);
+      restoredCount++;
+    } catch {}
+  }
+
+  sessionMemory.recordToolCall("rollback_last_edit", {
+    scope: 'dir',
+    directory: dirPath,
+    filesRestored: restoredCount,
+    backupTimestamp: selectedTs,
+    success: true,
+  });
+
+  return [
+    `✅ **Directory Rollback** — Restored ${restoredCount} file(s) in "${dirPath}" from snapshot ${new Date(Number(selectedTs)).toISOString()}:`,
+  ].join("\n");
+}
+
+/**
+ * Walk a backup directory and return all file paths (recursive).
+ */
+function walkBackupDir(dirPath: string): string[] {
+  const results: string[] = [];
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.name === "backup_manifest.json") continue;
+      if (entry.isDirectory()) {
+        results.push(...walkBackupDir(fullPath));
+      } else {
+        results.push(fullPath);
+      }
+    }
+  } catch {}
+  return results;
+}
+
+/**
+ * Get all backup timestamp directories, sorted newest first.
+ */
+function getBackupTimestamps(backupRoot: string): string[] {
+  try {
+    const dirs = fs.readdirSync(backupRoot).filter((name) => {
+      const fullPath = path.join(backupRoot, name);
+      return fs.statSync(fullPath).isDirectory() && /^\d+$/.test(name);
+    });
+    return dirs.sort((a, b) => Number(b) - Number(a));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Format a list of backup versions.
+ */
+function formatBackupVersionList(backupVersions: Array<{ dir: string; backupPath: string }>, filePath: string): string {
+  const lines: string[] = [`📋 Backup Versions for "${filePath}":`];
+  backupVersions.forEach((v, i) => {
+    const ts = Number(v.dir);
+    const date = new Date(ts).toISOString();
+    const relative = formatRelativeTime(ts);
+    lines.push(`  [${i + 1}] ${date} (${relative})`);
+  });
+  lines.push('');
+  lines.push(`💡 Use { action: "rollback", version: <N>, filePath: "${filePath}" } to restore a specific version.`);
+  lines.push(`💡 Or use { scope: "dir", filePath: "<directory>" } to rollback a whole directory.`);
+  lines.push(`💡 Or use { scope: "edit-id", editId: "<id>" } to rollback by edit ID.`);
+  return lines.join('\n');
 }

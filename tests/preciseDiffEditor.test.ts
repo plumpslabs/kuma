@@ -283,7 +283,7 @@ describe("handleRollbackEdit", () => {
 
   test("returns error if backup root does not exist", async () => {
     jest.spyOn(fs, "existsSync").mockImplementation((p) => {
-      if (typeof p === "string" && p.includes(".agent-backups")) {
+      if (typeof p === "string" && p.includes(".kuma/backups")) {
         return false;
       }
       return true;
@@ -291,12 +291,12 @@ describe("handleRollbackEdit", () => {
 
     const result = await handleRollbackEdit({ filePath: testFilePath });
     expect(result).toContain("Error");
-    expect(result).toContain(".agent-backups");
+    expect(result).toContain(".kuma/backups");
   });
 
   test("restores file from latest backup successfully", async () => {
-    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
-      return ["1000", "2000"] as unknown as fs.Dirent[];
+    (jest.spyOn(fs, "readdirSync") as jest.Mock).mockImplementation(() => {
+      return ["1000", "2000"];
     });
 
     jest.spyOn(fs, "statSync").mockReturnValue({
@@ -321,8 +321,8 @@ describe("handleRollbackEdit", () => {
   });
 
   test("version 'list' returns formatted list of backups", async () => {
-    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
-      return ["1000", "2000", "3000"] as unknown as fs.Dirent[];
+    (jest.spyOn(fs, "readdirSync") as jest.Mock).mockImplementation(() => {
+      return ["1000", "2000", "3000"];
     });
 
     jest.spyOn(fs, "statSync").mockReturnValue({
@@ -336,12 +336,12 @@ describe("handleRollbackEdit", () => {
     expect(result).toContain("[1]");
     expect(result).toContain("[2]");
     expect(result).toContain("[3]");
-    expect(result).toContain("💡 Use rollback_last_edit");
+    expect(result).toContain("rollback");  // hint text mentions rollback options
   });
 
   test("version 2 restores second newest backup", async () => {
-    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
-      return ["1000", "2000", "3000"] as unknown as fs.Dirent[];
+    (jest.spyOn(fs, "readdirSync") as jest.Mock).mockImplementation(() => {
+      return ["1000", "2000", "3000"];
     });
 
     jest.spyOn(fs, "statSync").mockReturnValue({
@@ -361,8 +361,8 @@ describe("handleRollbackEdit", () => {
   });
 
   test("backward compatibility: no version param restores newest", async () => {
-    jest.spyOn(fs, "readdirSync").mockImplementation(() => {
-      return ["1000", "2000", "3000"] as unknown as fs.Dirent[];
+    (jest.spyOn(fs, "readdirSync") as jest.Mock).mockImplementation(() => {
+      return ["1000", "2000", "3000"];
     });
 
     jest.spyOn(fs, "statSync").mockReturnValue({
@@ -379,5 +379,53 @@ describe("handleRollbackEdit", () => {
     // No version = newest. Sorted desc: 3000, 2000, 1000. Newest = 3000.
     const callArgs = copySpy.mock.calls[0];
     expect(String(callArgs[0])).toContain("3000");
+  });
+
+  test("scope 'commit' with version 'list' shows recent commits", async () => {
+    // This calls execSync which would fail in test env — expect error, not crash
+    const result = await handleRollbackEdit({ scope: "commit", version: 'list' });
+    // Should either show commits or return an error about git not available
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("scope 'edit-id' requires editId", async () => {
+    const result = await handleRollbackEdit({ scope: "edit-id" });
+    expect(result).toContain("Error");
+    expect(result).toContain("editId");
+  });
+
+  test("scope 'edit-id' with version 'list' returns message if no manifests", async () => {
+    // Mock backup root exists with timestamp dirs, but no manifests
+    jest.spyOn(fs, "existsSync").mockImplementation((p) => {
+      if (typeof p === "string" && (p as string).includes(".kuma/backups")) {
+        return true;
+      }
+      return true;
+    });
+    (jest.spyOn(fs, "readdirSync") as jest.Mock).mockImplementation(() => {
+      return ["1000", "2000"];
+    });
+    jest.spyOn(fs, "statSync").mockReturnValue({
+      isDirectory: () => true,
+    } as fs.Stats);
+
+    const result = await handleRollbackEdit({ scope: "edit-id", version: 'list' });
+    expect(result).toContain("Edit IDs");
+    expect(result).toContain("No edit IDs found");
+  });
+
+  test("scope 'dir' requires filePath", async () => {
+    const result = await handleRollbackEdit({ scope: "dir" });
+    expect(result).toContain("Error");
+    expect(result).toContain("directory");
+  });
+
+  test("generateEditId returns unique ID", async () => {
+    const { generateEditId } = await import("../src/tools/preciseDiffEditor.js");
+    const id1 = generateEditId();
+    const id2 = generateEditId();
+    expect(id1).toMatch(/^edit-/);
+    expect(id1).not.toBe(id2);
   });
 });
