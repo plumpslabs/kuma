@@ -2,7 +2,7 @@ import fg from "fast-glob";
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { getProjectRoot } from "../utils/pathValidator.js";
+import { getProjectRoot, validateFilePath } from "../utils/pathValidator.js";
 import { limitLines } from "../utils/tokenCounter.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
 
@@ -13,6 +13,7 @@ import { sessionMemory } from "../engine/sessionMemory.js";
 export interface SmartGrepParams {
   query?: string;
   queries?: string[];
+  filePath?: string;
   targetFolder?: string;
   maxResults?: number;
   extensions?: string[];
@@ -78,6 +79,122 @@ function quotePath(p: string): string {
   return `"${p.replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Search in a single file only — bypasses project-wide glob scan.
+ * Used when AI passes filePath to grep.
+ */
+async function searchInSingleFile(
+  filePath: string,
+  patterns: string[],
+  opts: {
+    maxResults: number;
+    contextLines: number;
+    filenamesOnly: boolean;
+    countOnly: boolean;
+    outputMode: string;
+    compact: boolean;
+  },
+): Promise<string> {
+  const { maxResults, contextLines, filenamesOnly, countOnly, outputMode, compact } = opts;
+
+  // Resolve file path
+  const validation = validateFilePath(filePath);
+  if (!validation.valid) {
+    return compact ? `ERR:${filePath} - invalid path` : `Error: ${validation.error.message}`;
+  }
+
+  const resolvedPath = validation.resolvedPath;
+  if (!fs.existsSync(resolvedPath)) {
+    return compact ? `ERR:not found ${filePath}` : `Error: File not found: ${filePath}`;
+  }
+
+  // Check file size (skip large files)
+  const stat = fs.statSync(resolvedPath);
+  if (stat.size > 500_000) {
+    return compact ? `ERR:too large ${filePath}` : `Error: File too large (${(stat.size / 1024).toFixed(0)}KB). Use a more specific query.`;
+  }
+
+  // Check for binary files
+  if (isBinaryFile(resolvedPath)) {
+    return compact ? `ERR:binary ${filePath}` : `Error: Cannot search binary file: ${filePath}`;
+  }
+
+  // Normalize path to be relative to project root (consistent with project-wide search)
+  const projectRoot = getProjectRoot();
+  const relativePath = resolvedPath.startsWith(projectRoot + "/")
+    ? resolvedPath.slice(projectRoot.length + 1)
+    : resolvedPath;
+
+  try {
+    const content = fs.readFileSync(resolvedPath, "utf-8");
+    const lines = content.split("\n");
+    const regex = createCombinedRegex(patterns);
+
+    const results: Array<{ file: string; line: number; content: string }> = [];
+    const maxFileResults = Math.min(maxResults, 100); // cap at 100 to prevent token explosion
+    let matchCount = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (results.length >= maxFileResults) break;
+      if (regex.test(lines[i])) {
+        matchCount++;
+        if (filenamesOnly) {
+          return relativePath;
+        }
+        if (countOnly) continue;
+
+        // Collect context lines
+        const ctxLines: string[] = [];
+        const startCtx = Math.max(0, i - contextLines);
+        const endCtx = Math.min(lines.length - 1, i + contextLines);
+        for (let ci = startCtx; ci <= endCtx; ci++) {
+          const prefix = ci === i ? ">" : " ";
+          ctxLines.push(`${prefix}${ci + 1}: ${lines[ci].substring(0, 200)}`);
+        }
+
+        results.push({
+          file: relativePath,
+          line: i + 1,
+          content: ctxLines.join("\n"),
+        });
+      }
+    }
+
+    if (countOnly) {
+      const counts = `${filePath}:${matchCount}`;
+      if (outputMode === "json") return JSON.stringify({ [filePath]: matchCount });
+      if (compact) return counts;
+      return `📊 Count results for "${patterns[0]}":\n${counts}`;
+    }
+
+    if (matchCount === 0) {
+      if (outputMode === "json") return JSON.stringify({ query: patterns[0], matches: 0 });
+      if (compact) return `0:${patterns[0]}`;
+      return `🔍 No matches for "${patterns[0]}" in ${filePath}.`;
+    }
+
+    if (compact || outputMode === "raw") {
+      return results.map((r) => `${r.file}:${r.line}:${r.content.split("\n")[0].replace(/^[>\s]+\d+:\s*/, "")}`).join("\n");
+    }
+
+    if (outputMode === "json") {
+      return JSON.stringify(results);
+    }
+
+    // Rich format
+    const header = `🔍 Smart Grep: "${patterns[0]}" — ${filePath}\n📁 ${results.length} matches\n`;
+    const body = results
+      .map((r, i) => `[${i + 1}] 📄 ${r.file}:${r.line}\n    ${r.content}`)
+      .join("\n");
+    return limitLines(`${header}${body}`, 150);
+  } catch (err) {
+    return compact
+      ? `ERR:reading ${filePath}`
+      : `Error reading file "${filePath}": ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+
 export async function handleSmartGrep(
   params: SmartGrepParams,
 ): Promise<string> {
@@ -86,6 +203,7 @@ export async function handleSmartGrep(
     queries,
     targetFolder,
     maxResults = 30,
+    filePath,
     extensions,
     contextLines = 1,
     filenamesOnly = false,
@@ -103,7 +221,7 @@ export async function handleSmartGrep(
   }
 
   // Build cache key
-  const cacheKey = `${patterns.join("||")}:${targetFolder ?? "root"}:${maxResults}:${contextLines}:${filenamesOnly}:${countOnly}:${outputMode}:${extensions ? extensions.join(",") : ""}`;
+  const cacheKey = `${patterns.join("||")}:${filePath ?? ""}:${targetFolder ?? "root"}:${maxResults}:${contextLines}:${filenamesOnly}:${countOnly}:${outputMode}:${extensions ? extensions.join(",") : ""}`;
   const cached = grepCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     sessionMemory.recordToolCall("smart_grep", { query: patterns[0], cached: true });
@@ -113,8 +231,18 @@ export async function handleSmartGrep(
   const projectRoot = getProjectRoot();
   let result: string;
 
-  // Try ripgrep first (10-50x faster)
-  if (isRipgrepAvailable()) {
+  // If filePath is specified, search that single file only
+  if (filePath) {
+    result = await searchInSingleFile(filePath, patterns, {
+      maxResults,
+      contextLines,
+      filenamesOnly,
+      countOnly,
+      outputMode,
+      compact,
+    });
+  } else if (isRipgrepAvailable()) {
+    // Try ripgrep first (10-50x faster)
     result = await tryRipgrep(patterns, {
       projectRoot,
       targetFolder,
