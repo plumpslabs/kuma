@@ -74,13 +74,20 @@ export async function handleSmartGrep(
       ? path.join(targetFolder, "**/*").replace(/\\/g, "/")
       : "**/*";
 
+    // Calculate max directory depth from project root:
+    // When targetFolder is specified, we need to reach files inside it,
+    // so depth = target folder depth + extra levels for subdirectories.
+    // Without targetFolder, default to 10 levels.
+    const targetDepth = targetFolder ? targetFolder.split("/").filter(Boolean).length : 0;
+    const maxDepth = targetFolder ? Math.min(targetDepth + 5, 20) : 10;
+
     // Cari file yang match
     let entries = await fg(searchPattern, {
       cwd: projectRoot,
       ignore: IGNORE_PATTERNS,
       onlyFiles: true,
       absolute: false,
-      deep: targetFolder ? 3 : 10, // Batasi kedalaman
+      deep: maxDepth,
       dot: false, // Skip dotfiles
     });
 
@@ -171,17 +178,19 @@ export async function handleSmartGrep(
 
 /** @internal exported for testing */
 export function createRegex(query: string): RegExp {
+  const normalized = query.replace(/\\\|/g, "|");
+
   // First, try to use the query as a real regex pattern
   try {
     // Check if it looks like a regex (has special patterns)
-    if (/[.\\+*?[\](){}^$|]/.test(query)) {
-      return new RegExp(query, "i");
+    if (/[.\\+*?[\](){}^$|]/.test(normalized)) {
+      return new RegExp(normalized, "i");
     }
   } catch {
     // Regex failed, fall through to literal search
   }
   // Fallback: treat as literal string, escape special chars
-  return new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  return new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 }
 
 /** @internal exported for testing */

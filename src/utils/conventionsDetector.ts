@@ -13,6 +13,12 @@ export interface WorkspacePackage {
   packageManager: string;  // per-workspace package manager (pnpm, npm, yarn, bun)
 }
 
+export type SupportedLanguage =
+  | "typescript" | "javascript"
+  | "go" | "php" | "python" | "rust"
+  | "java" | "kotlin" | "ruby"
+  | "csharp" | "swift";
+
 export interface ProjectConventions {
   framework: string;
   projectType: "web-app" | "backend" | "cli" | "mcp-server" | "library" | "unknown";
@@ -21,8 +27,8 @@ export interface ProjectConventions {
   importAlias?: string;
   lintRules: string[];
   packageManager: string;
-  moduleSystem: "esm" | "cjs";
-  language: "typescript" | "javascript";
+  moduleSystem: "esm" | "cjs" | "other";
+  language: SupportedLanguage;
   features: string[];
   isMonorepo: boolean;
   workspaces: WorkspacePackage[];
@@ -39,8 +45,13 @@ export async function detectConventions(forceRescan = false): Promise<ProjectCon
   const projectRoot = getProjectRoot();
   const workspaces = detectWorkspaces(projectRoot);
 
+  const lang = detectLanguage(projectRoot);
+  const framework = lang !== "typescript" && lang !== "javascript"
+    ? detectMultiLanguageFramework(projectRoot, lang)
+    : detectFramework(projectRoot);
+
   const conventions: ProjectConventions = {
-    framework: detectFramework(projectRoot),
+    framework,
     projectType: detectProjectType(projectRoot),
     testRunner: detectTestRunner(projectRoot),
     styling: detectStyling(projectRoot),
@@ -53,6 +64,11 @@ export async function detectConventions(forceRescan = false): Promise<ProjectCon
     isMonorepo: workspaces.length > 0,
     workspaces,
   };
+
+  // Override moduleSystem for non-JS languages
+  if (lang !== "typescript" && lang !== "javascript") {
+    (conventions as any).moduleSystem = "other";
+  }
 
   cachedConventions = conventions;
   return conventions;
@@ -406,17 +422,173 @@ function detectModuleSystem(root: string): "esm" | "cjs" {
   return "cjs";
 }
 
-function detectLanguage(root: string): "typescript" | "javascript" {
+function detectLanguage(root: string): SupportedLanguage {
+  // Config-file based detection (most reliable)
+  if (fs.existsSync(path.join(root, "go.mod"))) return "go";
+  if (fs.existsSync(path.join(root, "Cargo.toml"))) return "rust";
+  if (fs.existsSync(path.join(root, "composer.json"))) return "php";
+  if (fs.existsSync(path.join(root, "pyproject.toml")) || fs.existsSync(path.join(root, "requirements.txt")) || fs.existsSync(path.join(root, "setup.py"))) return "python";
+  if (fs.existsSync(path.join(root, "Gemfile"))) return "ruby";
+  if (fs.existsSync(path.join(root, "pom.xml"))) return "java";
+  if (fs.existsSync(path.join(root, "build.gradle")) || fs.existsSync(path.join(root, "build.gradle.kts"))) return "kotlin";
+  if (fs.existsSync(path.join(root, "Package.swift"))) return "swift";
+
+  // Check for .csproj files (C#) via glob-like scan
+  try {
+    const entries = fs.readdirSync(root);
+    if (entries.some(e => e.endsWith(".csproj"))) return "csharp";
+  } catch {}
+
+  // TypeScript/JavaScript detection
   if (fs.existsSync(path.join(root, "tsconfig.json"))) return "typescript";
 
-  // Check for .ts files
   const srcDir = path.join(root, "src");
   if (fs.existsSync(srcDir)) {
     const tsFiles = findFiles(srcDir, [".ts", ".tsx"]);
     if (tsFiles.length > 0) return "typescript";
+    const jsFiles = findFiles(srcDir, [".js", ".jsx"]);
+    if (jsFiles.length > 0) return "javascript";
   }
 
-  return "javascript";
+  // Extension-based check even without src/ dir
+  try {
+    const tsFiles = findFiles(root, [".ts", ".tsx"]);
+    if (tsFiles.length > 0) return "typescript";
+    const jsFiles = findFiles(root, [".js", ".jsx"]);
+    if (jsFiles.length > 0) return "javascript";
+  } catch {}
+
+  return "typescript"; // Default fallback
+}
+
+/**
+ * Detect framework for non-JS/TS languages.
+ */
+function detectMultiLanguageFramework(root: string, language: SupportedLanguage): string {
+  switch (language) {
+    case "go": {
+      try {
+        const goMod = fs.readFileSync(path.join(root, "go.mod"), "utf-8");
+        if (goMod.includes("github.com/gin-gonic/gin")) return "Gin";
+        if (goMod.includes("github.com/labstack/echo")) return "Echo";
+        if (goMod.includes("github.com/gofiber/fiber")) return "Fiber";
+        if (goMod.includes("github.com/go-chi/chi")) return "Chi";
+        if (goMod.includes("github.com/gorilla/mux")) return "Gorilla Mux";
+        if (goMod.includes("github.com/urfave/cli")) return "CLI (urfave/cli)";
+        if (goMod.includes("github.com/spf13/cobra")) return "Cobra CLI";
+      } catch {}
+      return "Go";
+    }
+    case "php": {
+      try {
+        const composer = JSON.parse(fs.readFileSync(path.join(root, "composer.json"), "utf-8"));
+        const req = (composer.require ?? {}) as Record<string, string>;
+        const reqDev = (composer["require-dev"] ?? {}) as Record<string, string>;
+        const deps = { ...req, ...reqDev };
+        if (deps["laravel/framework"]) return "Laravel";
+        if (deps["symfony/symfony"] || deps["symfony/framework-bundle"]) return "Symfony";
+        if (deps["codeigniter4/framework"]) return "CodeIgniter";
+        if (deps["yiisoft/yii2"]) return "Yii2";
+        if (deps["cakephp/cakephp"]) return "CakePHP";
+        if (deps["phalcon/incubator"]) return "Phalcon";
+        if (deps["wp-coding-standards/wpcs"]) return "WordPress";
+      } catch {}
+      return "PHP";
+    }
+    case "python": {
+      try {
+        if (fs.existsSync(path.join(root, "pyproject.toml"))) {
+          const content = fs.readFileSync(path.join(root, "pyproject.toml"), "utf-8");
+          if (content.includes("django")) return "Django";
+          if (content.includes("flask")) return "Flask";
+          if (content.includes("fastapi")) return "FastAPI";
+        }
+        if (fs.existsSync(path.join(root, "requirements.txt"))) {
+          const content = fs.readFileSync(path.join(root, "requirements.txt"), "utf-8");
+          if (content.includes("django")) return "Django";
+          if (content.includes("flask")) return "Flask";
+          if (content.includes("fastapi")) return "FastAPI";
+          if (content.includes("tornado")) return "Tornado";
+          if (content.includes("aiohttp")) return "aiohttp";
+        }
+      } catch {}
+      return "Python";
+    }
+    case "rust": {
+      try {
+        const cargo = fs.readFileSync(path.join(root, "Cargo.toml"), "utf-8");
+        if (cargo.includes("axum")) return "Axum";
+        if (cargo.includes("actix-web")) return "Actix Web";
+        if (cargo.includes("rocket")) return "Rocket";
+        if (cargo.includes("warp")) return "Warp";
+        if (cargo.includes("tide")) return "Tide";
+        if (cargo.includes("poem")) return "Poem";
+        if (cargo.includes("clap")) return "Clap CLI";
+      } catch {}
+      return "Rust";
+    }
+    case "java": {
+      try {
+        const content = fs.readFileSync(path.join(root, "pom.xml"), "utf-8");
+        if (content.includes("spring-boot")) return "Spring Boot";
+        if (content.includes("quarkus")) return "Quarkus";
+        if (content.includes("micronaut")) return "Micronaut";
+        if (content.includes("jakarta")) return "Jakarta EE";
+        if (content.includes("helidon")) return "Helidon";
+      } catch {
+        // Check build.gradle if pom.xml fails
+        try {
+          const gradle = fs.readFileSync(path.join(root, "build.gradle"), "utf-8");
+          if (gradle.includes("spring")) return "Spring Boot";
+          if (gradle.includes("quarkus")) return "Quarkus";
+        } catch {}
+      }
+      return "Java";
+    }
+    case "kotlin": {
+      try {
+        const gradle = fs.readFileSync(path.join(root, "build.gradle.kts"), "utf-8");
+        if (gradle.includes("spring")) return "Spring Boot (Kotlin)";
+        if (gradle.includes("ktor")) return "Ktor";
+      } catch {}
+      return "Kotlin";
+    }
+    case "ruby": {
+      try {
+        const gemfile = fs.readFileSync(path.join(root, "Gemfile"), "utf-8");
+        if (gemfile.includes("rails")) return "Ruby on Rails";
+        if (gemfile.includes("sinatra")) return "Sinatra";
+        if (gemfile.includes("hanami")) return "Hanami";
+        if (gemfile.includes("grape")) return "Grape API";
+      } catch {}
+      return "Ruby";
+    }
+    case "csharp": {
+      try {
+        const entries = fs.readdirSync(root);
+        const csproj = entries.find(e => e.endsWith(".csproj"));
+        if (csproj) {
+          const content = fs.readFileSync(path.join(root, csproj), "utf-8");
+          if (content.includes("Microsoft.AspNetCore")) return "ASP.NET Core";
+          if (content.includes("Microsoft.Maui")) return ".NET MAUI";
+          if (content.includes("Serilog")) return "Serilog";
+        }
+      } catch {}
+      return "C#";
+    }
+    case "swift": {
+      try {
+        const content = fs.readFileSync(path.join(root, "Package.swift"), "utf-8");
+        if (content.includes("vapor")) return "Vapor";
+        if (content.includes("swift-nio")) return "SwiftNIO";
+        if (content.includes("perfect")) return "Perfect";
+        if (content.includes("kitura")) return "Kitura";
+      } catch {}
+      return "Swift";
+    }
+    default:
+      return detectFramework(root);
+  }
 }
 
 function detectFeatures(root: string): string[] {

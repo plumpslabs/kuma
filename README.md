@@ -4,7 +4,7 @@
 
 # Kuma
 
-**Zero-setup safety toolkit for AI coding agents.**
+**Zero-setup safety & context runtime for AI coding agents — v2.2.2**
 
 [![npm](https://img.shields.io/npm/v/@plumpslabs/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@plumpslabs/kuma)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -50,27 +50,27 @@ Or add Kuma MCP server manually to any MCP client:
 
 > **Kuma consolidates 46+ individual operations into 10 grouped tools.** AI agents scan 10 groups instead of 46 tools — simpler, faster, less context.
 
-| Group | Actions | When to call |
+| Group | Actions | What it does |
 |-------|---------|-------------|
-| 🔵 `kuma_init` | `init`, `conventions`, `structure` | **Call first** every session |
-| 🟢 `kuma_core` | `grep`, `read`, `edit`, `batch`, `lsp` | During active coding |
-| 🟡 `kuma_verify` | `test`, `review`, `lint` | After every edit |
-| 🔴 `kuma_safety` | `guard` (anti-patterns, loops, drift), `score` (0-100 health), `check` (pre-exec safety), `policy` (`.kuma/policy.yml`), `risk` (impact prediction), `dependency` (native JS alternatives), `audit` (safety audit trail), `stats` (audit statistics), `override` (bypass safety) | Before risky ops |
-| 🟣 `kuma_graph` | `query` (nodes/edges/stats/search), `navigate`, `diagram`, `investigate`, `arch` (capture/diff/diagram/fs/graph/profiles), `experience` (suggest/errors/prune), `intent` (suggest/patterns) | Codebase understanding — powered by **SQLite knowledge graph** |
-| 🧠 `kuma_memory` | `get`, `search`, `write`, `decision`, `context`, `heal` | Persist/retrieve context |
-| 📊 `kuma_analytics` | `reflect`, `analytics`, `health`, `replay`, `heatmap`, `learn`, `predict`, `confidence`, `dna` | Session review |
-| ⏳ `kuma_history` | `timeline`, `log`, `diff` | Git/time analysis |
-| 🔒 `kuma_lock` | `acquire`, `release`, `list`, `clean` | Multi-agent coordination |
-| ⚙️ `kuma_advanced` | `failure`, `compress`, `shadow`, `collective` (sync patterns to VPS), `marketplace` (install templates) | Maintenance |
+| 🔵 `kuma_init` | `init`, `conventions`, `structure` | **Call first** every session — load context, detect stack, show tree |
+| 🟢 `kuma_core` | `grep`, `read`, `edit`, `batch`, `lsp` | During active coding — search, read, safe edit, create files, LSP queries |
+| 🟡 `kuma_verify` | `test`, `review`, `lint` | After every edit — run tests, code review, static analysis |
+| 🔴 `kuma_safety` | `guard`, `score`, `check`, `policy`, `risk`, `dependency`, `context`, `audit`, `stats`, `override` | Safety & risk — anti-patterns, health score, pre-exec check, policy enforcement, impact analysis, dependency guard, snapshots, audit trail |
+| 🟣 `kuma_graph` | `query`, `navigate`, `diagram`, `investigate`, `arch`, `experience`, `intent` | Codebase understanding — query knowledge graph, navigate flows, Mermaid diagrams, auto-investigate, architecture guard, experience patterns, intent paths |
+| 🧠 `kuma_memory` | `get`, `search`, `write`, `decision`, `context`, `heal` | Persist/retrieve context — session memory, keyword search, persist knowledge, decisions (ADR), auto-context engine, self-heal graph |
+| 📊 `kuma_analytics` | `reflect`, `analytics`, `health`, `replay`, `heatmap`, `learn`, `predict`, `confidence`, `dna` | Session review — on-track detection, stats dashboard, code health, session replay, activity heat map, AI learning, predictive next, confidence score, project DNA |
+| ⏳ `kuma_history` | `timeline`, `log`, `diff` | Code history — symbol evolution timeline, commit log, structured diffs |
+| 🔒 `kuma_lock` | `acquire`, `release`, `list`, `clean` | Multi-agent coordination — file-level locks, lock listing, stale cleanup |
+| ⚙️ `kuma_advanced` | `failure`, `compress`, `shadow`, `collective`, `marketplace` | Maintenance — failure knowledge base, semantic compression, shadow execution simulation, collective VPS sync, marketplace templates |
 
 ```bash
-# Example workflow
-kuma_init({ action: "init" })                            # Load project context
-kuma_core({ action: "grep", query: "handleAuth" })      # Find code
-kuma_core({ action: "edit", filePath: "auth.ts", ... }) # Edit safely
-kuma_verify({ action: "test" })                         # Verify didn't break
-kuma_safety({ action: "guard", goal: "refactor auth" })  # Safety check
-kuma_analytics({ action: "reflect" })                   # Reflect on progress
+# Full workflow example
+kuma_init({ action: "init" })                                    # Load project context
+kuma_core({ action: "grep", query: "handleAuth" })               # Find code
+kuma_core({ action: "edit", filePath: "auth.ts", edits: [...] }) # Edit safely
+kuma_safety({ action: "guard", goal: "refactor auth" })           # Safety check
+kuma_verify({ action: "test" })                                  # Verify didn't break
+kuma_analytics({ action: "reflect" })                             # Reflect on progress
 ```
 
 ---
@@ -87,16 +87,118 @@ kuma_analytics({ action: "reflect" })                   # Reflect on progress
 | 4 | **GitHub Copilot Editor** | `AGENTS.md` + `.github/skills/kuma/SKILL.md` | AGENTS.md + Skill file |
 | 5 | **Cline** | `.clinerules/kuma.md` | Rule file with `paths` frontmatter |
 | 6 | **Aider** | `CONVENTIONS.md` + `.aider.conf.yml` | Convention file referenced via `read: CONVENTIONS.md` |
-| 7 | **Antigravity CLI** | `.agents/skills/kuma/SKILL.md` + `.agents/mcp_config.json` | Skill (loaded on demand) |
+| 7 | **Antigravity CLI** | `.agents/skills/kuma/SKILL.md` + `.agents/mcp_config.json` | Skill + MCP config |
 | 8 | **OpenCode** | `opencode.json` | Plugin config JSON |
 | 9 | **Codex CLI (OpenAI)** | `AGENTS.md` + `.codex/config.toml` | AGENTS.md + MCP server in TOML |
 | 10 | **Qwen Code** | `AGENTS.md` + `settings.json` | AGENTS.md + MCP server in JSON |
-| 11 | **Kiro** | `.kiro/steering/kuma.md` | Steering file with YAML frontmatter (`inclusion: always`) |
+| 11 | **Kiro** | `.kiro/steering/kuma.md` | Steering file with YAML frontmatter |
 | 12 | **OpenClaw** | `skills/kuma/SKILL.md` | Skill (loaded on demand) |
 | 13 | **CodeWhale** | `skills/kuma/SKILL.md` + `.codewhale/mcp.json` | Skill + MCP server config |
 
-> `AGENTS.md` includes sections for all selected agents that read it (Codex CLI, Qwen Code, GitHub Copilot Editor) — one file, no conflicts.
-> `skills/kuma/SKILL.md` is shared by agents that load skills from workspace root.
+> `AGENTS.md` is a merged file shared by Codex CLI, Qwen Code, and GitHub Copilot Editor — one file, no conflicts.
+
+---
+
+## Features
+
+### 🔍 Context & Understanding
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Smart Grep** | `kuma_core({ action: "grep" })` | Regex code search with context lines, caching, and `.gitignore` respect |
+| **Smart File Picker** | `kuma_core({ action: "read" })` | Read files with chunking strategies: `full`, `smart` (signatures + tail), `outline` (exports only) |
+| **Project Structure** | `kuma_init({ action: "structure" })` | Tree view of project layout with depth control, folder-only mode, patterns |
+| **Project Conventions** | `kuma_init({ action: "conventions" })` | Auto-detect framework, test runner, package manager, monorepo workspaces |
+| **LSP Query** | `kuma_core({ action: "lsp" })` | Go-to-definition, find references, type info, rename symbols via TypeScript Language Server. **Falls back to regex when LSP unavailable.** |
+| **Code Time Machine** | `kuma_history({ action: "timeline" })` | Track how a function evolved over time — git blame + commit analysis + design decisions |
+| **Git Log** | `kuma_history({ action: "log" })` | Structured commit history with file filtering |
+| **Git Diff** | `kuma_history({ action: "diff" })` | Structured diff with staged/unstaged, ref ranges, context control |
+
+### 🧠 Knowledge Graph (SQLite)
+
+Everything in Kuma is backed by a **SQLite knowledge graph** — auto-built, auto-healed, queryable:
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Graph Query** | `kuma_graph({ action: "query" })` | Query nodes/edges/stats. FTS5 full-text search with graceful fallback |
+| **AI Navigation** | `kuma_graph({ action: "navigate" })` | Answer "How does login work?" — returns the full call chain |
+| **Autonomous Investigation** | `kuma_graph({ action: "investigate" })` | Given a problem, auto-discovers the relevant code path + bottleneck |
+| **Mermaid Diagrams** | `kuma_graph({ action: "diagram" })` | Generate architecture, sequence, impact, ownership, heatmap diagrams |
+| **Living Architecture** | `kuma_graph({ action: "arch" })` | Auto-detect architecture (clean/layered/hexagonal/MVC), detect violations |
+| **Experience Graph** | `kuma_graph({ action: "experience" })` | Learn from past sessions — suggests next tools based on success patterns |
+| **Intent Graph** | `kuma_graph({ action: "intent" })` | Organize by intent, not dependency — suggests optimal paths for a goal |
+| **Self-Healing** | `kuma_memory({ action: "heal" })` | Auto-detect stale nodes, repair via git history or content hash. Cascading edge cleanup |
+
+### ✏️ Execution — Make Changes Safely
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Precise Diff Editor** | `kuma_core({ action: "edit" })` | Search-and-replace with exact → whitespace → fuzzy fallback. **Auto-backup before every edit.** Dry-run preview, versioned rollback, batch edits (up to 10) |
+| **Batch File Writer** | `kuma_core({ action: "batch" })` | Create up to 15 files in one call. Path validation before writing |
+| **Static Analysis** | `kuma_verify({ action: "lint" })` | Run ESLint / TypeScript / Prettier / Ruff — structured output |
+| **Code Reviewer** | `kuma_verify({ action: "review" })` | Senior-level static analysis. Focus modes: correctness, conventions, security, performance, **over-engineering detection** |
+
+### 🧠 Memory
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Session Memory** | `kuma_memory({ action: "get" })` | Session state tracker — modified files, unresolved failures, tool history |
+| **Memory Search** | `kuma_memory({ action: "search" })` | Keyword search across tool calls, memory files, errors, dependency graph |
+| **Persist Knowledge** | `kuma_memory({ action: "write" })` | Save decisions, glossary, architecture notes to `.kuma/memories/` |
+| **Decision Memory** | `kuma_memory({ action: "decision" })` | ADR-style decision recording: context → options → rationale → outcome |
+| **Context Engine** | `kuma_memory({ action: "context" })` | Auto-inject relevant context — finds files related to a goal via graph distance + recency + failure history |
+
+### 🛡️ Safety — Stay on Track
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Safety Guard** | `kuma_safety({ action: "guard" })` | Anti-pattern detection (script patching, bash grep), tool loops, drift (edits without tests) |
+| **Safety Score** | `kuma_safety({ action: "score" })` | Aggregate 0-100 health score across 9 dimensions: git status, backups, LSP, tests, loops, etc. |
+| **Safety Policy** | `kuma_safety({ action: "policy" })` | Policy file (`.kuma/policy.yml`) — `never_touch`, `require_review`, `require_tests`, `block_commands` |
+| **Risk Prediction** | `kuma_safety({ action: "risk" })` | Before editing — shows references, test files, API routes affected |
+| **Dependency Guard** | `kuma_safety({ action: "dependency" })` | Before adding packages — checks existing deps, suggests native JS alternatives |
+| **Context Snapshots** | `kuma_safety({ action: "context" })` | Save/restore project state before risky operations |
+| **Safety Audit** | `kuma_safety({ action: "audit" })` | Every tool call recorded in SQLite. Queryable trail with override logging |
+| **Safety Check** | `kuma_safety({ action: "check" })` | Pre-execution safety check — validates path, policy, dangerous commands |
+
+### 📊 Analytics & Reflection
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Reflection** | `kuma_analytics({ action: "reflect" })` | On-track/off-track detection, drift warnings, next action suggestion |
+| **Behavior Analytics** | `kuma_analytics({ action: "analytics" })` | Session stats — tool calls, edits, test runs, rollbacks, loops prevented |
+| **Code Health Dashboard** | `kuma_analytics({ action: "health" })` | Project-level health — bug density, test pass rate, rollback rate, fragility scoring |
+| **Session Replay** | `kuma_analytics({ action: "replay" })` | Replay what AI did in a previous session as a human-readable narrative |
+| **Activity Heat Map** | `kuma_analytics({ action: "heatmap" })` | Show which parts of the codebase AI works on most |
+| **AI Learning** | `kuma_analytics({ action: "learn" })` | Auto-prioritize high-usage patterns in the knowledge graph |
+| **Predictive AI** | `kuma_analytics({ action: "predict" })` | Predict what file/tool AI needs next based on current context |
+| **Confidence Engine** | `kuma_analytics({ action: "confidence" })` | Estimate how confident AI should be — factors: files read, refs checked, graph completeness |
+| **Project DNA** | `kuma_analytics({ action: "dna" })` | One-page project fingerprint — architecture, coding style, coupling, risk areas, trends |
+
+### ⏳ History & Time Machine
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Symbol Timeline** | `kuma_history({ action: "timeline" })` | "Why does login work this way?" — traces a function's evolution across commits with design decisions |
+| **Commit Log** | `kuma_history({ action: "log" })` | Structured commit history with file filter |
+| **Git Diff** | `kuma_history({ action: "diff" })` | Staged/unstaged/ref-range diffs with configurable context |
+
+### 🔒 Multi-Agent
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **File Locking** | `kuma_lock({ action: "acquire" })` | Prevent multiple AI agents from editing the same file simultaneously |
+| **Lock Management** | `kuma_lock({ action: "list" })` | See active locks, clean stale ones |
+
+### ⚙️ Advanced
+
+| Feature | Tool / Action | Description |
+|---------|--------------|-------------|
+| **Failure Knowledge Base** | `kuma_advanced({ action: "failure" })` | Every failure saved — type, symbol, solution. Proactive warnings for repeat patterns |
+| **Semantic Compression** | `kuma_advanced({ action: "compress" })` | Compress large codebases into a semantic graph (type signatures + deps — no boilerplate) |
+| **Shadow Execution** | `kuma_advanced({ action: "shadow" })` | Simulate changes before applying — virtual typecheck, test prediction, risk assessment |
+| **Collective Intelligence** | `kuma_advanced({ action: "collective" })` | Sync anonymized patterns to your own VPS — learn from multiple projects |
+| **Knowledge Marketplace** | `kuma_advanced({ action: "marketplace" })` | Install pre-built graph templates for popular frameworks |
 
 ---
 
@@ -104,7 +206,7 @@ kuma_analytics({ action: "reflect" })                   # Reflect on progress
 
 **Kuma is built for one thing: making sure AI agents don't break your project.**
 
-Every tool in Kuma has a safety net built-in — not as an afterthought, but as a core design principle. Here's what Kuma guarantees:
+Every tool in Kuma has a safety net built-in — not as an afterthought, but as a core design principle:
 
 | # | When this happens... | Kuma does this... |
 |---|---|---|
@@ -116,57 +218,14 @@ Every tool in Kuma has a safety net built-in — not as an afterthought, but as 
 | 6 | AI keeps repeating the same tool | **Tool-loop detection** — flags if same tool called 4+ times in last 10 calls |
 | 7 | You need to undo an edit | **Versioned rollback** — `action: "rollback"` with `version: N` or `version: "list"` |
 | 8 | A diff doesn't match | **Fuzzy fallback** — exact → whitespace-normalized → fuzzy match with configurable threshold |
+| 9 | AI needs to understand complex code | **Knowledge graph** — SQLite-backed, auto-built, queryable, self-healing |
+| 10 | AI is about to break architecture | **Architecture guard** — detects layer violations, suggests correct dependency direction |
+| 11 | AI has no context for a goal | **Auto-context engine** — finds relevant files via graph distance + recency + failure history |
+| 12 | AI needs to know confidence | **Confidence engine** — 0-100 score based on context completeness |
+| 13 | AI wants to know a file's history | **Code time machine** — shows why code is the way it is via git blame + commit analysis |
+| 14 | Multiple agents edit the same file | **File lock** — prevents conflicts, clean stale locks |
 
 Most tools make AI smarter. **Kuma makes AI not break things.**
-
----
-
-## Tools (19)
-
-### 🔍 Context — Understand the codebase
-
-| Tool | Description |
-|------|-------------|
-| `smart_grep` | Search code with regex. Returns filename, line, and context. Caches results. |
-| `smart_file_picker` | Read files with smart chunking: `full` (entire file), `smart` (signatures + tail), `outline` (exports only). |
-| `project_structure` | Tree view of project layout. Depth control, folder-only mode, include/exclude patterns. |
-| `git_log` | Structured commit history with optional file filter. |
-| `git_diff` | Structured diff output. Supports staged/unstaged, file filter, ref ranges, and context line control. |
-| `lsp_query` | Go-to-definition, find references, get type info, **or rename symbols** via TypeScript Language Server. **Falls back to regex when LSP unavailable.** |
-| `project_conventions` | Auto-detect framework, test runner, package manager, import aliases, **monorepo workspaces**. |
-| `kuma_init` | **Call FIRST** every session. Loads `.kuma/init.md` rules, `.kuma/memories/`, previous session state, and **knowledge graph** from SQLite DB. After this, you can work without re-detecting conventions. |
-
-### ✏️ Execution — Make changes safely
-
-| Tool | Description |
-|------|-------------|
-| `precise_diff_editor` | Search-and-replace with exact → whitespace → fuzzy fallback. **Auto-backup before every edit.** Supports **dry-run preview**, **versioned rollback** (`version: N`, `version: "list"`), and **batch edits** (up to 10 at once). |
-| `batch_file_writer` | Create up to 15 files in one call. Validates paths before writing. |
-| `static_analysis` | Run ESLint / TypeScript / Prettier / Ruff and **parse output into structured results.** Auto-detects tools from project config. |
-
-### 🧪 Validation — Verify before breaking
-
-| Tool | Description |
-|------|-------------|
-| `execute_safe_test` | Run `test`/`build`/`lint`/`typecheck`/`custom` with **timeout, circuit breaker, and process tree kill.** Supports **monorepo workspaces** via `workspace` param or relative `cwd`. |
-| `code_reviewer` | Senior-level static analysis. Focus modes: correctness, conventions, security, performance, and **over-engineering detection.** Supports JSON output. |
-
-### 🧠 Memory — Know what happened
-
-| Tool | Description |
-|------|-------------|
-| `get_session_memory` | Session state tracker. Shows modified files, unresolved failures, tool history. Load specific memory topics with `{ topic }`. |
-| `search_session_memory` | **Keyword search** across tool calls, memory files, errors, modified files, and dependency graph. |
-| `write_memory` | Persist project knowledge (decisions, glossary) to `.kuma/memories/`. Append, prepend, or overwrite. |
-| `kuma_reflect` | **Reflection tool** — checks if you're on track, detects drift (edits without tests, loops, unresolved failures), and suggests the next action. |
-| `kuma_context` | **Snapshot manager** — save/restore project state (modified files, errors, git diff) before risky operations. |
-
-### 🛡️ Safety — Stay on track
-
-| Tool | Description |
-|------|-------------|
-| `kuma_guard` | **Context safety net.** Detects anti-patterns (script patching, bash grep), tool loops, drift (edits without tests, unresolved failures). Run this after every few edits. Checks: `all`, `anti-pattern`, `loop`, `drift`, `context`. |
-| `kuma_safety` | **Safety AI Layer.** Actions: `audit` (query trail), `stats` (audit statistics), `override` (bypass safety, logged). `precise_diff_editor` auto-wrapped with safety proxy. |
 
 ---
 
@@ -183,52 +242,115 @@ Most tools make AI smarter. **Kuma makes AI not break things.**
 | **LSP graceful degradation** | When TypeScript Language Server is not installed, LSP tools **fall back to regex** instead of hard failing. |
 | **Multi-agent lock** | File-level locks prevent multiple AI agents from editing the same file simultaneously. |
 | **Safety score** | Aggregate 0-100 score across 9 dimensions: git status, backups, LSP, tests, modified files, loops, failures, conventions, goal. |
+| **Safety policy** | `.kuma/policy.yml` — declare `never_touch` files, `require_review` paths, `block_commands`. |
+| **Risk prediction** | Before editing a symbol — shows 42 references in 15 files, 7 test files, 3 API routes. |
+| **Dependency guard** | When AI installs a new package — checks existing deps, suggests native alternatives. |
+| **Safety audit** | Every tool call recorded in SQLite. Queryable trail with override logging. |
 
 ---
 
 ## What Makes Kuma Unique
 
 - **Router groups** — 46+ operations consolidated into 10 grouped tools. AI scans 10 groups instead of 46 tools.
-- **Workflow combo** — `kuma_init → kuma_core → kuma_verify → kuma_safety → kuma_analytics` as a seamless pipeline.
 - **Knowledge Graph (SQLite)** — Built-in SQLite database via `sql.js` (pure WASM, zero native build). Tracks nodes (functions, files, API routes, tests) + edges (calls, imports, defines, tests) + experience patterns + sessions. FTS5 full-text search with graceful fallback.
+- **Self-healing graph** — Automatically detects stale nodes, repairs via git history or content hash fingerprinting.
 - **Safety is default, not optional** — Rollback, circuit breaker, sandbox, timeout, dangerous pattern blocking are built into every tool.
 - **Graceful degradation** — When dependencies are missing (LSP, linters, FTS5), Kuma falls back instead of crashing.
 - **Over-engineering detection** — `code_reviewer` with `focus: "over-engineering"` catches unnecessary abstractions.
 - **Drift detection** — `kuma_guard` catches edits without tests, tool-call loops, unresolved failures.
 - **Impact prediction** — `kuma_risk` tells you how many files reference a symbol before you change it.
+- **Auto-context engine** — Given a goal, finds relevant files via graph distance + recency + failure history.
+- **Code time machine** — Shows why code is the way it is: "Because commit e4f5g6h migrated from sessions to JWT for mobile support."
+- **Mermaid diagrams** — Auto-generated architecture, sequence, impact, ownership, and heatmap diagrams from the knowledge graph.
+- **Architecture guard** — Detects layer violations (Handler → Database when it should be Handler → Service → Repository).
+- **Confidence engine** — 0-100 score estimating how confident AI should be about a change.
+- **Shadow execution** — Simulate changes before applying: virtual typecheck, test prediction, risk assessment.
+- **Failure knowledge base** — Every failure saved and becomes a learning. Proactive warnings.
 - **Dependency guard** — Before adding npm packages, checks for native JS alternatives and existing similar packages.
-- **Persistent memory** — Knowledge survives across sessions via `.kuma/memories/` + `.kuma/kuma.db`. Auto-generates architecture & conventions docs.
+- **Persistent memory** — Knowledge survives across sessions via `.kuma/memories/` + `.kuma/kuma.db`.
 - **Monorepo awareness** — Detects workspaces, scans `apps/*`, `packages/*`, `services/*`, and pnpm/yarn/npm workspaces.
+- **Collective intelligence** — Anonymized pattern sharing across projects via your own VPS. Zero source code leakage.
+- **Knowledge marketplace** — Pre-built graph templates for Laravel, Spring Boot, Django, Gin, Axum, Next.js, Express.js, and more.
 
 ### Storage Layout
 
 ```
 .kuma/
-├── kuma.db           # SQLite database (knowledge graph, sessions, experiences)
-├── init.md            # Behavioral rules for AI agents (auto-generated)
-├── config.json        # Per-project config (collective endpoint, autoSync, etc.)
-├── memory.json        # Session state (modified files, failures, tool history)
-└── memories/          # Persistent knowledge files
+├── kuma.db              # SQLite database (knowledge graph, sessions, experiences, safety audit)
+├── init.md              # Behavioral rules for AI agents (auto-generated)
+├── config.json          # Per-project config (collective endpoint, autoSync, etc.)
+├── memory.json          # Session state (modified files, failures, tool history)
+├── policy.yml           # Safety policy (never_touch, require_review, block_commands)
+├── .instance-id         # Anonymous instance ID for collective sync
+└── memories/            # Persistent knowledge files
     ├── architecture.md
     ├── conventions.md
     ├── decisions.md
     ├── glossary.md
     └── known-issues.md
 
-.kuma/backups/         # Versioned backups from precise_diff_editor
-└── <timestamp>/       # One backup snapshot per edit
+.kuma/backups/            # Versioned backups from precise_diff_editor
+└── <timestamp>/          # One backup snapshot per edit
     └── <relative-file-path>
 ```
 
 ---
 
-## Kuma's DNA
+## 🔄 Self-Healing
 
-1. **Zero setup, zero friction** — Built-in tools that work without config. No DB, no API key.
-2. **Safety first** — Every tool has a safety net: timeout, circuit breaker, rollback, sandbox.
-3. **Graceful degradation, not crash** — Every tool has a fallback before it fails. LSP unavailable? Regex. File not found? Show resolved paths. Diff mismatch? Whitespace→fuzzy retry. Test fails? Circuit breaker stops the loop. FTS5 unavailable? Full-text search disabled gracefully.
-4. **Opinionated workflow** — Tools designed to be used together: `kuma_init → kuma_core → kuma_verify → kuma_safety → kuma_analytics`.
-5. **Minimal surface** — 19 focused tools. Each tool has one job and does it well. No overlap, no confusion.
+Kuma automatically detects and repairs issues in the knowledge graph:
+
+```bash
+# Check for stale entries
+kuma_memory({ action: "heal", healAction: "check" })
+
+# Auto-heal — remove stale nodes/edges
+kuma_memory({ action: "heal" })
+```
+
+| Feature | Description |
+|---------|-------------|
+| **Content Hash** | Detects files that changed since last scan (MD5 of head + tail + size) |
+| **All-Node Scan** | Scans all node types: `file`, `function`, `class`, `interface`, `module`, `test`, etc. |
+| **Git-Aware Repair** | Uses `git log --follow --diff-filter=R` to trace file renames |
+| **Cascading Edges** | Stale node edges get weight reduced to near-zero |
+| **Incremental Heal** | Batch processing — repairs only the affected subgraph, not full scan |
+| **Auto-Heal Hook** | Runs automatically during graph queries — no manual action needed |
+
+---
+
+## 🛡️ Safety AI Layer
+
+The Safety layer sits between AI agents and the filesystem. Every tool call goes through: policy check, path validation, audit logging.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Safety Audit** | Every tool call recorded in SQLite (`safety_audit`). Queryable. |
+| **Safety Proxy** | `precise_diff_editor` is auto-wrapped — runs preCheck before execution. |
+| **Risk Assessment** | Path validation, policy checks, dangerous command detection. |
+| **Override Logging** | Safety bypasses are logged with reasons — audit trail stays clean. |
+| **Safety Score** | 0-100 aggregate health score across 9 dimensions. |
+
+### Usage
+
+```bash
+# Query audit trail (20 most recent entries)
+kuma_safety({ action: "audit", limit: 20 })
+
+# Audit statistics
+kuma_safety({ action: "stats" })
+
+# Full safety check before execution
+kuma_safety({ action: "check", actionCheck: "edit", filePath: "config.ts" })
+
+# Safety Score
+kuma_safety({ action: "score" })
+
+# Bypass safety (logged with reason)
+kuma_safety({ action: "override", tool: "precise_diff_editor", reason: "trusted edit" })
+```
 
 ---
 
@@ -311,35 +433,28 @@ Or via `.kuma/config.json`:
 | `GET` | `/api/v1/patterns?lang=go` | Get global patterns by language |
 | `GET` | `/api/v1/stats` | Dashboard statistics |
 
-### Usage from Kuma
+### Trigger — Manual via AI
+
+Sync is **manually triggered** by the AI agent calling the Kuma tool. There is no background scheduler — the AI decides when to sync based on context.
 
 ```bash
-# Sync patterns to your VPS
+# Sync patterns to your VPS (sends + receives)
 kuma_advanced({ action: "collective", collectiveAction: "sync" })
 
-# Export anonymized preview
+# Preview what data would be sent (safe preview)
 kuma_advanced({ action: "collective", collectiveAction: "export" })
 
-# Discover patterns from VPS
+# Discover local patterns without sending
 kuma_advanced({ action: "collective" })
 ```
+
+> 💡 The `autoSync` flag in config tells the AI to remember syncing periodically — but the actual call is always made by the AI agent, not by a timer.
 
 ---
 
 ## 📦 Knowledge Marketplace
 
 Marketplace provides **pre-built knowledge graph templates** for popular frameworks. Installing a template means Kuma instantly understands the framework's structure without having to learn from scratch.
-
-### What happens when you install a template?
-
-Templates inject nodes (modules, files, functions) and edges (depends_on, imports) into Kuma's SQLite graph. Results:
-
-| Before Installing | After Installing `graph:laravel` |
-|-------------------|----------------------------------|
-| Kuma doesn't know if `User.php` is a Model or Controller | Kuma knows `User.php` extends `Authenticatable` → Model |
-| `kuma_graph({ action: "navigate", query: "find controllers" })` fails | Can answer: "AuthController, UserController in app/Http/Controllers/" |
-| Empty graph — Kuma starts from zero | Graph knows Laravel MVC architecture from the start |
-| Intent prediction is less accurate | Predictions improve — knows Controller → Service → Repository patterns |
 
 ### Usage
 
@@ -392,68 +507,7 @@ kuma_advanced({ action: "marketplace", marketplaceAction: "install", template: "
 | `graph:gin` | Gin (Go) | Handlers, Services, Repositories, Middleware, Models | 25 | 65 |
 | `graph:axum` | Axum (Rust) | Handlers, Extractors, Services, Repositories, State | 20 | 55 |
 
-### Distribution via npm
-
-Templates can also be installed via npm to persist across projects:
-```bash
-npm install @kuma-templates/laravel-graph
-```
-
----
-
-## 🔄 Self-Healing (3.4)
-
-Kuma automatically detects and repairs issues in the knowledge graph:
-
-```bash
-# Check for stale entries
-kuma_memory({ action: "heal", healAction: "check" })
-
-# Auto-heal — remove stale nodes/edges
-kuma_memory({ action: "heal" })
-```
-
-| Feature | Description |
-|---------|-------------|
-| **Content Hash** | Detects files that changed since last scan |
-| **All-Node Scan** | Scans all nodes, not just modified ones |
-| **Cascading Edges** | Removes edges when their source node is deleted (cascade) |
-| **Incremental Heal** | Batch processing — 50 nodes per cycle, non-blocking |
-| **Auto-Heal Hook** | Runs automatically after edits — no manual action needed |
-
----
-
-## 🛡️ Safety AI Layer
-
-The Safety layer sits between AI agents and the filesystem. Every tool call goes through: policy check, path validation, audit logging.
-
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| **Safety Audit** | Every tool call is recorded in SQLite (`safety_audit`). Queryable. |
-| **Safety Proxy** | `precise_diff_editor` is auto-wrapped — runs preCheck before execution. |
-| **Risk Assessment** | Path validation, policy checks, dangerous command detection. |
-| **Override Logging** | Safety bypasses are logged with reasons — audit trail stays clean. |
-
-### Usage
-
-```bash
-# Query audit trail (20 most recent entries)
-kuma_safety({ action: "audit", limit: 20 })
-
-# Audit statistics
-kuma_safety({ action: "stats" })
-
-# Bypass safety (logged with reason)
-kuma_safety({ action: "override", tool: "precise_diff_editor", reason: "trusted edit" })
-```
-
-### Full Safety Check
-```bash
-# Full safety check before execution
-kuma_safety({ action: "check", actionCheck: "edit", filePath: "config.ts" })
-```
+> ⚠️ `@kuma-templates/*` packages do not exist on npmjs yet. All built-in templates are generated from Kuma's source code directly — no npm install needed. The npm path exists for future community-published templates.
 
 ---
 
@@ -479,6 +533,8 @@ npx @plumpslabs/kuma init --all  # Install kuma safety tools
 
 Both tools are designed to complement each other — Kuma handles the
 "can't break things" layer while Matcha handles the "think before you act" layer.
+
+---
 
 ## Contributing
 
