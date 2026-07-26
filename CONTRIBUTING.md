@@ -19,7 +19,7 @@ Thank you for considering contributing to Kuma! This guide will help you underst
 
 ```bash
 # Clone and install
-git clone https://github.com/farhank15/kuma.git
+git clone https://github.com/plumpslabs/kuma.git
 cd kuma
 npm install
 

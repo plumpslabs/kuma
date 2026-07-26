@@ -1,7 +1,7 @@
 {
   "name": "@plumpslabs/kuma",
-  "version": "2.2.8",
-  "description": "Zero-setup safety toolkit for AI coding agents. MCP server with code review, git analysis, file editing, session memory, and static analysis — works with Claude Code, Cursor, Gemini CLI.",
+  "version": "2.3.0",
+  "description": "Safety-first context & orchestration engine for AI coding agents. MCP server with mandatory research pipeline, knowledge graph, impact analysis, decision memory, and safety guard — works with any MCP client.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

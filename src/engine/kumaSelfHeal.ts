@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-export interface StaleEntry {
+interface StaleEntry {
   nodeId: string;
   type: string;
   name: string;
@@ -29,7 +29,7 @@ export interface StaleEntry {
   issue: "file-missing" | "symbol-missing" | "path-changed";
 }
 
-export interface HealResult {
+interface HealResult {
   healed: number;
   missing: number;
   total: number;
@@ -207,7 +207,7 @@ function findRenamedPath(oldPath: string): string | null {
  * Remove or update edges connected to stale nodes.
  * Returns count of edges that were modified or removed.
  */
-export async function cascadeStaleEdges(nodeIds: string[]): Promise<number> {
+async function cascadeStaleEdges(nodeIds: string[]): Promise<number> {
   try {
     const db = await getDb();
     let count = 0;
@@ -237,7 +237,7 @@ export async function cascadeStaleEdges(nodeIds: string[]): Promise<number> {
 /**
  * Heal a stale node by updating its file_path or marking as stale.
  */
-export async function healStaleNode(entry: StaleEntry): Promise<boolean> {
+async function healStaleNode(entry: StaleEntry): Promise<boolean> {
   try {
     const db = await getDb();
 
@@ -297,108 +297,6 @@ export async function autoHeal(): Promise<HealResult> {
 
 // ============================================================
 // INCREMENTAL HEALING — Subgraph-level repair
-// ============================================================
-
-/**
- * Heal only the subgraph relevant to a set of changed files.
- * Much faster than full scan — used for on-the-fly healing.
- */
-export async function incrementalHeal(changedFiles: string[]): Promise<HealResult> {
-  const stale: StaleEntry[] = [];
-  try {
-    const db = await getDb();
-    const root = getProjectRoot();
-
-    for (const filePath of changedFiles) {
-      // Find nodes that reference this file
-      const stmt = db.prepare(`
-        SELECT id, type, name, file_path FROM nodes
-        WHERE file_path = ? OR file_path LIKE ?
-        ORDER BY updated_at DESC LIMIT 50
-      `);
-      stmt.bind([filePath, `${filePath}/%`]);
-
-      while (stmt.step()) {
-        const row = stmt.getAsObject() as Record<string, unknown>;
-        const fullPath = path.join(root, filePath);
-
-        if (!fs.existsSync(fullPath)) {
-          const newPath = findRenamedPath(filePath);
-          stale.push({
-            nodeId: row.id as string,
-            type: row.type as string,
-            name: row.name as string,
-            oldPath: filePath,
-            newPath,
-            issue: newPath ? "path-changed" : "file-missing",
-          });
-        }
-      }
-      stmt.free();
-
-      // Also find edges whose metadata references this file
-      const edgeStmt = db.prepare(`
-        SELECT DISTINCT source_id, target_id FROM edges
-        WHERE json_extract(metadata, '$.filePath') = ?
-        LIMIT 50
-      `);
-      edgeStmt.bind([filePath]);
-
-      const connectedNodeIds: string[] = [];
-      while (edgeStmt.step()) {
-        const row = edgeStmt.getAsObject() as Record<string, unknown>;
-        if (row.source_id) connectedNodeIds.push(row.source_id as string);
-        if (row.target_id) connectedNodeIds.push(row.target_id as string);
-      }
-      edgeStmt.free();
-
-      // Check if those connected nodes also need healing
-      if (connectedNodeIds.length > 0) {
-        const nodeStmt = db.prepare(`
-          SELECT id, type, name, file_path FROM nodes
-          WHERE id IN (${connectedNodeIds.map(() => "?").join(",")})
-            AND file_path IS NOT NULL
-        `);
-        nodeStmt.bind(connectedNodeIds);
-
-        while (nodeStmt.step()) {
-          const row = nodeStmt.getAsObject() as Record<string, unknown>;
-          const fp = row.file_path as string;
-          const fullPath = path.join(root, fp);
-          if (!fs.existsSync(fullPath)) {
-            stale.push({
-              nodeId: row.id as string,
-              type: row.type as string,
-              name: row.name as string,
-              oldPath: fp,
-              newPath: findRenamedPath(fp),
-              issue: "file-missing",
-            });
-          }
-        }
-        nodeStmt.free();
-      }
-    }
-
-    // Heal the found stale entries
-    let healed = 0;
-    let missing = 0;
-    for (const entry of stale) {
-      if (await healStaleNode(entry)) healed++;
-      else missing++;
-    }
-
-    // Cascade edges for truly missing nodes
-    const staleNodeIds = stale.filter(e => !e.newPath).map(e => e.nodeId);
-    const cascadedEdges = await cascadeStaleEdges(staleNodeIds);
-
-    return { healed, missing, total: stale.length, cascadedEdges };
-  } catch (err) {
-    console.error(`[KumaSelfHeal] Failed incremental heal: ${err}`);
-    return { healed: 0, missing: 0, total: 0, cascadedEdges: 0 };
-  }
-}
-
 // ============================================================
 // HEAL-ON-QUERY — Auto-detect stale during graph access
 // ============================================================
@@ -473,113 +371,4 @@ export function formatHealReport(result: HealResult): string {
   return lines.join("\n");
 }
 
-// ============================================================
-// V3: Confidence Scoring
-// ============================================================
 
-export interface ConfidenceResult {
-  nodeId: string;
-  name: string;
-  confidence: number;
-  age: number;
-  isValid: boolean;
-  reason: string;
-}
-
-/**
- * Score the confidence of a graph node based on staleness, age, and weight.
- */
-export async function scoreConfidence(nodeIdOrName: string): Promise<ConfidenceResult | null> {
-  try {
-    const db = await getDb();
-    const stmt = db.prepare(
-      "SELECT id, name, file_path, updated_at, metadata FROM nodes WHERE id = ? OR name LIKE ? LIMIT 1"
-    );
-    stmt.bind([nodeIdOrName, `%${nodeIdOrName}%`]);
-
-    if (!stmt.step()) {
-      stmt.free();
-      return null;
-    }
-
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stmt.free();
-
-    const id = row.id as string;
-    const name = row.name as string;
-    const filePath = row.file_path as string | null;
-    const updatedAt = (row.updated_at as number) || 0;
-    const now = Math.floor(Date.now() / 1000);
-    const age = now - updatedAt;
-
-    let confidence = 1.0;
-
-    // Age penalty: lose confidence over time
-    if (age > 86400 * 30) confidence -= 0.3;
-    else if (age > 86400 * 7) confidence -= 0.15;
-    else if (age > 86400) confidence -= 0.05;
-
-    // File existence check
-    let isValid = true;
-    let reason = "OK";
-    if (filePath && !filePath.startsWith("search::") && !filePath.startsWith("api_route::")) {
-      const fullPath = path.join(getProjectRoot(), filePath);
-      if (!fs.existsSync(fullPath)) {
-        const newPath = findRenamedPath(filePath);
-        if (newPath) {
-          confidence -= 0.1;
-          reason = `File moved to ${newPath}`;
-        } else {
-          confidence -= 0.5;
-          isValid = false;
-          reason = "File missing";
-        }
-      }
-    }
-
-    // Edge weight bonus
-    try {
-      const edgeResult = db.exec(
-        "SELECT AVG(weight) as avg_weight FROM edges WHERE source_id = ? OR target_id = ?",
-        [id, id]
-      );
-      const avgWeight = (edgeResult[0]?.values[0][0] as number) || 0;
-      if (avgWeight > 5) confidence = Math.min(1.0, confidence + 0.1);
-    } catch {}
-
-    confidence = Math.max(0, Math.min(1, confidence));
-
-    return { nodeId: id, name, confidence: Math.round(confidence * 100) / 100, age, isValid, reason };
-  } catch (err) {
-    console.error(`[KumaSelfHeal] Confidence scoring failed: ${err}`);
-    return null;
-  }
-}
-
-/**
- * Format stale entries in detail.
- */
-export function formatStaleEntries(entries: StaleEntry[]): string {
-  if (entries.length === 0) {
-    return "✅ No stale entries found.";
-  }
-
-  const lines: string[] = [
-    `🔍 **Stale Entries** — ${entries.length} found`,
-    "",
-  ];
-
-  for (const entry of entries) {
-    const icon = entry.issue === "path-changed" ? "📝" : "❌";
-    lines.push(`${icon} **${entry.name}** (${entry.type})`);
-    lines.push(`   📍 ${entry.oldPath}`);
-    if (entry.newPath) {
-      lines.push(`   → ${entry.newPath}`);
-    } else {
-      lines.push(`   ⚠️ File not found`);
-    }
-    lines.push("");
-  }
-
-  return lines.join("\n");
-}

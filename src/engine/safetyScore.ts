@@ -1,25 +1,22 @@
-import fs from "node:fs";
-import path from "node:path";
 import { sessionMemory } from "./sessionMemory.js";
 import {
   getSessionStats,
   getGitDiffStat,
   getUnresolvedCount,
 } from "../utils/kumaShared.js";
-import { getProjectRoot } from "../utils/pathValidator.js";
 
 // ============================================================
 // SAFETY SCORE — Aggregate project health into 0-100 score
 // ============================================================
 
-export interface SafetyCheck {
+interface SafetyCheck {
   label: string;
   status: "pass" | "warn" | "fail";
   message: string;
   weight: number; // contribution to total score
 }
 
-export interface SafetyScoreReport {
+interface SafetyScoreReport {
   score: number;
   maxScore: number;
   risk: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -358,9 +355,4 @@ export function formatSafetyScore(report: SafetyScoreReport): string {
   return lines.join("\n");
 }
 
-/**
- * Format safety score as structured JSON for AI consumption.
- */
-export function formatSafetyScoreJSON(report: SafetyScoreReport): string {
-  return JSON.stringify(report, null, 2);
-}
+

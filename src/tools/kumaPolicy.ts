@@ -1,23 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
-import { sessionMemory } from "../engine/sessionMemory.js";
 
 // ============================================================
 // SAFETY POLICY — Parse .kuma/policy.yml and enforce rules
 // ============================================================
 
-export interface KumaPolicy {
+interface KumaPolicy {
   never_touch?: string[];
   require_review?: string[];
   require_tests?: string[];
   max_file_size?: number;
   block_commands?: string[];
-}
-
-interface PolicyCheckParams {
-  type: "file" | "command";
-  value: string;
 }
 
 interface PolicyViolation {
@@ -199,25 +193,6 @@ function matchesGlob(pattern: string, filePath: string): boolean {
 }
 
 /**
- * Check if a command matches any blocked pattern.
- */
-function commandMatchesBlocked(command: string, blockedPattern: string): boolean {
-  const normalizedCmd = command.toLowerCase().trim();
-  const normalizedPattern = blockedPattern.toLowerCase().trim();
-
-  // Direct substring match
-  if (normalizedCmd.includes(normalizedPattern)) return true;
-
-  // Normalize and check (handle shell obfuscation)
-  const deobfuscated = normalizedCmd
-    .replace(/\$\([^)]*\)/g, "")
-    .replace(/\$\{[^}]*\}/g, "")
-    .replace(/\s+/g, " ");
-
-  return deobfuscated.includes(normalizedPattern);
-}
-
-/**
  * Check a file path against the policy.
  */
 export function checkFilePathPolicy(filePath: string, policy: KumaPolicy): { violations: PolicyViolation[]; warnings: PolicyWarning[] } {
@@ -274,151 +249,4 @@ export function checkFilePathPolicy(filePath: string, policy: KumaPolicy): { vio
   return { violations, warnings };
 }
 
-/**
- * Check a command against the policy.
- */
-function checkCommand(command: string, policy: KumaPolicy): { violations: PolicyViolation[]; warnings: PolicyWarning[] } {
-  const violations: PolicyViolation[] = [];
 
-  if (policy.block_commands) {
-    for (const blockedPattern of policy.block_commands) {
-      if (commandMatchesBlocked(command, blockedPattern)) {
-        violations.push({
-          rule: "block_commands",
-          pattern: blockedPattern,
-          message: `Command matches blocked pattern: "${blockedPattern}"`,
-          severity: "error",
-        });
-      }
-    }
-  }
-
-  return { violations, warnings: [] };
-}
-
-export async function handlePolicyCheck(params: PolicyCheckParams): Promise<string> {
-  const { type, value } = params;
-
-  sessionMemory.recordToolCall("kuma_policy_check", { type, value });
-
-  const policy = loadPolicy();
-  let result: { violations: PolicyViolation[]; warnings: PolicyWarning[] };
-
-  if (type === "file") {
-    result = checkFilePathPolicy(value, policy);
-  } else {
-    result = checkCommand(value, policy);
-  }
-
-  return formatPolicyResult(type, value, result, policy);
-}
-
-function formatPolicyResult(
-  type: string,
-  value: string,
-  result: { violations: PolicyViolation[]; warnings: PolicyWarning[] },
-  policy: KumaPolicy,
-): string {
-  const lines: string[] = [
-    `🛡️ **Policy Check** — ${type}: "${value}"`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    "",
-  ];
-
-  if (result.violations.length === 0 && result.warnings.length === 0) {
-    lines.push(`✅ **Allowed** — No policy violations.`);
-  }
-
-  for (const v of result.violations) {
-    const icon = v.severity === "error" ? "❌" : "⚠️";
-    lines.push(`${icon} **Violation (${v.rule}):** ${v.message}`);
-    lines.push(`   Matched pattern: "${v.pattern}"`);
-    lines.push("");
-  }
-
-  for (const w of result.warnings) {
-    lines.push(`⚠️ **Warning (require_review):** ${w.message}`);
-    lines.push("");
-  }
-
-  if (result.violations.some((v) => v.severity === "error")) {
-    lines.push("🚫 **BLOCKED** — This action is not permitted by project policy.");
-    lines.push("");
-    lines.push("To modify policy, edit `.kuma/policy.yml`.");
-  } else if (result.warnings.length > 0) {
-    lines.push("⚠️ **Requires Review** — Proceed with caution and get peer review.");
-  }
-
-  // Show policy summary
-  lines.push("", "📋 **Active Policy Rules:**");
-  if (policy.never_touch && policy.never_touch.length > 0) {
-    lines.push(`  • never_touch: ${policy.never_touch.join(", ")}`);
-  }
-  if (policy.require_review && policy.require_review.length > 0) {
-    lines.push(`  • require_review: ${policy.require_review.join(", ")}`);
-  }
-  if (policy.block_commands && policy.block_commands.length > 0) {
-    lines.push(`  • block_commands: ${policy.block_commands.length} pattern(s)`);
-  }
-  if (policy.max_file_size) {
-    lines.push(`  • max_file_size: ${policy.max_file_size}KB`);
-  }
-
-  return lines.join("\n");
-}
-
-/**
- * Generate a default .kuma/policy.yml file.
- */
-export function generateDefaultPolicy(): string {
-  return `# Kuma Policy — AI Safety Rules
-# See: https://github.com/plumpslabs/kuma
-
-# Files that AI must NEVER touch
-never_touch:
-  - .env
-  - .env.local
-  - .env.production
-  - .env.development
-  - package-lock.json
-  - yarn.lock
-  - pnpm-lock.yaml
-  - node_modules/**
-  - dist/**
-  - .next/**
-  - secrets/**
-
-# Files that require human review after AI edits
-require_review:
-  - src/security/**
-  - src/auth/**
-  - src/payment/**
-  - prisma/migrations/**
-  - Dockerfile
-  - docker-compose.yml
-  - .github/workflows/**
-
-# Files that require tests to be run after editing
-require_tests:
-  - src/api/**
-  - src/services/**
-
-# Maximum file size in KB (files larger than this get flagged)
-max_file_size: 500
-
-# Shell commands that are blocked
-block_commands:
-  - rm -rf
-  - rm -fr
-  - git push --force
-  - git push -f
-  - npm publish
-  - yarn publish
-  - pnpm publish
-  - curl | bash
-  - curl | sh
-  - dd if=
-  - mkfs
-  - shred
-`;
-}

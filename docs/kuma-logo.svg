@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer face -->
+  <circle cx="50" cy="50" r="48" fill="url(#bg)"/>
+  <!-- Inner face -->
+  <circle cx="50" cy="50" r="44" fill="url(#inner)"/>
+  <!-- Snout area -->
+  <circle cx="50" cy="45" r="30" fill="#92400E"/>
+  <!-- Eyes -->
+  <circle cx="35" cy="38" r="5" fill="#1F2937"/>
+  <circle cx="65" cy="38" r="5" fill="#1F2937"/>
+  <!-- Nose -->
+  <ellipse cx="50" cy="50" rx="10" ry="6" fill="#B45309"/>
+  <!-- Mouth -->
+  <path d="M35 58 Q50 72 65 58" stroke="#1F2937" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <!-- Eye shine -->
+  <circle cx="37" cy="36" r="1.5" fill="#FFF" opacity="0.6"/>
+  <circle cx="67" cy="36" r="1.5" fill="#FFF" opacity="0.6"/>
+</svg>

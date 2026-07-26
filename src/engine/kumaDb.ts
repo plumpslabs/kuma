@@ -245,48 +245,6 @@ function createSchema(db: SqlJsDatabase): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_health_created ON health_snapshots(created_at)`);
 }
 
-/**
- * Close the database connection.
- */
-export function closeDb(): void {
-  if (dbInstance) {
-    saveDb();
-    dbInstance.close();
-    dbInstance = null;
-    initPromise = null;
-  }
-}
-
-/**
- * Prune old tool calls from the database (keep only recent N).
- */
-export function pruneToolCalls(keepCount: number = 100): void {
-  const db = dbInstance;
-  if (!db) return;
-
-  db.run(`
-    DELETE FROM tool_calls WHERE id NOT IN (
-      SELECT id FROM tool_calls ORDER BY created_at DESC LIMIT ?
-    )
-  `, [keepCount]);
-
-  saveDb();
-}
-
-/**
- * Get database file size in KB.
- */
-export function getDbSize(): number {
-  const kumaDir = getKumaDir();
-  const dbPath = path.join(kumaDir, DB_FILENAME);
-  try {
-    if (fs.existsSync(dbPath)) {
-      return Math.round(fs.statSync(dbPath).size / 1024);
-    }
-  } catch {}
-  return 0;
-}
-
 // ============================================================
 // V3: Research Cache Operations
 // ============================================================
@@ -311,8 +269,11 @@ export async function getResearchCache(scope: string): Promise<string | null> {
 export async function saveResearchCache(scope: string, record: string, contentHash?: string, confidence?: number): Promise<void> {
   try {
     const db = await getDb();
-    const existing = db.exec("SELECT id FROM research_cache WHERE scope = ?", [scope]);
-    if (existing.length > 0 && existing[0].values.length > 0) {
+    const stmt = db.prepare("SELECT id FROM research_cache WHERE scope = ?");
+    stmt.bind([scope]);
+    const hasExisting = stmt.step();
+    stmt.free();
+    if (hasExisting) {
       db.run(`UPDATE research_cache SET record = ?, content_hash = COALESCE(?, content_hash), confidence = COALESCE(?, confidence), version = version + 1, updated_at = strftime('%s','now') WHERE scope = ?`,
         [record, contentHash || null, confidence ?? null, scope]);
     } else {
@@ -322,16 +283,6 @@ export async function saveResearchCache(scope: string, record: string, contentHa
     saveDb();
   } catch (err) {
     console.error(`[KumaDB] Failed to save research cache: ${err}`);
-  }
-}
-
-export async function listResearchScopes(): Promise<string[]> {
-  try {
-    const db = await getDb();
-    const result = db.exec("SELECT scope, updated_at, confidence FROM research_cache ORDER BY updated_at DESC");
-    return result[0]?.values.map(v => v[0] as string) ?? [];
-  } catch {
-    return [];
   }
 }
 
@@ -415,44 +366,4 @@ export async function saveHealthSnapshot(score: number, riskLevel: string, check
   }
 }
 
-export async function getLatestHealthSnapshot(): Promise<string | null> {
-  try {
-    const db = await getDb();
-    const result = db.exec("SELECT score, risk_level, summary, created_at FROM health_snapshots ORDER BY created_at DESC LIMIT 1");
-    if (result[0]?.values.length) {
-      const row = result[0].values[0];
-      return JSON.stringify({ score: row[0], riskLevel: row[1], summary: row[2], createdAt: row[3] });
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
-/**
- * Migrate existing session memory data to SQLite.
- * Called once on first init with SQLite.
- */
-export async function migrateToSqlite(): Promise<boolean> {
-  try {
-    const db = await getDb();
-    const { sessionMemory } = await import("./sessionMemory.js");
-
-    // Check if already migrated
-    const result = db.exec("SELECT COUNT(*) as cnt FROM sessions");
-    if (result[0]?.values[0][0] > 0) return false;
-
-    // Create initial session
-    const summary = sessionMemory.getSummary();
-    const startedAt = Math.floor(Date.now() / 1000);
-    db.run(
-      "INSERT INTO sessions (started_at, goal, tool_calls) VALUES (?, ?, ?)",
-      [startedAt, summary.currentGoal || "", summary.toolCallCount || 0]
-    );
-
-    saveDb();
-    return true;
-  } catch {
-    return false;
-  }
-}
