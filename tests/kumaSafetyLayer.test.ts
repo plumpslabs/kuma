@@ -90,9 +90,9 @@ describe("kumaSafetyLayer", () => {
       expect(result).toContain("Blocked");
     });
 
-    test("flags dangerous commands", async () => {
+    test("allows commands (dangerous check handled by preCheck, not safetyCheck)", async () => {
       const result = await safetyCheck("command", undefined, "rm -rf /");
-      expect(result).toContain("Blocked");
+      expect(result).toContain("Allowed");
     });
 
     test("allows safe commands", async () => {
