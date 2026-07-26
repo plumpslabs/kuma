@@ -6,7 +6,7 @@ import {
   getGitDiffStat,
   getUnresolvedCount,
 } from "../utils/kumaShared.js";
-import { getProjectRoot, getKumaBackupsDir } from "../utils/pathValidator.js";
+import { getProjectRoot } from "../utils/pathValidator.js";
 
 // ============================================================
 // SAFETY SCORE — Aggregate project health into 0-100 score
@@ -32,7 +32,7 @@ export interface SafetyScoreReport {
  * Compute a safety score by aggregating all available signals.
  * Returns a structured report with individual check results.
  */
-export function computeSafetyScore(inputGoal?: string): SafetyScoreReport {
+export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScoreReport> {
   const stats = getSessionStats(inputGoal);
   const checks: SafetyCheck[] = [];
   let totalScore = 0;
@@ -77,52 +77,56 @@ export function computeSafetyScore(inputGoal?: string): SafetyScoreReport {
     totalScore += 20;
   }
 
-  // 2. Backup availability (weight: 10)
-  const backupDir = getKumaBackupsDir();
-  if (fs.existsSync(backupDir)) {
-    const backupCount = fs.readdirSync(backupDir).filter((d) => /^\d+$/.test(d)).length;
-    checks.push({
-      label: "Backup Available",
-      status: "pass",
-      message: `${backupCount} backup snapshot(s) available`,
-      weight: 10,
-    });
-    totalScore += 10;
-  } else {
-    checks.push({
-      label: "Backup Available",
-      status: "warn",
-      message: "No backups found — first edit will create one",
-      weight: 5,
-    });
-    totalScore += 5;
-  }
-
-  // 3. LSP availability (weight: 10) — check via optionalDependencies, not npx
+  // 2. Graph health (weight: 10) — V3: knowledge graph confidence
   try {
-    const lspPath = path.join(getProjectRoot(), "node_modules", ".bin", "typescript-language-server");
-    if (fs.existsSync(lspPath)) {
+    const { getDb } = await import("./kumaDb.js");
+    const db = await getDb();
+    const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) ?? 0;
+    const edgeCount = (db.exec("SELECT COUNT(*) as c FROM edges")[0]?.values[0][0] as number) ?? 0;
+    if (nodeCount > 0) {
       checks.push({
-        label: "LSP Available",
+        label: "Graph Health",
         status: "pass",
-        message: "TypeScript language server installed",
+        message: `${nodeCount} nodes, ${edgeCount} edges`,
         weight: 10,
       });
       totalScore += 10;
     } else {
       checks.push({
-        label: "LSP Available",
+        label: "Graph Health",
         status: "warn",
-        message: "LSP not installed — lsp_query will use regex fallback",
+        message: "Empty knowledge graph — run research first",
         weight: 5,
       });
       totalScore += 5;
     }
   } catch {
     checks.push({
-      label: "LSP Available",
+      label: "Graph Health",
       status: "warn",
-      message: "LSP not installed — lsp_query will use regex fallback",
+      message: "Could not check graph health",
+      weight: 5,
+    });
+    totalScore += 5;
+  }
+
+  // 3. Research cached (weight: 10) — V3: has research been done?
+  try {
+    const { getDb } = await import("./kumaDb.js");
+    const db = await getDb();
+    const researchCount = (db.exec("SELECT COUNT(*) as c FROM research_cache")[0]?.values[0][0] as number) ?? 0;
+    checks.push({
+      label: "Research Cached",
+      status: researchCount > 0 ? "pass" : "warn",
+      message: researchCount > 0 ? `${researchCount} research scope(s) cached` : "No research cached — run kuma_context research first",
+      weight: 10,
+    });
+    totalScore += researchCount > 0 ? 10 : 5;
+  } catch {
+    checks.push({
+      label: "Research Cached",
+      status: "warn",
+      message: "Could not check research cache",
       weight: 5,
     });
     totalScore += 5;
@@ -198,7 +202,7 @@ export function computeSafetyScore(inputGoal?: string): SafetyScoreReport {
     checks.push({
       label: "Modified Files",
       status: "fail",
-      message: `${modifiedCount} file(s) modified — create a snapshot with kuma_context`,
+      message: `${modifiedCount} file(s) modified — consider committing`,
       weight: 4,
     });
     totalScore += 4;

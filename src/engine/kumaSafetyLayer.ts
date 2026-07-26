@@ -85,30 +85,19 @@ export async function safetyCheck(
       });
     }
 
-    // Check 4: Recent failures
-    let recentFailures = 0;
+    // Check 4: Recent changes (from change_log)
+    let recentChanges = 0;
     try {
-      const failureResult = db.exec("SELECT COUNT(*) as c FROM failure_kb WHERE resolved = 0");
-      recentFailures = (failureResult[0]?.values[0][0] as number) || 0;
+      const changeResult = db.exec("SELECT COUNT(*) as c FROM change_log WHERE created_at > strftime('%s','now','-1 hour')");
+      recentChanges = (changeResult[0]?.values[0][0] as number) || 0;
     } catch {}
     checks.push({
-      name: "Recent Failures",
-      passed: recentFailures === 0,
-      detail: recentFailures > 0 ? `❌ ${recentFailures} unresolved failure(s)` : "✅ No recent failures",
+      name: "Recent Changes",
+      passed: recentChanges < 20,
+      detail: recentChanges > 0 ? `📝 ${recentChanges} change(s) in last hour` : "✅ No recent changes",
     });
 
-    // Check 5: Dangerous command
-    if (command) {
-      const dangerous = ["rm -rf", "git push --force", "npm publish", "| bash", "shred"];
-      const isDangerous = dangerous.some((d) => command.includes(d));
-      checks.push({
-        name: "Command Safety",
-        passed: !isDangerous,
-        detail: isDangerous ? "❌ Command flagged as dangerous" : "✅ Command looks safe",
-      });
-    }
-
-    // Check 6: Knowledge Graph Health
+    // Check 5: Knowledge Graph Health
     try {
       const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) || 0;
       checks.push({

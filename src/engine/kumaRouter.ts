@@ -127,7 +127,7 @@ export async function handleVerify(action: string, params: Record<string, unknow
 export async function handleSafety(action: string, params: Record<string, unknown>): Promise<string> {
   switch (action) {
     case "guard": return await handleKumaGuard(params);
-    case "score": return formatSafetyScore(computeSafetyScore(params.goal as string | undefined));
+    case "score": return formatSafetyScore(await computeSafetyScore(params.goal as string | undefined));
     case "check": return await safetyCheck(params.actionCheck as string || "", params.filePath as string | undefined, params.command as string | undefined);
     case "policy": return await handlePolicyCheck(params as any);
     case "risk": return await handleKumaRisk(params as any);
