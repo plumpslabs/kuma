@@ -102,12 +102,13 @@ export async function preCheck(
     }
   }
 
-  // 4. Check for recent failures (risk assessment)
+  // 4. Check for research done (V3: research should precede changes)
   try {
     const db = await getDb();
-    const recentFailures = (db.exec("SELECT COUNT(*) as c FROM failure_kb WHERE resolved = 0")[0]?.values[0][0] as number) ?? 0;
-    if (recentFailures > 3 && (toolName.includes("edit") || toolName === "precise_diff_editor")) {
-      messages.push(`⚠️ ${recentFailures} unresolved failures — consider fixing them before editing`);
+    const researchCount = (db.exec("SELECT COUNT(*) as c FROM research_cache")[0]?.values[0][0] as number) ?? 0;
+    const action = (params.action as string) || "";
+    if (researchCount === 0 && (action === "edit" || action === "impact" || action === "navigate")) {
+      messages.push("💡 No research cached — run kuma_context({ action: 'research', scope: '...' }) first");
       if (highestRisk === "low") highestRisk = "medium";
     }
   } catch {}
@@ -116,12 +117,10 @@ export async function preCheck(
   try {
     const summary = sessionMemory.getSummary();
     const goal = summary.currentGoal as string;
-    if (!goal && (toolName === "precise_diff_editor" || toolName === "batch_file_writer")) {
-      messages.push("💡 No goal set — consider setting a goal with setGoal() to track intent");
+    if (!goal) {
+      messages.push("💡 No goal set — kuma_context({ action: 'init' }) sets one automatically");
     }
-  } catch {
-    // sessionMemory might not be available — skip goal check
-  }
+  } catch {} 
 
   // Determine verdict
   const riskLevel = highestRisk;
@@ -245,9 +244,8 @@ function formatBlocked(verdict: SafetyVerdict, toolName: string): string {
     "",
     "💡 **Resolution steps:**",
     "  1. Review the policy violations above",
-    "  2. If editing: use precise_diff_editor with proper params",
-    "  3. If command: avoid dangerous patterns",
-    "  4. To bypass: kuma_safety({ action: 'override', tool: '...' })",
+    "  2. Research the scope first: kuma_context({ action: 'research', scope: '...' })",
+    "  3. To bypass: kuma_safety({ action: 'override', tool: '...' })",
   ];
   return lines.join("\n");
 }
