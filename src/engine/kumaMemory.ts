@@ -76,7 +76,7 @@ export function scoreMemoryRelevance(
 /**
  * Format scored memories as human-readable.
  */
-export function formatScoredMemories(memories: ScoredMemory[], context: string): string {
+function formatScoredMemories(memories: ScoredMemory[], context: string): string {
   if (memories.length === 0) return "";
 
   const lines: string[] = [

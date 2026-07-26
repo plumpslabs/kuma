@@ -261,10 +261,16 @@ async function main(): Promise<void> {
     `[${SERVER_NAME}] Session started: ${new Date().toISOString()}`,
   );
   console.error(
-    `[${SERVER_NAME}] Kuma Core v3 — .kuma/init.md is the single source of truth`,
+    `[${SERVER_NAME}] Kuma V3 — Safety-first context & orchestration engine`,
   );
   console.error(
-    `[${SERVER_NAME}] 🧠 Call kuma_init() at session start to load project context`,
+    `[${SERVER_NAME}] 🧠 Call kuma_context({ action: "init" }) at session start`,
+  );
+  console.error(
+    `[${SERVER_NAME}] 🔬 Call kuma_context({ action: "research", scope: "..." }) before editing`,
+  );
+  console.error(
+    `[${SERVER_NAME}] 🛡️ 3 coarse-grained tools: kuma_context, kuma_memory, kuma_safety`,
   );
 
   await server.connect(transport);

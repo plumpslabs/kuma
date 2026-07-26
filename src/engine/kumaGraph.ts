@@ -528,14 +528,10 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
     nodeStmt.bind([`%${target}%`, target, target]);
     let nodeId = "";
     let nodeName = "";
-    let nodeType = "";
-    let filePath = "";
     if (nodeStmt.step()) {
       const row = nodeStmt.getAsObject() as Record<string, unknown>;
       nodeId = row.id as string;
       nodeName = row.name as string;
-      nodeType = row.type as string;
-      filePath = (row.file_path as string) || "";
     }
     nodeStmt.free();
 
@@ -561,23 +557,29 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
     // Find test files
     let testFiles = 0;
     try {
-      const testResult = db.exec(
-        `SELECT COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.source_id WHERE (e.source_id = ? OR e.target_id = ?) AND n.type = 'test'`,
-        [nodeId, nodeId]
+      const testStmt = db.prepare(
+        `SELECT COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.source_id WHERE (e.source_id = ? OR e.target_id = ?) AND n.type = 'test'`
       );
-      testFiles = (testResult[0]?.values[0][0] as number) || 0;
+      testStmt.bind([nodeId, nodeId]);
+      if (testStmt.step()) {
+        testFiles = (testStmt.getAsObject() as Record<string, unknown>).cnt as number || 0;
+      }
+      testStmt.free();
     } catch {}
 
     // Find entry points (nodes with many incoming edges)
-    const entryResult = db.exec(
-      `SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.target_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`,
-      [nodeId]
+    const entryStmt = db.prepare(
+      `SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.target_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`
     );
+    entryStmt.bind([nodeId]);
+    const entryRows: Array<Record<string, unknown>> = [];
+    while (entryStmt.step()) {
+      entryRows.push(entryStmt.getAsObject());
+    }
+    entryStmt.free();
     const entryPoints: string[] = [];
-    if (entryResult[0]) {
-      for (const row of entryResult[0].values) {
-        entryPoints.push(`${row[0]} (${row[1]} refs)`);
-      }
+    for (const row of entryRows) {
+      entryPoints.push(`${row.name} (${row.cnt} refs)`);
     }
 
     const risk: ImpactResult["risk"] = references > 20 ? "high" : references > 5 ? "medium" : "low";

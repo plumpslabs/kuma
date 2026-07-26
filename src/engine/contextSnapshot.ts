@@ -8,7 +8,7 @@ import { getProjectRoot } from "../utils/pathValidator.js";
 // CONTEXT SNAPSHOT — Save & restore project state
 // ============================================================
 
-export interface ContextSnapshot {
+interface ContextSnapshot {
   version: number;
   timestamp: string;
   goal: string;
@@ -74,31 +74,6 @@ export function saveSnapshot(goal?: string): ContextSnapshot | null {
 
   sessionMemory.recordToolCall("kuma_context", { action: "save", goal: snapshot.goal });
   return snapshot;
-}
-
-/**
- * List all available snapshots sorted by most recent first.
- */
-export function listSnapshots(): ContextSnapshot[] {
-  const dir = snapshotDir();
-  if (!fs.existsSync(dir)) return [];
-
-  try {
-    const files = fs.readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
-      .sort((a, b) => b.localeCompare(a)); // newest first
-
-    return files.map((f) => {
-      try {
-        const content = fs.readFileSync(path.join(dir, f), "utf-8");
-        return JSON.parse(content) as ContextSnapshot;
-      } catch {
-        return null;
-      }
-    }).filter((s): s is ContextSnapshot => s !== null);
-  } catch {
-    return [];
-  }
 }
 
 /**

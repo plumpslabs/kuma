@@ -1,8 +1,7 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { saveResearchCache, listResearchScopes } from "../engine/kumaDb.js";
+import { saveResearchCache, getChanges } from "../engine/kumaDb.js";
 import { autoHeal, detectStaleNodes, formatHealReport } from "../engine/kumaSelfHeal.js";
-import { recordDecision, formatDecisionTemplate, getProactiveMemories } from "../engine/kumaMemory.js";
-import { getChanges } from "../engine/kumaDb.js";
+import { recordDecision, formatDecisionTemplate } from "../engine/kumaMemory.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";

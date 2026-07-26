@@ -2,9 +2,7 @@ import { sessionMemory } from "../engine/sessionMemory.js";
 import { safetyCheck, safetyOverride } from "../engine/kumaSafetyLayer.js";
 import { queryAudit, auditStats } from "../engine/safetyAudit.js";
 import { acquireLock, releaseLock, listLocks, cleanStaleLocks } from "../engine/kumaLock.js";
-import { computeSafetyScore, formatSafetyScore } from "../engine/safetyScore.js";
-import { getLatestHealthSnapshot, saveHealthSnapshot } from "../engine/kumaDb.js";
-import { getGraphStats } from "../engine/kumaGraph.js";
+import { saveHealthSnapshot } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
 type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override";
@@ -53,7 +51,7 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
 async function handleGuard(params: SafetyParams): Promise<string> {
   return await handleKumaGuard({
     goal: params.guardGoal,
-    check: params.guardCheck || "all",
+    check: (params.guardCheck as "all" | "anti-pattern" | "loop" | "drift" | "context") || "all",
   });
 }
 
@@ -116,6 +114,7 @@ async function handleLock(params: SafetyParams): Promise<string> {
 
 async function handleHealth(_params: SafetyParams): Promise<string> {
   try {
+    const { computeSafetyScore, formatSafetyScore } = await import("../engine/safetyScore.js");
     const score = await computeSafetyScore();
     const checksStr = JSON.stringify(score.checks);
     await saveHealthSnapshot(score.score, score.risk, checksStr, score.summary);

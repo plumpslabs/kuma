@@ -1,11 +1,7 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { getDb, getResearchCache, saveResearchCache } from "../engine/kumaDb.js";
-import { queryGraph, searchGraph, analyzeImpact, formatImpact, traceFlow, formatFlow, getGraphStats } from "../engine/kumaGraph.js";
-import { buildContextForGoal, formatContextItems } from "../engine/kumaContextEngine.js";
-import { scoreConfidence } from "../engine/kumaSelfHeal.js";
-import { scoreMemoryRelevance, formatScoredMemories, getProactiveMemories } from "../engine/kumaMemory.js";
-import { computeSafetyScore, formatSafetyScore } from "../engine/safetyScore.js";
-import { getChanges } from "../engine/kumaDb.js";
+import { getDb, getResearchCache, saveResearchCache, getChanges } from "../engine/kumaDb.js";
+import { searchGraph, analyzeImpact, formatImpact, traceFlow, formatFlow, getGraphStats } from "../engine/kumaGraph.js";
+import { scoreMemoryRelevance, getProactiveMemories } from "../engine/kumaMemory.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
@@ -214,7 +210,7 @@ async function handleResearch(params: ContextParams): Promise<string> {
   // Save to research cache
   const newRecord = {
     scope,
-    confidence: record?.confidence || 0.7,
+    confidence: (record?.confidence as number) || 0.7,
     entryPoints: [],
     flow: [],
     dependencies: [],
@@ -274,8 +270,9 @@ async function handleChanges(params: ContextParams): Promise<string> {
 async function handleHealth(_params: ContextParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_context_health", {});
   try {
-    const score = await computeSafetyScore();
+    const { computeSafetyScore, formatSafetyScore } = await import("../engine/safetyScore.js");
     const { saveHealthSnapshot } = await import("../engine/kumaDb.js");
+    const score = await computeSafetyScore();
     const checksStr = JSON.stringify(score.checks);
     await saveHealthSnapshot(score.score, score.risk, checksStr, score.summary);
     return formatSafetyScore(score);

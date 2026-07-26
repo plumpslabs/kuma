@@ -7,7 +7,7 @@ import { execSync } from "node:child_process";
 // ============================================================
 
 const MEMORY_TOPICS = ["decisions", "glossary", "architecture", "conventions", "known-issues"] as const;
-export type MemoryTopic = typeof MEMORY_TOPICS[number];
+type MemoryTopic = typeof MEMORY_TOPICS[number];
 
 
 
@@ -45,7 +45,7 @@ interface SessionState {
 }
 
 /** @internal exported for testing */
-export class SessionMemory {
+class SessionMemory {
   private state!: SessionState;
   private initialized = false;
 
@@ -738,53 +738,4 @@ export class SessionMemory {
 // Singleton
 export const sessionMemory = new SessionMemory();
 
-// Function for MCP tool
-export function getSessionMemory(topic?: MemoryTopic): Record<string, unknown> {
-  return sessionMemory.getSummary(topic);
-}
 
-export function searchSessionMemory(params: { query: string; limit?: number }): string {
-  const { query, limit = 20 } = params;
-  sessionMemory.recordToolCall("search_session_memory", { query, limit });
-  const results = sessionMemory.searchMemory(query, limit);
-
-  if (results.length === 0) {
-    return `🔍 **Search Memory** — No results for "${query}".`;
-  }
-
-  const lines: string[] = [
-    `🔍 **Search Memory** — ${results.length} results for "${query}"`,
-    "",
-  ];
-
-  for (const r of results) {
-    const icon = r.type.startsWith("tool:") ? "🛠️" :
-                 r.type.startsWith("file:") ? (r.type.includes("created") ? "✨" : "📝") :
-                 r.type.startsWith("failure") ? "❌" :
-                 r.type.startsWith("memory") ? "🧠" :
-                 r.type === "search" ? "🔎" :
-                 r.type === "dependency" ? "🔗" :
-                 "📄";
-    const timeStr = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : "";
-    lines.push(`${icon} ${timeStr ? `[${timeStr}] ` : ""}${r.content}`);
-  }
-
-  lines.push("", `💡 Use get_session_memory({topic: "..."}) to load a specific memory topic.`);
-  return lines.join("\n");
-}
-
-export function handleWriteMemory(params: { topic: MemoryTopic; content: string; mode?: "append" | "prepend" | "overwrite" }): string {
-  const { topic, content, mode = "append" } = params;
-  const existing = sessionMemory.getMemoryContent(topic);
-
-  let finalContent = content;
-  if (mode === "prepend") {
-    finalContent = content + "\n\n" + existing;
-  } else if (mode === "append") {
-    finalContent = existing + "\n\n" + content;
-  }
-
-  sessionMemory.writeMemory(topic, finalContent);
-  sessionMemory.recordToolCall("write_memory", { topic, mode });
-  return `✅ Memory "${topic}" updated (mode: ${mode}).`;
-}

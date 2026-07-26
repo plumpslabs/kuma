@@ -15,21 +15,13 @@
 
 import { loadPolicy, checkFilePathPolicy } from "../tools/kumaPolicy.js";
 import { validateFilePath } from "../utils/pathValidator.js";
-import { recordAudit } from "./safetyAudit.js";
 import { sessionMemory } from "./sessionMemory.js";
 import { getDb } from "./kumaDb.js";
 
-export interface SafetyOptions {
-  /** Extract a file path from the params for path-based checks */
+interface SafetyOptions {
   extractFilePath?: (params: Record<string, unknown>) => string | undefined;
-
-  /** Extract a command string from the params for command-based checks */
   extractCommand?: (params: Record<string, unknown>) => string | undefined;
-
-  /** Block execution entirely if policy violations exist (default: true) */
   blockOnViolation?: boolean;
-
-  /** Risk threshold to block: 'high' blocks high+critical, 'critical' blocks only critical */
   blockRiskThreshold?: "medium" | "high" | "critical";
 }
 
@@ -49,7 +41,7 @@ export interface SafetyVerdict {
  * Returns a verdict: allowed + risk level + policy violations.
  */
 export async function preCheck(
-  toolName: string,
+  _toolName: string,
   params: Record<string, unknown>,
   opts: SafetyOptions = {}
 ): Promise<SafetyVerdict> {
@@ -134,128 +126,4 @@ export async function preCheck(
   return { allowed, riskLevel, policyViolations, messages };
 }
 
-// ============================================================
-// WRAPPER
-// ============================================================
 
-/**
- * Wrap a tool handler with safety middleware.
- * Automatically runs pre-checks, records audit, and blocks if needed.
- *
- * @param toolName - Name of the tool (for audit logging)
- * @param handler - The original tool handler function
- * @param opts - Safety options (path/command extraction, thresholds)
- * @returns A wrapped handler that applies safety checks before execution
- */
-export function wrapWithSafety<T = Record<string, unknown>>(
-  toolName: string,
-  handler: (params: T) => Promise<string>,
-  opts: SafetyOptions = {}
-): (params: T) => Promise<string> {
-  return async (params: T): Promise<string> => {
-    const startTime = Date.now();
-    const p = params as unknown as Record<string, unknown>;
-    const action = (p.action as string) || "execute";
-
-    try {
-      // 1. Pre-execution safety check
-      const verdict = await preCheck(toolName, p, opts);
-
-      // 2. Record pre-execution audit
-      const filePath = opts.extractFilePath?.(p);
-
-      // 3. Block if not allowed
-      if (!verdict.allowed) {
-        await recordAudit({
-          timestamp: Math.floor(startTime / 1000),
-          toolName,
-          action,
-          filePath,
-          riskLevel: verdict.riskLevel,
-          policyViolations: verdict.policyViolations,
-          allowed: false,
-          durationMs: Date.now() - startTime,
-          metadata: { blocked: true, messages: verdict.messages },
-        });
-
-        return formatBlocked(verdict, toolName);
-      }
-
-      // 4. Execute the original handler
-      const result = await handler(params);
-      const durationMs = Date.now() - startTime;
-
-      // 5. Record post-execution audit
-      await recordAudit({
-        timestamp: Math.floor(startTime / 1000),
-        toolName,
-        action,
-        filePath,
-        riskLevel: verdict.riskLevel,
-        policyViolations: verdict.policyViolations,
-        allowed: true,
-        durationMs,
-        metadata: { success: true },
-      });
-
-      // 6. Append safety context if there were warnings
-      if (verdict.messages.length > 0) {
-        const warnings = verdict.messages
-          .filter((m) => m.startsWith("⚠️") || m.startsWith("💡"))
-          .join("\n");
-        if (warnings) {
-          return `${result}\n\n🛡️ **Safety Context:**\n${warnings}`;
-        }
-      }
-
-      return result;
-    } catch (err) {
-      const durationMs = Date.now() - startTime;
-      await recordAudit({
-        timestamp: Math.floor(startTime / 1000),
-        toolName,
-        action,
-        riskLevel: "critical",
-        policyViolations: 0,
-        allowed: false,
-        durationMs,
-        metadata: { error: String(err) },
-      });
-      return `⚠️ **Safety Proxy Error** — ${toolName} failed safety check:\n${err}`;
-    }
-  };
-}
-
-// ============================================================
-// FORMATTING
-// ============================================================
-
-function formatBlocked(verdict: SafetyVerdict, toolName: string): string {
-  const icon = verdict.riskLevel === "critical" ? "🔴" : verdict.riskLevel === "high" ? "🟠" : "🟡";
-  const lines: string[] = [
-    `${icon} **Safety AI Layer — ⛔ Blocked**`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    "",
-    `🎯 Tool: **${toolName}**`,
-    `⚠️ Risk Level: **${verdict.riskLevel.toUpperCase()}**`,
-    `📜 Policy Violations: ${verdict.policyViolations}`,
-    "",
-    ...verdict.messages,
-    "",
-    "💡 **Resolution steps:**",
-    "  1. Review the policy violations above",
-    "  2. Research the scope first: kuma_context({ action: 'research', scope: '...' })",
-    "  3. To bypass: kuma_safety({ action: 'override', tool: '...' })",
-  ];
-  return lines.join("\n");
-}
-
-/**
- * Generate safety context summary (appended to successful operations).
- */
-export function formatSafetyAdvisory(verdict: SafetyVerdict): string {
-  if (verdict.messages.length === 0) return "";
-  const warnings = verdict.messages.filter((m) => !m.startsWith("🚫"));
-  if (warnings.length === 0) return "";
-  return `🛡️ **Safety Advisory:**\n${warnings.join("\n")}`;
-}
