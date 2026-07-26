@@ -473,6 +473,89 @@ export function formatHealReport(result: HealResult): string {
   return lines.join("\n");
 }
 
+// ============================================================
+// V3: Confidence Scoring
+// ============================================================
+
+export interface ConfidenceResult {
+  nodeId: string;
+  name: string;
+  confidence: number;
+  age: number;
+  isValid: boolean;
+  reason: string;
+}
+
+/**
+ * Score the confidence of a graph node based on staleness, age, and weight.
+ */
+export async function scoreConfidence(nodeIdOrName: string): Promise<ConfidenceResult | null> {
+  try {
+    const db = await getDb();
+    const stmt = db.prepare(
+      "SELECT id, name, file_path, updated_at, metadata FROM nodes WHERE id = ? OR name LIKE ? LIMIT 1"
+    );
+    stmt.bind([nodeIdOrName, `%${nodeIdOrName}%`]);
+
+    if (!stmt.step()) {
+      stmt.free();
+      return null;
+    }
+
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    stmt.free();
+
+    const id = row.id as string;
+    const name = row.name as string;
+    const filePath = row.file_path as string | null;
+    const updatedAt = (row.updated_at as number) || 0;
+    const now = Math.floor(Date.now() / 1000);
+    const age = now - updatedAt;
+
+    let confidence = 1.0;
+
+    // Age penalty: lose confidence over time
+    if (age > 86400 * 30) confidence -= 0.3;
+    else if (age > 86400 * 7) confidence -= 0.15;
+    else if (age > 86400) confidence -= 0.05;
+
+    // File existence check
+    let isValid = true;
+    let reason = "OK";
+    if (filePath && !filePath.startsWith("search::") && !filePath.startsWith("api_route::")) {
+      const fullPath = path.join(getProjectRoot(), filePath);
+      if (!fs.existsSync(fullPath)) {
+        const newPath = findRenamedPath(filePath);
+        if (newPath) {
+          confidence -= 0.1;
+          reason = `File moved to ${newPath}`;
+        } else {
+          confidence -= 0.5;
+          isValid = false;
+          reason = "File missing";
+        }
+      }
+    }
+
+    // Edge weight bonus
+    try {
+      const edgeResult = db.exec(
+        "SELECT AVG(weight) as avg_weight FROM edges WHERE source_id = ? OR target_id = ?",
+        [id, id]
+      );
+      const avgWeight = (edgeResult[0]?.values[0][0] as number) || 0;
+      if (avgWeight > 5) confidence = Math.min(1.0, confidence + 0.1);
+    } catch {}
+
+    confidence = Math.max(0, Math.min(1, confidence));
+
+    return { nodeId: id, name, confidence: Math.round(confidence * 100) / 100, age, isValid, reason };
+  } catch (err) {
+    console.error(`[KumaSelfHeal] Confidence scoring failed: ${err}`);
+    return null;
+  }
+}
+
 /**
  * Format stale entries in detail.
  */

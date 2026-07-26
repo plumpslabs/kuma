@@ -1,8 +1,9 @@
 // ============================================================
-// KUMA GRAPH — Living Knowledge Graph engine
+// KUMA GRAPH — Knowledge Graph engine (V3)
 // ============================================================
-// Builds incrementally from AI tool calls. Stored in SQLite.
-// Every smart_grep, lsp_query, precise_diff_editor adds edges.
+// Builds incrementally from AI agent research + code changes.
+// Stored in SQLite. Supports impact analysis, flow navigation,
+// research queries, and confidence-weighted traversal.
 
 import { getDb, saveDb } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
@@ -214,7 +215,7 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
         lines.push(`${typeEmoji} **${r.name}** (${r.type})`);
         if (r.file_path) lines.push(`   📍 ${r.file_path}`);
       }
-      lines.push("", "💡 Use kuma_graph_query({ type: 'edges', query: '<node_id>' }) to see connections.");
+      lines.push("", "💡 Use kuma_context({ action: 'research', scope: '<name>' }) to research a scope.");
       return lines.join("\n");
 
     } else if (type === "edges") {
@@ -343,32 +344,27 @@ export async function buildFromSessionMemory(): Promise<number> {
     for (const call of toolCalls) {
       const params = call.params as Record<string, unknown>;
 
-      if (call.toolName === "smart_grep") {
-        // smart_grep(query → results) = search → file edges
-        const query = params.query as string;
-        const results = params.matchCount as number;
-        if (query && results) {
+      if (call.toolName === "kuma_research" || call.toolName === "research") {
+        const scope = params.scope as string;
+        if (scope) {
           await upsertNode({
-            id: `search::${query}`,
+            id: `research::${scope}`,
             type: "variable",
-            name: `search:${query}`,
-            metadata: { matches: results },
+            name: `research:${scope}`,
+            metadata: { confidence: params.confidence || 0.0 },
           });
           edgeCount++;
         }
       }
 
-      if (call.toolName === "precise_diff_editor") {
-        // precise_diff_editor(file) = modified → file edges
-        const filePath = params.filePath as string;
-        if (filePath) {
-          await upsertNode({
-            id: nodeId("file", filePath),
-            type: "file",
-            name: filePath,
-          });
-          edgeCount++;
-        }
+      const filePath = (params.filePath as string) || (params.files as string[])?.[0];
+      if (filePath) {
+        await upsertNode({
+          id: nodeId("file", filePath),
+          type: "file",
+          name: filePath,
+        });
+        edgeCount++;
       }
     }
 
@@ -490,15 +486,215 @@ export async function getGraphStats(): Promise<string> {
 
     lines.push(
       "",
-      "💡 Nodes are built incrementally from tool calls:",
-      "  • smart_grep → search nodes",
-      "  • lsp_query → function + call edges",
-      "  • precise_diff_editor → file modification edges",
-      "  • kuma_risk → reference nodes",
+      "💡 Nodes are built from research and code changes:",
+      "  • kuma_context research → research nodes",
+      "  • File modifications → file change edges",
+      "  • Graph queries → connection edges",
     );
 
     return lines.join("\n");
   } catch (err) {
     return `Error getting graph stats: ${err}`;
   }
+}
+
+// ============================================================
+// V3: Impact Analysis
+// ============================================================
+
+export interface ImpactResult {
+  symbol: string;
+  references: number;
+  files: number;
+  testFiles: number;
+  entryPoints: string[];
+  risk: "low" | "medium" | "high";
+}
+
+/**
+ * Analyze the impact of changing a symbol or file.
+ * Traverses the graph to find all dependents, tests, and entry points.
+ */
+export async function analyzeImpact(target: string): Promise<ImpactResult> {
+  try {
+    const db = await getDb();
+
+    // Find node by name or file_path
+    const nodeStmt = db.prepare(`
+      SELECT id, name, type, file_path FROM nodes
+      WHERE name LIKE ? OR file_path = ? OR id = ?
+      LIMIT 1
+    `);
+    nodeStmt.bind([`%${target}%`, target, target]);
+    let nodeId = "";
+    let nodeName = "";
+    let nodeType = "";
+    let filePath = "";
+    if (nodeStmt.step()) {
+      const row = nodeStmt.getAsObject() as Record<string, unknown>;
+      nodeId = row.id as string;
+      nodeName = row.name as string;
+      nodeType = row.type as string;
+      filePath = (row.file_path as string) || "";
+    }
+    nodeStmt.free();
+
+    if (!nodeId) {
+      return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
+    }
+
+    // Count all edges connected to this node
+    const refStmt = db.prepare(`
+      SELECT COUNT(*) as cnt, COUNT(DISTINCT CASE WHEN e.source_id != ? THEN e.source_id ELSE e.target_id END) as file_count
+      FROM edges e WHERE e.source_id = ? OR e.target_id = ?
+    `);
+    refStmt.bind([nodeId, nodeId, nodeId]);
+    let references = 0;
+    let files = 0;
+    if (refStmt.step()) {
+      const row = refStmt.getAsObject() as Record<string, unknown>;
+      references = (row.cnt as number) || 0;
+      files = (row.file_count as number) || 0;
+    }
+    refStmt.free();
+
+    // Find test files
+    let testFiles = 0;
+    try {
+      const testResult = db.exec(
+        `SELECT COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.source_id WHERE (e.source_id = ? OR e.target_id = ?) AND n.type = 'test'`,
+        [nodeId, nodeId]
+      );
+      testFiles = (testResult[0]?.values[0][0] as number) || 0;
+    } catch {}
+
+    // Find entry points (nodes with many incoming edges)
+    const entryResult = db.exec(
+      `SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.target_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`,
+      [nodeId]
+    );
+    const entryPoints: string[] = [];
+    if (entryResult[0]) {
+      for (const row of entryResult[0].values) {
+        entryPoints.push(`${row[0]} (${row[1]} refs)`);
+      }
+    }
+
+    const risk: ImpactResult["risk"] = references > 20 ? "high" : references > 5 ? "medium" : "low";
+
+    return { symbol: nodeName, references, files, testFiles, entryPoints, risk };
+  } catch (err) {
+    console.error(`[KumaGraph] Impact analysis failed: ${err}`);
+    return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
+  }
+}
+
+/**
+ * Format impact analysis result.
+ */
+export function formatImpact(result: ImpactResult): string {
+  const icon = result.risk === "high" ? "🔴" : result.risk === "medium" ? "🟡" : "🟢";
+  const lines: string[] = [
+    `${icon} **Impact Analysis** — ${result.symbol}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    "",
+    `📊 ${result.references} reference(s) across ${result.files} file(s)`,
+    `🧪 ${result.testFiles} test file(s)`,
+    result.entryPoints.length > 0 ? `\n🎯 Entry Points:\n  ${result.entryPoints.join("\n  ")}` : "",
+    "",
+    `⚠️ Risk Level: **${result.risk.toUpperCase()}**`,
+    result.risk === "high" ? "💡 High impact — review thoroughly before changing." : "",
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+// ============================================================
+// V3: Flow Navigation
+// ============================================================
+
+export interface FlowStep {
+  from: string;
+  to: string;
+  edgeType: string;
+}
+
+/**
+ * Trace the flow from an entry point through the graph.
+ * Returns a linearized call chain.
+ */
+export async function traceFlow(entryPoint: string, maxDepth: number = 10): Promise<FlowStep[]> {
+  const steps: FlowStep[] = [];
+  try {
+    const db = await getDb();
+
+    // Find the entry node
+    const nodeStmt = db.prepare("SELECT id FROM nodes WHERE name LIKE ? OR id = ? LIMIT 1");
+    nodeStmt.bind([`%${entryPoint}%`, entryPoint]);
+    let nodeId = "";
+    if (nodeStmt.step()) {
+      nodeId = (nodeStmt.getAsObject() as Record<string, unknown>).id as string;
+    }
+    nodeStmt.free();
+    if (!nodeId) return steps;
+
+    // BFS traversal following 'calls' and 'routes' edges
+    const visited = new Set<string>();
+    const queue: Array<{ id: string; depth: number }> = [{ id: nodeId, depth: 0 }];
+    visited.add(nodeId);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current.depth >= maxDepth) continue;
+
+      const edgeStmt = db.prepare(`
+        SELECT e.type, n.id, n.name FROM edges e
+        JOIN nodes n ON n.id = e.target_id
+        WHERE e.source_id = ? AND e.type IN ('calls','routes','imports')
+        ORDER BY e.weight DESC LIMIT 10
+      `);
+      edgeStmt.bind([current.id]);
+      while (edgeStmt.step()) {
+        const row = edgeStmt.getAsObject() as Record<string, unknown>;
+        const targetId = row.id as string;
+        const targetName = row.name as string;
+        const edgeType = row.type as string;
+
+        if (!visited.has(targetId)) {
+          visited.add(targetId);
+          steps.push({ from: current.id, to: targetName, edgeType });
+          queue.push({ id: targetId, depth: current.depth + 1 });
+        }
+      }
+      edgeStmt.free();
+    }
+
+    return steps;
+  } catch (err) {
+    console.error(`[KumaGraph] Flow trace failed: ${err}`);
+    return steps;
+  }
+}
+
+/**
+ * Format flow navigation as text.
+ */
+export function formatFlow(entryPoint: string, steps: FlowStep[]): string {
+  if (steps.length === 0) {
+    return `🔍 No flow found for "${entryPoint}". Research the scope first with kuma_context({ action: 'research' }).`;
+  }
+
+  const lines: string[] = [
+    `🛤️ **Flow: ${entryPoint}**`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━`,
+    "",
+  ];
+
+  const edgeEmojis: Record<string, string> = { calls: "➡️", routes: "🌐", imports: "📥" };
+  for (const step of steps) {
+    const emoji = edgeEmojis[step.edgeType] || "🔗";
+    lines.push(`  ${emoji} ${step.to} (${step.edgeType})`);
+  }
+
+  lines.push("", `💡 ${steps.length} step(s) traversed.`);
+  return lines.join("\n");
 }
