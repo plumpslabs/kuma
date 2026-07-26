@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 
 // ============================================================
-// SESSION MEMORY — State tracker & Knowledge graph mini proyek
+// SESSION MEMORY — State tracker & change log (V3)
 // ============================================================
 
 const MEMORY_TOPICS = ["decisions", "glossary", "architecture", "conventions", "known-issues"] as const;
@@ -674,6 +675,54 @@ export class SessionMemory {
     }
 
     return { isLooping: false };
+  }
+
+  // ============================================================
+  // V3: Change Tracking (Selective Undo)
+  // ============================================================
+
+  /**
+   * Track a file change with symbol-level detail.
+   * Stores in memory.json AND writes to change_log in DB.
+   */
+  async trackChange(filePath: string, changeType: "modified" | "created" | "deleted" | "renamed", symbol?: string): Promise<void> {
+    this.ensureInit();
+
+    if (changeType === "modified" || changeType === "created") {
+      this.addModifiedFile(filePath);
+    }
+
+    // Try to write to change_log in database
+    try {
+      const { recordChange } = await import("./kumaDb.js");
+      const gitHash = this.getGitHead();
+      await recordChange({ filePath, changeType, symbol, gitCommitHash: gitHash || undefined });
+    } catch {}
+
+    this.save();
+  }
+
+  /**
+   * Get the current git HEAD hash.
+   */
+  private getGitHead(): string | null {
+    try {
+      return execSync("git rev-parse HEAD", { encoding: "utf-8", timeout: 3000 }).trim();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get changes for selective undo, grouped by session.
+   */
+  getChangesGrouped(): Array<{ sessionId: string; files: string[]; goal: string }> {
+    this.ensureInit();
+    return [{
+      sessionId: String(this.state.startTime),
+      files: Array.from(this.state.modifiedFiles.keys()),
+      goal: this.state.currentGoal,
+    }];
   }
 
   private ensureInit(): void {

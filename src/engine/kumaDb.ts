@@ -6,6 +6,7 @@ import { getKumaDir } from "../utils/pathValidator.js";
 
 // ============================================================
 // KUMA DB — SQLite database manager (via sql.js, zero native build)
+// Schema v3 — research_cache, change_log, safety_audit in main schema
 // ============================================================
 
 const DB_FILENAME = "kuma.db";
@@ -195,6 +196,53 @@ function createSchema(db: SqlJsDatabase): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_experiences_created ON experiences(created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_patterns_antecedent ON experience_patterns(antecedent_tool)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_patterns_confidence ON experience_patterns(confidence DESC)`);
+
+  // V3: Research cache — mirrors .kuma/research/*.json for fast querying
+  db.run(`
+    CREATE TABLE IF NOT EXISTS research_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope TEXT NOT NULL UNIQUE,
+      version INTEGER DEFAULT 1,
+      confidence REAL DEFAULT 0.0,
+      content_hash TEXT,
+      record TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )
+  `);
+
+  // V3: Change log — tracks every modification for selective undo
+  db.run(`
+    CREATE TABLE IF NOT EXISTS change_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER REFERENCES sessions(id),
+      file_path TEXT NOT NULL,
+      change_type TEXT NOT NULL CHECK(change_type IN ('modified','created','deleted','renamed')),
+      symbol TEXT,
+      diff_summary TEXT,
+      git_commit_hash TEXT,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )
+  `);
+
+  // V3: Project health snapshots
+  db.run(`
+    CREATE TABLE IF NOT EXISTS health_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      score INTEGER NOT NULL,
+      risk_level TEXT NOT NULL DEFAULT 'low',
+      checks TEXT DEFAULT '[]',
+      summary TEXT,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_research_scope ON research_cache(scope)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_research_updated ON research_cache(updated_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_session ON change_log(session_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_file ON change_log(file_path)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_health_created ON health_snapshots(created_at)`);
 }
 
 /**
@@ -237,6 +285,148 @@ export function getDbSize(): number {
     }
   } catch {}
   return 0;
+}
+
+// ============================================================
+// V3: Research Cache Operations
+// ============================================================
+
+export async function getResearchCache(scope: string): Promise<string | null> {
+  try {
+    const db = await getDb();
+    const stmt = db.prepare("SELECT record, content_hash, updated_at FROM research_cache WHERE scope = ?");
+    stmt.bind([scope]);
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as Record<string, unknown>;
+      stmt.free();
+      return row.record as string;
+    }
+    stmt.free();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveResearchCache(scope: string, record: string, contentHash?: string, confidence?: number): Promise<void> {
+  try {
+    const db = await getDb();
+    const existing = db.exec("SELECT id FROM research_cache WHERE scope = ?", [scope]);
+    if (existing.length > 0 && existing[0].values.length > 0) {
+      db.run(`UPDATE research_cache SET record = ?, content_hash = COALESCE(?, content_hash), confidence = COALESCE(?, confidence), version = version + 1, updated_at = strftime('%s','now') WHERE scope = ?`,
+        [record, contentHash || null, confidence ?? null, scope]);
+    } else {
+      db.run(`INSERT INTO research_cache (scope, record, content_hash, confidence, version) VALUES (?, ?, ?, ?, 1)`,
+        [scope, record, contentHash || null, confidence ?? null]);
+    }
+    saveDb();
+  } catch (err) {
+    console.error(`[KumaDB] Failed to save research cache: ${err}`);
+  }
+}
+
+export async function listResearchScopes(): Promise<string[]> {
+  try {
+    const db = await getDb();
+    const result = db.exec("SELECT scope, updated_at, confidence FROM research_cache ORDER BY updated_at DESC");
+    return result[0]?.values.map(v => v[0] as string) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================
+// V3: Change Log Operations (Selective Undo)
+// ============================================================
+
+export async function recordChange(entry: {
+  sessionId?: number;
+  filePath: string;
+  changeType: "modified" | "created" | "deleted" | "renamed";
+  symbol?: string;
+  diffSummary?: string;
+  gitCommitHash?: string;
+}): Promise<void> {
+  try {
+    const db = await getDb();
+    db.run(`INSERT INTO change_log (session_id, file_path, change_type, symbol, diff_summary, git_commit_hash) VALUES (?, ?, ?, ?, ?, ?)`,
+      [entry.sessionId ?? null, entry.filePath, entry.changeType, entry.symbol ?? null, entry.diffSummary ?? null, entry.gitCommitHash ?? null]);
+    saveDb();
+  } catch (err) {
+    console.error(`[KumaDB] Failed to record change: ${err}`);
+  }
+}
+
+export async function getChanges(params: {
+  sessionId?: number;
+  filePath?: string;
+  since?: number;
+  limit?: number;
+}): Promise<string> {
+  try {
+    const db = await getDb();
+    const { sessionId, filePath, since, limit = 50 } = params;
+
+    let sql = `SELECT cl.*, s.goal FROM change_log cl LEFT JOIN sessions s ON s.id = cl.session_id WHERE 1=1`;
+    const bind: unknown[] = [];
+
+    if (sessionId) { sql += ` AND cl.session_id = ?`; bind.push(sessionId); }
+    if (filePath) { sql += ` AND cl.file_path LIKE ?`; bind.push(`%${filePath}%`); }
+    if (since) { sql += ` AND cl.created_at >= ?`; bind.push(since); }
+
+    sql += ` ORDER BY cl.created_at DESC LIMIT ?`;
+    bind.push(limit);
+
+    const stmt = db.prepare(sql);
+    stmt.bind(bind);
+    const results: Array<Record<string, unknown>> = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject());
+    }
+    stmt.free();
+
+    if (results.length === 0) return "No changes found.";
+
+    const lines: string[] = [`📋 **Change Log** — ${results.length} change(s)`];
+    for (const r of results) {
+      const icon = r.change_type === "deleted" ? "❌" : r.change_type === "created" ? "✨" : "📝";
+      lines.push(`  ${icon} **${r.file_path}** (${r.change_type})`);
+      if (r.symbol) lines.push(`     Symbol: ${r.symbol}`);
+      if (r.goal) lines.push(`     Goal: ${r.goal}`);
+    }
+    return lines.join("\n");
+  } catch (err) {
+    return `Error getting changes: ${err}`;
+  }
+}
+
+// ============================================================
+// V3: Health Snapshot Operations
+// ============================================================
+
+export async function saveHealthSnapshot(score: number, riskLevel: string, checks: string, summary: string): Promise<void> {
+  try {
+    const db = await getDb();
+    db.run(`INSERT INTO health_snapshots (score, risk_level, checks, summary) VALUES (?, ?, ?, ?)`,
+      [score, riskLevel, checks, summary]);
+    saveDb();
+  } catch (err) {
+    console.error(`[KumaDB] Failed to save health snapshot: ${err}`);
+  }
+}
+
+export async function getLatestHealthSnapshot(): Promise<string | null> {
+  try {
+    const db = await getDb();
+    const result = db.exec("SELECT score, risk_level, summary, created_at FROM health_snapshots ORDER BY created_at DESC LIMIT 1");
+    if (result[0]?.values.length) {
+      const row = result[0].values[0];
+      return JSON.stringify({ score: row[0], riskLevel: row[1], summary: row[2], createdAt: row[3] });
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
