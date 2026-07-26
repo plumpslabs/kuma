@@ -6,3 +6,4 @@ coverage/
 *.log
 .env
 .env.local
+KUMA_V3_BREAKDOWN.md
