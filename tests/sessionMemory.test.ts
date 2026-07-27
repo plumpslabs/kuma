@@ -1,6 +1,23 @@
 import { jest } from "@jest/globals";
-import { sessionMemory } from "../src/engine/sessionMemory.js";
 import fs from "node:fs";
+
+// Mock kumaDb.js to prevent sql.js WASM loading crash in test environment
+jest.unstable_mockModule("../src/engine/kumaDb.js", () => ({
+  getDb: jest.fn<any>().mockResolvedValue({
+    run: jest.fn(),
+    prepare: jest.fn().mockReturnValue({
+      step: jest.fn().mockReturnValue(false),
+      getAsObject: jest.fn(),
+      bind: jest.fn(),
+      free: jest.fn(),
+    }),
+    exec: jest.fn().mockReturnValue([]),
+  }),
+  saveDb: jest.fn(),
+}));
+
+// Dynamic import after mocking
+const { sessionMemory } = await import("../src/engine/sessionMemory.js");
 
 beforeEach(() => {
   jest.spyOn(console, "error").mockImplementation(() => {});
@@ -59,5 +76,12 @@ describe("SessionMemory", () => {
   test("getConventions returns undefined when none set", () => {
     const conv = sessionMemory.getConventions();
     expect(conv).toBeUndefined();
+  });
+
+  test("recordToolCall auto-tracks to DB without crashing", () => {
+    // This should not crash even though kumaDb is mocked
+    expect(() => {
+      sessionMemory.recordToolCall("test_tool", { arg: "value" });
+    }).not.toThrow();
   });
 });
