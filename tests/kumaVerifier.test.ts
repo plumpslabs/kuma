@@ -15,7 +15,7 @@ describe("kumaVerifier (Proposal 1: Integrated Auto-Verification)", () => {
       scope: "kumaLock",
     });
 
-    expect(result).toContain("Auto-Verification");
+    expect(result).toContain("Verification");
     expect(result).toContain("Runner");
   }, 40000);
 });

@@ -58,6 +58,63 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   // ============================================================
+  // CLI MODE: kuma stop --force (kill switch)
+  // ============================================================
+  if (args[0] === "stop" && (args[1] === "--force" || args[1] === "-f")) {
+    console.error(`🐻 Kuma v${SERVER_VERSION} — Kill Switch`);
+    console.error("");
+
+    // 1. Kill verification child processes
+    try {
+      const { getRunningVerificationPid } = await import("./engine/kumaVerifier.js");
+      const pid = getRunningVerificationPid();
+      if (pid) {
+        try { process.kill(-pid, "SIGKILL"); } catch {}
+        try { process.kill(pid, "SIGKILL"); } catch {}
+        console.error(`✅ Killed verification process (PID: ${pid})`);
+      }
+    } catch (err) {
+      console.error(`⚠️ Could not check verifier: ${err}`);
+    }
+
+    // 2. Kill orphaned test processes (Jest, pnpm test, npm test, etc.)
+    try {
+      const { execSync } = await import("node:child_process");
+      // Kill jest worker processes
+      try { execSync("pkill -f 'jest' 2>/dev/null || true"); } catch {}
+      try { execSync("pkill -f 'jest-worker' 2>/dev/null || true"); } catch {}
+      // Kill test runner processes
+      try { execSync("pkill -f 'pnpm test' 2>/dev/null || true"); } catch {}
+      try { execSync("pkill -f 'npm test' 2>/dev/null || true"); } catch {}
+      try { execSync("pkill -f 'yarn test' 2>/dev/null || true"); } catch {}
+      console.error("✅ Killed orphaned test processes");
+    } catch {
+      console.error("⚠️ Could not clean up orphaned processes — try `pkill -f jest` manually");
+    }
+
+    console.error("");
+    console.error(`🛡️ Kill switch complete. You can safely restart Kuma.`);
+    process.exit(0);
+  }
+
+  if (args[0] === "stop") {
+    console.error(`🐻 Kuma v${SERVER_VERSION} — Kill Switch`);
+    console.error("");
+    console.error("⚠️  Use `kuma stop --force` to kill all child processes (verifier, tests).");
+    console.error("💡 This kills orphaned Jest/worker/test processes spawned by Kuma.");
+    console.error("");
+    process.exit(0);
+  }
+
+  if (args[0] === "kill") {
+    console.error(`🐻 Kuma v${SERVER_VERSION}`);
+    console.error("");
+    console.error("💡 Use `kuma stop --force` instead.");
+    console.error("");
+    process.exit(0);
+  }
+
+  // ============================================================
   // CLI MODE: kuma init
   // ============================================================
   if (args[0] === "init") {

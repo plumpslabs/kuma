@@ -817,22 +817,101 @@ export async function runGarbageCollection(): Promise<string> {
 export async function runDoctor(): Promise<string> {
   try {
     const db = await getDb();
-    const checks: string[] = [];
-    // Check integrity
+    const checks: string[] = [
+      "🩺 **Kuma Doctor Report**",
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      "",
+    ];
+
+    // 1. Database integrity
     try {
       const integrity = db.exec("PRAGMA integrity_check");
       const result = integrity[0]?.values[0]?.[0] || "ok";
-      checks.push(`Integrity: ${result === "ok" ? "✅" : "❌ " + result}`);
-    } catch { checks.push("Integrity: ❌ check failed"); }
-    // Check schema version
-    const tables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries"];
+      checks.push(`**Database Integrity**: ${result === "ok" ? "✅" : "❌ " + result}`);
+    } catch { checks.push("**Database Integrity**: ❌ check failed"); }
+
+    // 2. Schema health
+    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries", "verifications", "health_snapshots", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "scratch_entries", "portability_entries"];
     let existing = 0;
-    for (const t of tables) {
+    for (const t of allTables) {
       try {
         if (db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='${t}'`)[0]?.values?.length) existing++;
       } catch {}
     }
-    checks.push(`Schema: ${existing}/${tables.length} tables present`);
+    const schemaHealth = existing === allTables.length ? "✅" : existing >= allTables.length * 0.8 ? "⚠️" : "❌";
+    checks.push(`**Schema Health**: ${schemaHealth} ${existing}/${allTables.length} tables present`);
+
+    // 3. Verification history (last 5)
+    try {
+      const verifStmt = db.exec("SELECT scope, passed, created_at, duration_ms FROM verifications ORDER BY created_at DESC LIMIT 5");
+      if (verifStmt[0]?.values?.length) {
+        checks.push("");
+        checks.push("**Recent Verifications:**");
+        for (const v of verifStmt[0].values) {
+          const icon = v[1] ? "✅" : "🔴";
+          const time = new Date((v[2] as number) * 1000).toLocaleTimeString();
+          checks.push(`  ${icon} ${v[0]} (${v[3]}ms) — ${time}`);
+        }
+      }
+    } catch {}
+
+    // 4. Process monitoring — check for orphaned test processes
+    try {
+      const { execSync } = await import("node:child_process");
+      // Check for Jest/pnpm test processes that might be orphaned
+      const psOutput = execSync(
+        `ps -eo pid,ppid,command | grep -E "(jest|pnpm test|npm test|yarn test)" | grep -v grep | head -10`,
+        { encoding: "utf-8", timeout: 5000 }
+      ).trim();
+
+      if (psOutput) {
+        const processes = psOutput.split("\n").filter(Boolean);
+        checks.push("");
+        checks.push(`**Running Test Processes**: ${processes.length} found`);
+        for (const p of processes) {
+          checks.push(`  ⚡ ${p.substring(0, 120)}`);
+        }
+        checks.push("  💡 Run `kuma_safety({ action: 'gc' })` to clean up stale processes");
+      } else {
+        checks.push("");
+        checks.push("**Running Test Processes**: ✅ None detected");
+      }
+    } catch {
+      checks.push("");
+      checks.push("**Running Test Processes**: ⚠️ Could not check");
+    }
+
+    // 5. Verification rate check
+    try {
+      const hourAgo = Math.floor((Date.now() - 3600000) / 1000);
+      const recentVerifs = db.exec(`SELECT COUNT(*) as c FROM verifications WHERE created_at > ${hourAgo}`);
+      const count = (recentVerifs[0]?.values[0]?.[0] as number) || 0;
+      if (count > 10) {
+        checks.push("");
+        checks.push(`⚠️ **High Verification Rate**: ${count} verifications in the last hour — this is abnormal.`);
+        checks.push(`  💡 If you didn't request these, run \`pkill -f "pnpm test"\` to kill orphaned processes.`);
+      } else if (count > 0) {
+        checks.push("");
+        checks.push(`**Verification Rate**: ${count} verifications in the last hour (normal)`);
+      }
+    } catch {}
+
+    // 6. KumaVerifier status (in-memory)
+    try {
+      const { isVerificationRunning, msSinceLastVerification, getRecentCallCount } = await import("./kumaVerifier.js");
+      const running = isVerificationRunning();
+      const sinceLast = msSinceLastVerification();
+      const callCount = getRecentCallCount();
+      checks.push("");
+      checks.push("**Verifier Status:**");
+      checks.push(`  ${running ? "🔄" : "💤"} Currently ${running ? "running" : "idle"}`);
+      checks.push(`  ⏱️ Last run: ${sinceLast < 0 ? "never" : `${Math.floor(sinceLast / 1000)}s ago`}`);
+      checks.push(`  📊 Calls in 5min: ${callCount} (threshold: 3)`);
+      if (callCount >= 3) {
+        checks.push(`  🔴 **Runaway protection active** — verifier is blocking further calls`);
+      }
+    } catch {}
+
     return checks.join("\n");
   } catch (err) { return `❌ Doctor failed: ${err}`; }
 }

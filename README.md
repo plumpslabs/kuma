@@ -134,7 +134,7 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 | Action | Use case |
 |--------|----------|
 | `guard` | Anti-pattern, drift, tool-loop, and failure checks. |
-| `verify` | Integrated auto-verification — auto-detect runner & execute scoped tests. |
+| `verify` | **SAFETY-GUARDED** on-demand test verification — only runs via explicit tool call. Auto-detects runner (pnpm/npm/yarn/pytest/cargo/go), scopes to session changes, rate-limited (60s min interval), concurrency-locked (1 at a time), cached (< 5 min returns stale result), runaway-protected (> 3 calls in 5 min auto-blocks). ⚠️ NEVER auto-triggered — only via explicit `kuma_safety({ action: "verify" })`. |
 | `check` | Pre-execution safety: policy, path, lock, risk level. |
 | `audit` | Query audit trail + stats + override log. |
 | `lock` | Multi-agent file locking. |

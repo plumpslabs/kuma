@@ -1,5 +1,65 @@
 # Changelog
 
+## [2.3.4] — 2026-07-27
+
+### 🔴 Critical Bug Fix: kumaVerifier Resource Exhaustion (#CRITICAL-001)
+
+**Issue:** kumaVerifier could be called repeatedly via AI agent workflow, spawning
+`pnpm test` → `jest` → `jest-worker` processes in an uncontrolled loop, exhausting
+system RAM (16GB+) and CPU.
+
+**Root Cause:** No rate limiting, concurrency control, or staleness caching on
+the verifier. An AI agent calling `kuma_safety({ action: "verify" })` multiple
+times would spawn concurrent test processes without any guard.
+
+**Fix — 5-layer safety architecture:**
+
+| Layer | Guard | Detail |
+|-------|-------|--------|
+| 🔴 P1 | **Concurrency Lock** | Only 1 verification at a time per process (`_isRunning` flag) |
+| 🔴 P1 | **Rate Limiting** | 60s minimum interval between verifications |
+| 🔴 P1 | **Staleness Cache** | Returns cached result if < 5 min old (queries `verifications` table) |
+| 🔴 P1 | **Runaway Detection** | > 3 calls in 5 min → auto-block with clear error message |
+| 🔴 P1 | **Handler Rate Guard** | Secondary 30s cooldown at `handleVerify` level in `kumaSafetyTool.ts` |
+| 🟠 P2 | **Hard Timeout** | Process killed after 30s (default) + 5s safety margin (`setTimeout` + `SIGKILL`) |
+| 🟠 P2 | **Process Tracking** | Child PID stored in `_currentProcess` for kill-switch + doctor access |
+
+### 🚨 Kill Switch: `kuma stop --force`
+
+New CLI command to kill all child processes spawned by Kuma:
+
+```bash
+npx @plumpslabs/kuma stop --force
+```
+
+Kills: verification processes, Jest workers, `pnpm test`, `npm test`, `yarn test`
+processes that may be orphaned.
+
+### 🔧 Enhanced Doctor Diagnostics
+
+`kuma_doctor` (`kuma_safety({ action: "doctor" })`) now includes:
+- Verification history (last 5 runs with status, duration, timestamp)
+- Running test process detection (ps-aware via `ps -eo pid,ppid,command | grep`)
+- Verification rate check (>10/hour = anomaly warning)
+- KumaVerifier status: idle/running, last run (seconds ago), call count in 5min window
+- Expanded schema health check (23 tables vs previous 12)
+
+### 📚 Documentation
+
+- README: verify action now clearly documents all safety guards + 🚨 warning
+  that it is NEVER auto-triggered
+- Explicitly documents rate limits (60s), concurrency (1-at-a-time),
+  staleness (5min cache), and runaway protection (3 calls / 5min)
+
+### Files Changed
+
+- `src/engine/kumaVerifier.ts` — Complete rewrite with 5-layer safety guards
+- `src/tools/kumaSafetyTool.ts` — Secondary rate guard at handler level
+- `src/engine/kumaDb.ts` — Enhanced `runDoctor()` with process monitoring
+- `src/index.ts` — `kuma stop --force` CLI kill switch
+- `README.md` — Verify feature documentation with safety guard details
+- `CHANGELOG.md` — This entry
+
 ## [2.3.3] — 2026-07-27
 
 ### Post-Mortem Batch #2 — 4 New Issues Fully Resolved

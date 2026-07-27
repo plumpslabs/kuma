@@ -260,10 +260,30 @@ async function handleClean(_params: SafetyParams): Promise<string> {
 }
 
 // ============================================================
-// VERIFY — Integrated Auto-Verification (Proposal 1)
+// VERIFY — On-Demand Test Verification (SAFETY-GUARDED)
+// ============================================================
+// 🔴 This handler is the **ONLY** entry point for runAutoVerification().
+// Do NOT add any internal hooks, health-check triggers, or auto-calls
+// that invoke runAutoVerification() — it has its own built-in rate
+// limiter + runaway detection as a second line of defense.
+//
+// Secondary safety guards at handler level (in addition to verifier):
+//   • Rate limit: blocks if verify was called < 30s ago
+//   • Concurrency: blocks if verify is already running
 // ============================================================
 
+let _lastVerifyCall = 0;
+const VERIFY_COOLDOWN_MS = 30_000; // 30s handler-level cooldown
+
 async function handleVerify(params: SafetyParams): Promise<string> {
+  // Handler-level rate limit (secondary defense)
+  const now = Date.now();
+  if (_lastVerifyCall > 0 && (now - _lastVerifyCall) < VERIFY_COOLDOWN_MS) {
+    const remaining = Math.ceil((VERIFY_COOLDOWN_MS - (now - _lastVerifyCall)) / 1000);
+    return `⏳ **Handler rate limit** — verify was just called ${Math.floor((now - _lastVerifyCall) / 1000)}s ago. Please wait ${remaining}s before calling verify again.`;
+  }
+  _lastVerifyCall = now;
+
   sessionMemory.recordToolCall("kuma_safety_verify", { scope: params.scope || params.filePath });
   const { runAutoVerification } = await import("../engine/kumaVerifier.js");
   return await runAutoVerification({
