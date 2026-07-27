@@ -64,18 +64,44 @@ async function main(): Promise<void> {
     console.error(`🐻 Kuma v${SERVER_VERSION} — Kill Switch`);
     console.error("");
 
-    // 1. Kill verification child processes
+    // 1. Kill verification child processes (local + cross-instance from DB)
+    let killedCount = 0;
+    // Kill local process
     try {
       const { getRunningVerificationPid } = await import("./engine/kumaVerifier.js");
       const pid = getRunningVerificationPid();
       if (pid) {
         try { process.kill(-pid, "SIGKILL"); } catch {}
         try { process.kill(pid, "SIGKILL"); } catch {}
-        console.error(`✅ Killed verification process (PID: ${pid})`);
+        console.error(`✅ Killed local verification process (PID: ${pid})`);
+        killedCount++;
       }
-    } catch (err) {
-      console.error(`⚠️ Could not check verifier: ${err}`);
-    }
+    } catch {}
+    // Clean up any lock files
+    try {
+      const path = await import("node:path");
+      const fs = await import("node:fs");
+      const lockDir = path.resolve(process.cwd(), ".kuma/verifier.lock");
+      if (fs.existsSync(lockDir)) {
+        // Try to read PID from lock file
+        const pidFile = path.join(lockDir, "pid");
+        if (fs.existsSync(pidFile)) {
+          try {
+            const pid = parseInt(fs.readFileSync(pidFile, "utf-8"), 10);
+            if (pid && pid !== process.pid) {
+              try { process.kill(-pid, "SIGKILL"); } catch {}
+              try { process.kill(pid, "SIGKILL"); } catch {}
+              console.error(`✅ Killed other instance verification (PID: ${pid})`);
+              killedCount++;
+            }
+          } catch {}
+        }
+        fs.rmSync(lockDir, { recursive: true, force: true });
+      }
+      if (killedCount === 0) {
+        console.error("✅ No running verifications found to kill.");
+      }
+    } catch {}
 
     // 2. Kill orphaned test processes (Jest, pnpm test, npm test, etc.)
     try {

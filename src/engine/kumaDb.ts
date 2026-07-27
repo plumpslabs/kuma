@@ -896,21 +896,7 @@ export async function runDoctor(): Promise<string> {
       }
     } catch {}
 
-    // 6. KumaVerifier status (in-memory)
-    try {
-      const { isVerificationRunning, msSinceLastVerification, getRecentCallCount } = await import("./kumaVerifier.js");
-      const running = isVerificationRunning();
-      const sinceLast = msSinceLastVerification();
-      const callCount = getRecentCallCount();
-      checks.push("");
-      checks.push("**Verifier Status:**");
-      checks.push(`  ${running ? "🔄" : "💤"} Currently ${running ? "running" : "idle"}`);
-      checks.push(`  ⏱️ Last run: ${sinceLast < 0 ? "never" : `${Math.floor(sinceLast / 1000)}s ago`}`);
-      checks.push(`  📊 Calls in 5min: ${callCount} (threshold: 3)`);
-      if (callCount >= 3) {
-        checks.push(`  🔴 **Runaway protection active** — verifier is blocking further calls`);
-      }
-    } catch {}
+
 
     return checks.join("\n");
   } catch (err) { return `❌ Doctor failed: ${err}`; }
@@ -999,4 +985,5 @@ export async function getLatestVerifications(limit = 10): Promise<Array<{ id: nu
     return [];
   }
 }
+
 

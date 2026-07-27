@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.3.5] — 2026-07-27
+
+### 🔴 Cross-Process Safety: File-Based Lock Closing Multi-Instance Gap
+
+**Issue:** v2.3.4's in-memory safety guards only protected within a single Kuma
+process. Running multiple `npx @plumpslabs/kuma` instances across different
+terminals could bypass all guards, each spawning its own `pnpm test` process.
+
+**Root Cause:** sql.js (`kuma.db`) is WASM-based in-memory per-process —
+cannot be used for cross-process synchronization. Attempted DB-based lock in
+v2.3.5-dev was rolled back after code review identified this fundamental
+sql.js limitation.
+
+**Fix — Cross-Process File Lock (atomic mkdir):**
+
+| Layer | Guard | Detail |
+|-------|-------|--------|
+| 🔴 **File Lock** | `fs.mkdirSync()` atomic (OS-level) | Guarantees only 1 process holds the lock — even across different terminal instances |
+| 🔴 **Stale Lock Recovery** | `process.kill(pid, 0)` liveness check | Auto-detect crashed processes → force acquire lock |
+| 🟠 **Heartbeat** | Update PID file every 15s | Prevents false-positive stale detection |
+| 🟢 **In-Memory Guard** | `_localRunning` flag | Fast path — skips file system check for same-process calls |
+| 🟢 **Staleness Cache** | < 5 min returns cached result | No unnecessary test re-runs |
+| 🟠 **Hard Timeout** | SIGKILL after 30s + 5s margin | No zombie child processes |
+| 🚨 **Kill Switch** | `kuma stop --force` | Reads PID from file lock + `pkill` to kill all orphans |
+
+### Architecture Change
+
+- **Removed** all DB-based lock functions (`acquireVerifierLock`, `releaseVerifierLock`,
+  `heartbeatVerifierLock`, `getActiveVerifierPids`, `getVerificationCountSince`,
+  `secondsSinceLastVerification`, `verifier_locks` table) — sql.js can't do cross-process
+- **Replaced** with file-based lock using `fs.mkdirSync()` — atomic at OS level,
+  works across all processes sharing the same filesystem
+- **Simplified** doctor (removed broken circular dynamic import of kumaVerifier)
+- **Simplified** kill switch (reads PID from file lock directory)
+
+### Files Changed
+
+- `src/engine/kumaVerifier.ts` — Complete rewrite: file-based lock, no dead code
+- `src/engine/kumaDb.ts` — Removed broken DB lock functions + fixed doctor
+- `src/index.ts` — Kill switch reads PID from file lock
+- `CHANGELOG.md` — This entry
+
 ## [2.3.4] — 2026-07-27
 
 ### 🔴 Critical Bug Fix: kumaVerifier Resource Exhaustion (#CRITICAL-001)
