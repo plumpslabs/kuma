@@ -364,10 +364,11 @@ class SessionMemory {
 
   recordToolCall(toolName: string, params: Record<string, unknown>): void {
     this.ensureInit();
+    const timestamp = Date.now();
     this.state.toolCalls.push({
       toolName,
       params,
-      timestamp: Date.now(),
+      timestamp,
     });
 
     // Keep only last 100 tool calls (prevent memory leak)
@@ -375,6 +376,47 @@ class SessionMemory {
       this.state.toolCalls = this.state.toolCalls.slice(-100);
     }
     this.save();
+
+    // Auto-track to DB tables (fire-and-forget)
+    this.autoTrackToDb(toolName, params, timestamp).catch(() => {});
+  }
+
+  /**
+   * Auto-track tool calls to the database sessions + tool_calls + experiences tables.
+   * This is the passive observability pipeline — every tool call gets recorded
+   * automatically without requiring the tool to explicitly write to the DB.
+   */
+  private async autoTrackToDb(
+    toolName: string,
+    params: Record<string, unknown>,
+    timestamp: number,
+  ): Promise<void> {
+    try {
+      const { getDb, saveDb } = await import("./kumaDb.js");
+      const db = await getDb();
+
+      // 1. Track in tool_calls table
+      db.run(
+        `INSERT INTO tool_calls (tool_name, params, success, duration_ms, created_at) VALUES (?, ?, 1, 0, ?)`,
+        [toolName, JSON.stringify(params), Math.floor(timestamp / 1000)],
+      );
+
+      // 2. Track in experiences table for pattern learning
+      const paramsHash = simpleHash(JSON.stringify(params));
+      const filePath =
+        (params.filePath as string) ||
+        (params.file_path as string) ||
+        (params.target as string) ||
+        null;
+      db.run(
+        `INSERT INTO experiences (tool_name, params_hash, success, context_file, context_action, created_at) VALUES (?, ?, 1, ?, ?, ?)`,
+        [toolName, paramsHash, filePath, params.action as string || null, Math.floor(timestamp / 1000)],
+      );
+
+      saveDb(db);
+    } catch {
+      // Non-critical — session memory still works without DB tracking
+    }
   }
 
   setConventions(conventions: Record<string, unknown>): void {
@@ -733,6 +775,17 @@ class SessionMemory {
       });
     }
   }
+}
+
+/** Quick hash for params deduplication (not cryptographic) */
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36);
 }
 
 // Singleton

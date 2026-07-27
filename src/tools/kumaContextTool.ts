@@ -1,5 +1,5 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { getDb, getResearchCache, saveResearchCache, getChanges } from "../engine/kumaDb.js";
+import { getDb, getResearchCache, saveResearchCache, getChanges, rollbackChange, listResearchCache } from "../engine/kumaDb.js";
 import { searchGraph, analyzeImpact, formatImpact, traceFlow, formatFlow, getGraphStats } from "../engine/kumaGraph.js";
 import { scoreMemoryRelevance, getProactiveMemories } from "../engine/kumaMemory.js";
 import fs from "node:fs";
@@ -7,7 +7,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health";
+type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches";
 
 interface ContextParams {
   action: ContextAction;
@@ -27,8 +27,10 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "impact": return handleImpact(params);
     case "navigate": return handleNavigate(params);
     case "changes": return handleChanges(params);
+    case "rollback": return handleRollback(params);
+    case "researches": return handleResearches(params);
     case "health": return handleHealth(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, health`;
+    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health`;
   }
 }
 
@@ -102,6 +104,20 @@ async function handleInit(_params: ContextParams): Promise<string> {
   lines.push(`  📝 Modified: ${(summary.modifiedFiles as Array<unknown>)?.length || 0} file(s)`);
   lines.push(`  🛠️ Tool calls: ${summary.toolCallCount}`);
 
+  // 6. AUTO-COMPUTE HEALTH SCORE on init
+  try {
+    const { computeSafetyScore, formatSafetyScore } = await import("../engine/safetyScore.js");
+    const { saveHealthSnapshot } = await import("../engine/kumaDb.js");
+    const score = await computeSafetyScore(_params.goal);
+    const checksStr = JSON.stringify(score.checks);
+    await saveHealthSnapshot(score.score, score.risk, checksStr, score.summary);
+    lines.push("");
+    lines.push("**Health Score**");
+    lines.push(formatSafetyScore(score));
+  } catch {
+    // Health score is non-critical
+  }
+
   lines.push("", "💡 Call kuma_context({ action: 'research', scope: '<area>' }) to research a specific area.");
 
   return lines.join("\n");
@@ -130,8 +146,17 @@ async function handleResearch(params: ContextParams): Promise<string> {
     try { record = JSON.parse(cached); } catch {}
   }
   if (record) {
-    const age = Math.floor((Date.now() - (record.validatedAt ? new Date(record.validatedAt as string).getTime() : 0)) / 1000);
-    lines.push(`  ✅ Found cached research (${age > 86400 ? `${Math.floor(age / 86400)}d` : `${Math.floor(age / 3600)}h`} old)`);
+    const ageSeconds = Math.floor((Date.now() - (record.validatedAt ? new Date(record.validatedAt as string).getTime() : 0)) / 1000);
+    const ageStr = ageSeconds > 86400 ? `${Math.floor(ageSeconds / 86400)}d` : ageSeconds > 3600 ? `${Math.floor(ageSeconds / 3600)}h` : `${Math.floor(ageSeconds / 60)}m`;
+    lines.push(`  ✅ Found cached research (${ageStr} old)`);
+
+    // STALE CACHE WARNING: Surface staleness info when serving cached result
+    if (ageSeconds > 86400) {
+      lines.push(`  ${ageSeconds > 604800 ? "🔴" : "🟡"} **Staleness:** Cache is ${ageStr} old — may be stale`);
+      if (ageSeconds > 604800) {
+        lines.push("  💡 Consider re-researching: cache is over a week old");
+      }
+    }
   } else {
     lines.push("  ⏳ No cached research — starting fresh");
   }
@@ -157,18 +182,36 @@ async function handleResearch(params: ContextParams): Promise<string> {
   }
   lines.push("");
 
-  // STEP 3: Graph Query
+  // STEP 3: Graph Query + Codebase Fallback
   lines.push("**Step 3/5: Graph Query**");
   try {
     const graphResult = await searchGraph(scope, 15);
     const graphLines = graphResult.split("\n");
-    if (graphLines.length > 1) {
+    if (graphLines.length > 1 && !graphResult.includes("No results")) {
       lines.push(`  📊 ${graphLines.filter(l => l.includes("•")).length} relevant node(s) found`);
       for (const l of graphLines.slice(0, 8)) {
         if (l.includes("•")) lines.push(`  ${l}`);
       }
     } else {
-      lines.push("  ⏳ No graph data yet — build by using more tools");
+      // CODEBASE FALLBACK: Use fast-glob to find relevant files
+      lines.push("  ⏳ No graph data — searching codebase...");
+      try {
+        const fg = (await import("fast-glob")).default;
+        const root = getProjectRoot();
+        const ignorePatterns = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.kuma/**"];
+        const files = await fg([`**/*${scope}*`], { cwd: root, ignore: ignorePatterns, onlyFiles: true, deep: 6 });
+        if (files.length > 0) {
+          lines.push(`  📁 Found ${files.length} file(s) in codebase matching "${scope}":`);
+          for (const f of files.slice(0, 8)) {
+            lines.push(`    📄 ${f}`);
+          }
+          if (files.length > 8) lines.push(`    ... and ${files.length - 8} more`);
+        } else {
+          lines.push("  ⏳ No codebase matches — build graph by using more tools");
+        }
+      } catch {
+        lines.push("  ⏳ No graph data yet — build by using more tools");
+      }
     }
   } catch {
     lines.push("  ⚠️ Graph query failed");
@@ -261,6 +304,30 @@ async function handleChanges(params: ContextParams): Promise<string> {
   const filePath = params.target;
   const since = params.since;
   return await getChanges({ filePath, since });
+}
+
+// ============================================================
+// ROLLBACK — Selective Undo by Change ID (Issue #15)
+// ============================================================
+
+async function handleRollback(params: ContextParams): Promise<string> {
+  const target = params.target;
+  if (!target) return "⚠️ target parameter required (change ID, e.g. '5').";
+
+  const changeId = parseInt(target, 10);
+  if (isNaN(changeId)) return `⚠️ Invalid change ID: "${target}". Use a numeric ID from kuma_context({ action: 'changes' }).`;
+
+  sessionMemory.recordToolCall("kuma_context_rollback", { changeId });
+  return await rollbackChange(changeId);
+}
+
+// ============================================================
+// RESEARCHES — List all cached research (Issue #5: Dual Storage)
+// ============================================================
+
+async function handleResearches(_params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_researches", {});
+  return await listResearchCache();
 }
 
 // ============================================================

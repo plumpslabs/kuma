@@ -375,7 +375,8 @@ export async function buildFromSessionMemory(): Promise<number> {
 }
 
 /**
- * Search the graph with full-text search.
+ * Search the graph with full-text search, with codebase fallback.
+ * When graph is empty, falls back to fast-glob for file-level search.
  */
 export async function searchGraph(query: string, limit: number = 20): Promise<string> {
   try {
@@ -426,7 +427,8 @@ export async function searchGraph(query: string, limit: number = 20): Promise<st
     stmt.free();
 
     if (results.length === 0) {
-      return `🔍 **Graph Search** — No results for "${query}". Try a different search term.`;
+      // CODEBASE FALLBACK: When graph is empty, search the file system
+      return await codebaseSearchFallback(query, limit);
     }
 
     const lines: string[] = [
@@ -443,6 +445,100 @@ export async function searchGraph(query: string, limit: number = 20): Promise<st
   }
 }
 
+/**
+ * Fallback: search the codebase using fast-glob when the knowledge graph is empty.
+ * Searches for files matching the query by filename or path.
+ */
+async function codebaseSearchFallback(query: string, limit: number = 20): Promise<string> {
+  try {
+    const fg = (await import("fast-glob")).default;
+    const { getProjectRoot } = await import("../utils/pathValidator.js");
+    const root = getProjectRoot();
+
+    const patterns = [
+      `**/*${query}*`,
+      `**/*${query}*/**`,
+      query.includes(".") ? `**/${query}` : null,
+    ].filter(Boolean) as string[];
+
+    const ignorePatterns = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.kuma/**"];
+
+    const files = await fg(patterns, {
+      cwd: root,
+      ignore: ignorePatterns,
+      onlyFiles: true,
+      deep: 6,
+      dot: false,
+    });
+
+    if (files.length === 0) {
+      return `🔍 **Codebase Search** — No results for "${query}". Try a different search term or research the topic first.`;
+    }
+
+    const lines: string[] = [
+      `🔍 **Codebase Search** — ${files.length} result(s) for "${query}" (graph fallback)`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      "",
+    ];
+
+    for (const file of files.slice(0, limit)) {
+      lines.push(`  📄 **${file}**`);
+    }
+
+    if (files.length > limit) {
+      lines.push(`  ... and ${files.length - limit} more`);
+    }
+
+    lines.push(
+      "",
+      "💡 The knowledge graph is empty or has no matches.",
+      "💡 Run research or use more tools to build the graph for richer results.",
+    );
+
+    return lines.join("\n");
+  } catch {
+    // If fast-glob is not available or fails, try a simple fs-based search
+    try {
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const root = process.cwd();
+
+      const results: string[] = [];
+      function walk(dir: string) {
+        if (results.length >= limit) return;
+        let entries: string[] = [];
+        try { entries = fs.readdirSync(dir); } catch { return; }
+        for (const entry of entries) {
+          if (entry.startsWith(".") || entry === "node_modules" || entry === "dist" || entry === "build") continue;
+          const full = path.join(dir, entry);
+          try {
+            const stat = fs.statSync(full);
+            if (stat.isDirectory()) {
+              walk(full);
+            } else if (entry.toLowerCase().includes(query.toLowerCase())) {
+              results.push(path.relative(root, full));
+            }
+          } catch {}
+        }
+      }
+      walk(root);
+
+      if (results.length === 0) {
+        return `🔍 **Codebase Search** — No results for "${query}". Try a different search term.`;
+      }
+
+      return [
+        `🔍 **Codebase Search** — ${results.length} result(s) for "${query}" (basic fallback)`,
+        "",
+        ...results.slice(0, limit).map(f => `  📄 **${f}**`),
+        "",
+        "💡 Install fast-glob for faster, more comprehensive codebase searches.",
+      ].join("\n");
+    } catch {
+      return `🔍 **Search** — No results for "${query}". The knowledge graph is empty. Try researching first.`;
+    }
+  }
+}
 /**
  * Get graph statistics.
  */
@@ -514,10 +610,19 @@ export interface ImpactResult {
 /**
  * Analyze the impact of changing a symbol or file.
  * Traverses the graph to find all dependents, tests, and entry points.
+ * Falls back to codebase grep when graph is empty.
  */
 export async function analyzeImpact(target: string): Promise<ImpactResult> {
   try {
     const db = await getDb();
+
+    // Check if graph is populated at all
+    const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) ?? 0;
+
+    // CODEBASE FALLBACK: When graph is empty, use grep to find references
+    if (nodeCount === 0) {
+      return await codebaseImpactFallback(target);
+    }
 
     // Find node by name or file_path
     const nodeStmt = db.prepare(`
@@ -536,7 +641,8 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
     nodeStmt.free();
 
     if (!nodeId) {
-      return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
+      // Graph exists but node not found — try codebase fallback
+      return await codebaseImpactFallback(target);
     }
 
     // Count all edges connected to this node
@@ -590,6 +696,48 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
     return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
   }
 }
+
+/**
+ * Codebase fallback for impact analysis: use grep/glob to find references
+ * when the knowledge graph is empty or doesn't contain the target.
+ */
+async function codebaseImpactFallback(target: string): Promise<ImpactResult> {
+  try {
+    const { execSync } = await import("node:child_process");
+    const root = process.cwd();
+
+    // Use grep to find references to the target symbol in source files
+    const grepResult = execSync(
+      `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.json" -l "${target.replace(/"/g, '\\"')}" . 2>/dev/null | grep -v node_modules | grep -v .git | grep -v dist | grep -v .kuma | head -50`,
+      { cwd: root, encoding: "utf-8", timeout: 5000, maxBuffer: 1024 * 1024 },
+    ).trim();
+
+    const files = grepResult ? grepResult.split("\n").filter(Boolean).filter(f => !f.startsWith("./")) : [];
+
+    if (files.length === 0) {
+      return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
+    }
+
+    // Count total references across all files
+    const fileCount = files.length;
+    const testFiles = files.filter(f => f.includes("test") || f.includes("spec") || f.includes("__tests__")).length;
+
+    const risk: ImpactResult["risk"] = fileCount > 20 ? "high" : fileCount > 5 ? "medium" : "low";
+
+    return {
+      symbol: target,
+      references: fileCount, // file-level count since we're approximating
+      files: fileCount,
+      testFiles,
+      entryPoints: files.slice(0, 5).map(f => `${f} (grep match)`),
+      risk,
+    };
+  } catch {
+    return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
+  }
+}
+
+
 
 /**
  * Format impact analysis result.

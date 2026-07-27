@@ -97,6 +97,7 @@ function formatScoredMemories(memories: ScoredMemory[], context: string): string
 
 /**
  * Record a decision with structured template.
+ * Writes to BOTH markdown memory file AND knowledge graph for cross-referencing.
  */
 export function recordDecision(decision: DecisionRecord): string {
   try {
@@ -114,9 +115,64 @@ export function recordDecision(decision: DecisionRecord): string {
     const existing = sessionMemory.getMemoryContent("decisions");
     sessionMemory.writeMemory("decisions", existing + entry);
     sessionMemory.recordToolCall("kuma_decision", { title: decision.title });
+
+    // ADR TO GRAPH: Also record the decision as a node in the knowledge graph
+    // and link it to any referenced files/context for cross-referencing
+    recordDecisionToGraph(decision).catch(() => {});
+
     return `✅ Decision "${decision.title}" recorded.`;
   } catch (err) {
     return `Error recording decision: ${err}`;
+  }
+}
+
+/**
+ * Record a decision as a node + edges in the knowledge graph.
+ * This enables decisions to be searchable via kuma_memory search and visible in impact analysis.
+ */
+async function recordDecisionToGraph(decision: DecisionRecord): Promise<void> {
+  try {
+    const { upsertNode, addEdge } = await import("./kumaGraph.js");
+
+    const decisionId = `decision::${decision.title.replace(/[^a-zA-Z0-9_\-\s]/g, "").trim().replace(/\s+/g, "-")}`;
+
+    // 1. Create the decision node
+    await upsertNode({
+      id: decisionId,
+      type: "variable",
+      name: `ADR: ${decision.title.substring(0, 80)}`,
+      metadata: {
+        type: "architectural-decision",
+        context: decision.context.substring(0, 200),
+        rationale: decision.rationale.substring(0, 200),
+        outcome: decision.outcome,
+        timestamp: decision.timestamp,
+      },
+    });
+
+    // 2. Link decision to context files (extract file paths from context text)
+    const filePathMatches = decision.context.matchAll(/["']?([\w./-]+\.\w+)["']?/g);
+    for (const match of filePathMatches) {
+      const possiblePath = match[1];
+      if (possiblePath.includes("/") && (possiblePath.endsWith(".ts") || possiblePath.endsWith(".js") || possiblePath.endsWith(".json") || possiblePath.endsWith(".md"))) {
+        try {
+          const fileId = `file::${possiblePath}`;
+          await upsertNode({ id: fileId, type: "file", name: possiblePath });
+          await addEdge({ sourceId: decisionId, targetId: fileId, type: "depends_on", metadata: { reason: "adr-context" } });
+        } catch {}
+      }
+    }
+
+    // 3. Link decision to its outcome as a modifier
+    if (decision.outcome && decision.outcome !== "implemented") {
+      try {
+        const outcomeId = `decision-outcome::${decision.outcome.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}`;
+        await upsertNode({ id: outcomeId, type: "variable", name: `Outcome: ${decision.outcome.substring(0, 60)}` });
+        await addEdge({ sourceId: decisionId, targetId: outcomeId, type: "depends_on" });
+      } catch {}
+    }
+  } catch {
+    // Non-critical — decision is already saved to markdown
   }
 }
 

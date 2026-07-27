@@ -239,6 +239,47 @@ async function main(): Promise<void> {
     }
   })();
 
+  // COLD START BOOTSTRAP: Auto-run init sequence + restore session + populate graph
+  (async () => {
+    try {
+      console.error(`[${SERVER_NAME}] 🔄 Running cold start bootstrap...`);
+
+      // 1. Restore previous session state (load memory.json)
+      const sessionInfo = sessionMemory.loadSession();
+      if (sessionInfo.hasPrevSession) {
+        console.error(`[${SERVER_NAME}] ✅ Restored session (${sessionInfo.toolCallCount} previous tool calls)`);
+      }
+
+      // 2. Populate knowledge graph from session memory
+      try {
+        const { buildFromSessionMemory } = await import("./engine/kumaGraph.js");
+        const edgeCount = await buildFromSessionMemory();
+        if (edgeCount > 0) {
+          console.error(`[${SERVER_NAME}] ✅ Graph auto-populated with ${edgeCount} entries from session memory`);
+        }
+      } catch (err) {
+        console.error(`[${SERVER_NAME}] ⚠️ Graph auto-population: ${err}`);
+      }
+
+      // 3. Create/update session record in DB
+      try {
+        const { getDb, saveDb } = await import("./engine/kumaDb.js");
+        const db = await getDb();
+        db.run(
+          `INSERT INTO sessions (started_at, goal, tool_calls) VALUES (?, ?, ?)`,
+          [Math.floor(Date.now() / 1000), sessionMemory.getSummary().currentGoal || "Session start", sessionInfo.toolCallCount],
+        );
+        saveDb(db);
+      } catch (err) {
+        console.error(`[${SERVER_NAME}] ⚠️ Session DB record: ${err}`);
+      }
+
+      console.error(`[${SERVER_NAME}] ✅ Cold start bootstrap complete`);
+    } catch (err) {
+      console.error(`[${SERVER_NAME}] ⚠️ Cold start bootstrap error: ${err}`);
+    }
+  })();
+
   const server = new McpServer(
     {
       name: SERVER_NAME,

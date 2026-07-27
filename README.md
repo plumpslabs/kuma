@@ -4,7 +4,7 @@
 
 # Kuma
 
-**Safety-first context & orchestration engine for AI coding agents** · v2.2.8
+**Safety-first context & orchestration engine for AI coding agents**
 
 [![npm](https://img.shields.io/npm/v/@plumpslabs/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@plumpslabs/kuma)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

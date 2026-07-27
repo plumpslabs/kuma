@@ -34,6 +34,7 @@ interface SafetyCheckResult {
 /**
  * Run comprehensive safety checks on an action before execution.
  * This is the full version called by kuma_safety({ action: "check" }).
+ * Includes pre-edit safety hooks for large files/risky operations.
  */
 export async function safetyCheck(
   action: string,
@@ -107,6 +108,67 @@ export async function safetyCheck(
       });
     } catch {
       checks.push({ name: "Knowledge Graph Health", passed: true, detail: "⚠️ Could not check" });
+    }
+
+    // PRE-EDIT SAFETY HOOKS — Automatic warnings for risky operations
+    if (filePath) {
+      try {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const root = process.cwd();
+        const fullPath = path.resolve(root, filePath);
+
+        if (fs.existsSync(fullPath)) {
+          const stat = fs.statSync(fullPath);
+          const sizeKB = Math.round(stat.size / 1024);
+
+          // Hook 1: Large file warning (>500KB)
+          if (sizeKB > 500) {
+            checks.push({
+              name: "File Size Warning",
+              passed: false,
+              detail: `📏 File is ${sizeKB}KB — large file edits are risky`,
+            });
+          }
+
+          // Hook 2: Test file missing for source files
+          if (filePath.endsWith(".ts") || filePath.endsWith(".js")) {
+            const baseName = path.basename(filePath, path.extname(filePath));
+            const testPatterns = [
+              filePath.replace(/\.(ts|js)$/, ".test.$1"),
+              filePath.replace(/\.(ts|js)$/, ".spec.$1"),
+              filePath.replace(/^src\//, "tests/").replace(/\.(ts|js)$/, ".test.$1"),
+              `**/__tests__/**/${baseName}.test.${path.extname(filePath).slice(1)}`,
+            ];
+
+            let hasTests = false;
+            const fg = await import("fast-glob");
+            for (const pattern of testPatterns) {
+              const matches = await fg.default(pattern, { cwd: root, ignore: ["**/node_modules/**"] });
+              if (matches.length > 0) {
+                hasTests = true;
+                break;
+              }
+            }
+
+            if (!hasTests) {
+              checks.push({
+                name: "Tests Check",
+                passed: true, // Not a blocker, just informative
+                detail: `🧪 No test file found for "${path.basename(filePath)}" — consider adding tests`,
+              });
+            } else {
+              checks.push({
+                name: "Tests Check",
+                passed: true,
+                detail: "✅ Test file found",
+              });
+            }
+          }
+        }
+      } catch {
+        // Pre-edit hooks are non-critical
+      }
     }
 
     // Overall assessment
