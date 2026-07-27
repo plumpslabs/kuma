@@ -40,14 +40,15 @@ export function registerAllTools(server: McpServer): void {
   // ============================================================
   server.tool(
     "kuma_memory",
-    "Record and retrieve project knowledge. Actions: decision (ADR-style record/template/suggest), research_save (save research), session (session summary), heal (graph repair), search (search all), changes (change log), todo (persistent todo CRUD), context (inject context notes), benchmark (capture/diff metrics), decision_log (living document with status tracking).",
+    "Record and retrieve project knowledge. Actions: decision (ADR-style record/template/suggest), mine (mine historical decisions from git log & code comments), research_save (save research), session (session summary), heal (graph repair), search (search all), changes (change log), todo (persistent todo CRUD), context (inject context notes), benchmark (capture/diff metrics), decision_log (living document with status tracking).",
     {
-      action: z.enum(["decision", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log"]).describe("Memory action: decision=ADR, research_save=save, session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions"),
-      scope: z.string().optional().describe("Scope for research_save/search/todo/context"),
+      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save, session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions"),
+      scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / context"),
       record: z.string().optional().describe("JSON record string for research_save"),
       confidence: z.number().min(0).max(1).optional().describe("Confidence for research_save (0-1)"),
+      confirm: z.boolean().optional().describe("Confirm and record candidates automatically for mine action"),
       // Decision params
       decisionAction: z.enum(["template", "suggest", "record"]).optional().describe("Decision sub-action"),
       title: z.string().optional().describe("Decision/todo/benchmark title"),
@@ -83,6 +84,7 @@ export function registerAllTools(server: McpServer): void {
           content: params.content,
           record: params.record,
           confidence: params.confidence,
+          confirm: params.confirm,
           decisionAction: params.decisionAction,
           title: params.title,
           context: params.context,
@@ -106,9 +108,11 @@ export function registerAllTools(server: McpServer): void {
   // ============================================================
   server.tool(
     "kuma_safety",
-    "Safety checks, policy enforcement, security scanning, and project hygiene. Actions: guard (anti-pattern detection), check (pre-exec safety), audit (query trail), lock (multi-agent), health (score), security (scan for leaks), gc (garbage collection), doctor (health check), portability (path check), gitignore (auto-config), override (bypass).",
+    "Safety checks, policy enforcement, security scanning, integrated auto-verification, and project hygiene. Actions: guard (anti-pattern detection), verify (auto-run scoped tests), check (pre-exec safety), audit (query trail), lock (multi-agent), health (score), security (scan for leaks), gc (garbage collection), doctor (health check), portability (path check), gitignore (auto-config), override (bypass).",
     {
-      action: z.enum(["guard", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore"]).describe("Safety action: guard=anti-patterns, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, override=bypass"),
+      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, override=bypass"),
+      // Verify params
+      scope: z.string().optional().describe("Scope for verify or context (e.g. 'auth', file path)"),
       // Guard params
       guardGoal: z.string().optional().describe("Goal for guard check"),
       guardCheck: z.enum(["all", "anti-pattern", "loop", "drift", "context"]).optional().describe("Guard check type"),
@@ -136,6 +140,7 @@ export function registerAllTools(server: McpServer): void {
           guardGoal: params.guardGoal,
           guardCheck: params.guardCheck,
           filePath: params.filePath,
+          scope: params.scope,
           command: params.command,
           toolName: params.toolName,
           riskLevel: params.riskLevel,

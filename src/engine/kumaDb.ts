@@ -305,6 +305,20 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
+  // Proposal 1: Auto-Verification persistence
+  // ============================================================
+  db.run(`CREATE TABLE IF NOT EXISTS verifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,
+    runner TEXT NOT NULL,
+    test_command TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    output TEXT,
+    duration_ms INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  )`);
+
+  // ============================================================
   // Part 5 #7: Portability tracking
   // ============================================================
   db.run(`CREATE TABLE IF NOT EXISTS portability_entries (
@@ -843,3 +857,34 @@ export async function saveHealthSnapshot(score: number, riskLevel: string, check
     saveDb();
   } catch (err) { console.error(`[KumaDB] Failed to save health snapshot: ${err}`); }
 }
+
+export async function saveVerification(scope: string, runner: string, command: string, passed: boolean, output: string, durationMs = 0): Promise<void> {
+  try {
+    const db = await getDb();
+    db.run(`INSERT INTO verifications (scope, runner, test_command, passed, output, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`,
+      [scope, runner, command, passed ? 1 : 0, output, durationMs]);
+    saveDb();
+  } catch (err) { console.error(`[KumaDB] Failed to save verification: ${err}`); }
+}
+
+export async function getLatestVerifications(limit = 10): Promise<Array<{ id: number; scope: string; runner: string; test_command: string; passed: boolean; output: string; duration_ms: number; created_at: number }>> {
+  try {
+    const db = await getDb();
+    const res = db.exec(`SELECT id, scope, runner, test_command, passed, output, duration_ms, created_at FROM verifications ORDER BY created_at DESC LIMIT ${limit}`);
+    if (!res[0] || !res[0].values) return [];
+    return res[0].values.map((row) => ({
+      id: row[0] as number,
+      scope: row[1] as string,
+      runner: row[2] as string,
+      test_command: row[3] as string,
+      passed: Boolean(row[4]),
+      output: row[5] as string,
+      duration_ms: row[6] as number,
+      created_at: row[7] as number,
+    }));
+  } catch (err) {
+    console.error(`[KumaDB] Failed to get verifications: ${err}`);
+    return [];
+  }
+}
+

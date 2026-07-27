@@ -284,7 +284,7 @@ table tr:hover td { background: var(--gray-800); }
       <ellipse cx="50" cy="50" rx="10" ry="6" fill="#B45309"/>
       <path d="M35 58 Q50 72 65 58" stroke="#1F2937" stroke-width="3.5" fill="none" stroke-linecap="round"/>
     </svg>
-    <div><span>Kuma</span><small>v2.3.1</small></div>
+    <div><span>Kuma</span><small>v2.3.2</small></div>
   </a>
   <div class="sidebar-nav">
     <span class="sidebar-section">Getting Started</span>
@@ -427,6 +427,7 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     <thead><tr><th>Action</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>decision</code></td><td>ADR-style recording. Template, suggest, or record.</td></tr>
+      <tr><td><code>mine</code></td><td>Mine historical decisions from git log & inline comments.</td></tr>
       <tr><td><code>research_save</code></td><td>Save results to graph + <code>.kuma/research/</code></td></tr>
       <tr><td><code>session</code></td><td>Session summary — files, failures, progress.</td></tr>
       <tr><td><code>heal</code></td><td>Self-heal graph — stale detection, git repair.</td></tr>
@@ -440,6 +441,7 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     <thead><tr><th>Action</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>guard</code></td><td>Anti-pattern, drift, and tool-loop detection.</td></tr>
+      <tr><td><code>verify</code></td><td>Integrated auto-verification — auto-detect runner & run scoped tests.</td></tr>
       <tr><td><code>check</code></td><td>Pre-exec safety: policy, path, lock, risk.</td></tr>
       <tr><td><code>audit</code></td><td>Query audit trail with stats and overrides.</td></tr>
       <tr><td><code>lock</code></td><td>Multi-agent file locking.</td></tr>

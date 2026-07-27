@@ -135,14 +135,38 @@ export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScor
   const testFailures = allFailures.filter((f) => f.error.toLowerCase().includes("test") || f.error.toLowerCase().includes("fail"));
   const hasRunTests = stats.hasRunTests;
 
-  if (!hasRunTests) {
+  let latestVerif: { passed: boolean; scope: string; runner: string } | null = null;
+  try {
+    const { getLatestVerifications } = await import("./kumaDb.js");
+    const verifs = await getLatestVerifications(1);
+    if (verifs.length > 0) latestVerif = verifs[0];
+  } catch {}
+
+  if (!hasRunTests && !latestVerif) {
     checks.push({
       label: "Tests Status",
       status: "warn",
-      message: "No tests run yet this session",
+      message: "No tests run yet this session — run kuma_safety({ action: 'verify' })",
       weight: 10,
     });
     totalScore += 10;
+  } else if (latestVerif) {
+    if (latestVerif.passed) {
+      checks.push({
+        label: "Tests Status",
+        status: "pass",
+        message: `Auto-verified passed (${latestVerif.scope})`,
+        weight: 15,
+      });
+      totalScore += 15;
+    } else {
+      checks.push({
+        label: "Tests Status",
+        status: "fail",
+        message: `Auto-verification failed (${latestVerif.scope}) — fix before shipping`,
+        weight: 0,
+      });
+    }
   } else if (testFailures.length === 0 && unresolvedCount === 0) {
     checks.push({
       label: "Tests Status",

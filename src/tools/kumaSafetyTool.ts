@@ -5,7 +5,7 @@ import { acquireLock, releaseLock, listLocks, cleanStaleLocks } from "../engine/
 import { saveHealthSnapshot, getSecurityFindings, addSecurityFinding, runGarbageCollection, runDoctor, checkPortability, ensureGitignore } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
-type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore";
+type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -15,6 +15,8 @@ interface SafetyParams {
 
   filePath?: string;
   command?: string;
+  scope?: string;
+  force?: boolean;
 
   limit?: number;
   since?: number;
@@ -35,6 +37,7 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
 
   switch (action) {
     case "guard": return handleGuard(params);
+    case "verify": return handleVerify(params);
     case "check": return handleCheck(params);
     case "audit": return handleAudit(params);
     case "lock": return handleLock(params);
@@ -217,3 +220,18 @@ async function handleGitignore(_params: SafetyParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_safety_gitignore", {});
   return await ensureGitignore();
 }
+
+// ============================================================
+// VERIFY — Integrated Auto-Verification (Proposal 1)
+// ============================================================
+
+async function handleVerify(params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_verify", { scope: params.scope || params.filePath });
+  const { runAutoVerification } = await import("../engine/kumaVerifier.js");
+  return await runAutoVerification({
+    scope: params.scope || params.filePath,
+    force: params.force,
+    timeoutMs: 30000,
+  });
+}
+

@@ -122,6 +122,7 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 | Action | Use case |
 |--------|----------|
 | `decision` | ADR-style recording: template, suggest, or record. |
+| `mine` | Mine historical decisions from git log & inline code comments. |
 | `research_save` | Persist research to graph + `.kuma/research/<scope>.json`. |
 | `session` | "What happened this session?" — files, failures, progress. |
 | `heal` | Self-heal knowledge graph — stale detection, git repair. |
@@ -133,6 +134,7 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 | Action | Use case |
 |--------|----------|
 | `guard` | Anti-pattern, drift, tool-loop, and failure checks. |
+| `verify` | Integrated auto-verification — auto-detect runner & execute scoped tests. |
 | `check` | Pre-execution safety: policy, path, lock, risk level. |
 | `audit` | Query audit trail + stats + override log. |
 | `lock` | Multi-agent file locking. |

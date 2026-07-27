@@ -119,6 +119,21 @@ ADR-style decision recording.
 
 Sub-actions: `record` (save decision), `template` (show template), `suggest` (detect scope and suggest recording).
 
+#### `mine`
+
+Mine historical decisions from git log and inline code comments (`HACK`, `FIXME`, `TODO`, `XXX`, `WARNING`).
+
+```json
+{
+  "action": "mine",
+  "scope": "auth",
+  "since": "1 year",
+  "confirm": false
+}
+```
+
+Set `confirm: true` to confirm and record mined candidate decisions into the knowledge graph & decision log.
+
 #### `research_save`
 
 Save research results to graph + `.kuma/research/`.
@@ -215,6 +230,17 @@ Anti-pattern and drift detection.
 
 Check types: `anti-pattern`, `loop`, `drift`, `context`, `all`.
 
+#### `verify`
+
+Integrated auto-verification. Automatically detects project test runner and executes tests scoped to impact or file paths.
+
+```json
+{
+  "action": "verify",
+  "scope": "auth"
+}
+```
+
 #### `check`
 
 Pre-execution safety check.
@@ -290,6 +316,7 @@ Logged safety bypass.
 | `content` | `string?` | memory |
 | `record` | `string?` | memory |
 | `confidence` | `number (0-1)?` | memory |
+| `confirm` | `boolean?` | memory |
 | `decisionAction` | `enum?` | memory |
 | `title` | `string?` | memory |
 | `context` | `string?` | memory |

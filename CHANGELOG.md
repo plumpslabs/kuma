@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.3.2] — 2026-07-27
+
+### Integrated Auto-Verification & Decision Mining
+
+Kuma v2.3.2 introduces two major feature proposals for legacy codebases and automated agent verification workflows:
+
+- **Integrated Auto-Verification (`kuma_safety.verify`)**:
+  - Automatically detects project test runner (`pnpm`, `npm`, `yarn`, `pytest`, `cargo`, `go test`, `make`).
+  - Scopes test execution based on impacted nodes/edges or session modifications (`Fast-Glob` + graph traversal).
+  - Persists verification results to SQLite (`verifications` table) and enriches the project health score (`safetyScore.ts`).
+  - Fails loud on test failure to act as a blocker gate for AI agent workflows.
+
+- **Decision Mining from Git History (`kuma_memory.mine`)**:
+  - Mines historical decisions from `git log` commit messages (`fix`, `revert`, `hack`, `workaround`, `urgent`, `deprecated`) and inline code comments (`HACK`, `FIXME`, `TODO`, `XXX`, `WARNING`).
+  - Proposes candidates for confirmation before recording into `.kuma/memories/decisions.md` & Knowledge Graph.
+  - Solves the cold-start problem on legacy codebases by reconstructing historical context.
+
+---
+
 ## [2.3.1] — 2026-07-27
 
 ### Complete Post-Mortem Resolution — All 55 Issues Addressed

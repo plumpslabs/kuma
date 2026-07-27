@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine";
 
 interface MemoryParams {
   action: MemoryAction;
@@ -15,6 +15,7 @@ interface MemoryParams {
   content?: string;
   record?: string;
   confidence?: number;
+  confirm?: boolean;
 
   decisionAction?: "template" | "suggest" | "record";
   title?: string;
@@ -25,7 +26,7 @@ interface MemoryParams {
   topic?: string;
   goal?: string;
   limit?: number;
-  since?: number;
+  since?: number | string;
   target?: string;
 
   // Todo params
@@ -50,6 +51,7 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
 
   switch (action) {
     case "decision": return handleDecision(params);
+    case "mine": return handleMine(params);
     case "research_save": return handleResearchSave(params);
     case "session": return handleSession(params);
     case "heal": return handleHeal(params);
@@ -183,7 +185,8 @@ async function handleSearch(params: MemoryParams): Promise<string> {
 // ============================================================
 
 async function handleChanges(params: MemoryParams): Promise<string> {
-  return await getChanges({ filePath: params.target, since: params.since });
+  const sinceNum = typeof params.since === "number" ? params.since : typeof params.since === "string" ? parseInt(params.since, 10) || undefined : undefined;
+  return await getChanges({ filePath: params.target, since: sinceNum });
 }
 
 // ============================================================
@@ -269,3 +272,19 @@ async function handleDecisionLog(params: MemoryParams): Promise<string> {
   // Otherwise list decisions
   return await listDecisionLog(params.status);
 }
+
+// ============================================================
+// MINE — Decision Mining from Git History & Comments (Proposal 2)
+// ============================================================
+
+async function handleMine(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_mine", { scope: params.scope });
+  const { mineHistoricalDecisions } = await import("../engine/kumaMiner.js");
+  return await mineHistoricalDecisions({
+    scope: params.scope,
+    since: typeof params.since === "string" ? params.since : undefined,
+    confirm: params.confirm,
+    limit: params.limit,
+  });
+}
+

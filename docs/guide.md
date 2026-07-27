@@ -79,9 +79,12 @@ kuma_memory({
 })
 ```
 
-### Step 5: Record Decisions
+### Step 5: Record & Mine Decisions
+
+Record new decisions or mine historical decisions from git history & comments:
 
 ```bash
+# Record a new decision
 kuma_memory({
   action: "decision",
   decisionAction: "record",
@@ -90,11 +93,18 @@ kuma_memory({
   rationale: "No session store needed, mobile-compatible",
   outcome: "Implemented JwtPasswordResetService"
 })
+
+# Mine historical decisions from git history & comments
+kuma_memory({ action: "mine", scope: "auth" })
 ```
 
-### Step 6: Safety Guard
+### Step 6: Auto-Verification & Safety Guard
 
 ```bash
+# Run auto-verification on scoped tests
+kuma_safety({ action: "verify", scope: "auth" })
+
+# Check safety guard & anti-patterns
 kuma_safety({ action: "guard", guardGoal: "add password reset" })
 ```
 
