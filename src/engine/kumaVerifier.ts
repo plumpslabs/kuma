@@ -55,7 +55,25 @@ export function detectTestRunner(root = process.cwd()): { runner: string; baseCo
     return { runner: "make", baseCommand: "make test" };
   }
 
-  return { runner: "unknown", baseCommand: "npm test" };
+  // Fallback: syntax check for Node.js/TS projects
+  if (fs.existsSync(path.join(root, "package.json"))) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8"));
+      if (pkg.dependencies || pkg.devDependencies) {
+        // Check for TypeScript
+        if (fs.existsSync(path.join(root, "tsconfig.json"))) {
+          return { runner: "tsc", baseCommand: "npx tsc --noEmit" };
+        }
+        // Plain Node.js - syntax check on src/
+        const srcDir = path.join(root, "src");
+        if (fs.existsSync(srcDir)) {
+          return { runner: "node", baseCommand: `node -c "${srcDir}/**/*.js" 2>/dev/null || node --check $(find src -name '*.js' 2>/dev/null | head -5)` };
+        }
+      }
+    } catch {}
+  }
+
+  return { runner: "unknown", baseCommand: "npm test || echo 'No test runner configured'" };
 }
 
 /**

@@ -110,7 +110,7 @@ export function registerAllTools(server: McpServer): void {
     "kuma_safety",
     "Safety checks, policy enforcement, security scanning, integrated auto-verification, and project hygiene. Actions: guard (anti-pattern detection), verify (auto-run scoped tests), check (pre-exec safety), audit (query trail), lock (multi-agent), health (score), security (scan for leaks), gc (garbage collection), doctor (health check), portability (path check), gitignore (auto-config), override (bypass).",
     {
-      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, override=bypass"),
+      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore", "clean"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, clean=purge scratch dir & drift, override=bypass"),
       // Verify params
       scope: z.string().optional().describe("Scope for verify or context (e.g. 'auth', file path)"),
       // Guard params

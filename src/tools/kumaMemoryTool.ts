@@ -8,8 +8,70 @@ import { getProjectRoot } from "../utils/pathValidator.js";
 
 type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine";
 
+const MEMORY_ALIASES: Record<string, string> = {
+  // Session synonyms
+  "session": "session",
+  "summary": "session",
+  "status": "session",
+  "get": "session",
+  "read": "session",
+  "fetch": "session",
+  "current": "session",
+  // Decision synonyms
+  "decision": "decision",
+  "adr": "decision",
+  "record-decision": "decision",
+  // Research save synonyms
+  "research_save": "research_save",
+  "save": "research_save",
+  "store": "research_save",
+  "write": "research_save",
+  "persist": "research_save",
+  "cache": "research_save",
+  // Mine synonyms
+  "mine": "mine",
+  "mine-decisions": "mine",
+  "git-mine": "mine",
+  "dig": "mine",
+  // Heal synonyms
+  "heal": "heal",
+  "repair": "heal",
+  "fix-graph": "heal",
+  "clean-graph": "heal",
+  // Search synonyms
+  "search": "search",
+  "find": "search",
+  "query": "search",
+  "lookup": "search",
+  // Todo synonyms
+  "todo": "todo",
+  "task": "todo",
+  "todos": "todo",
+  "tasks": "todo",
+  // Context notes synonyms
+  "context": "context",
+  "notes": "context",
+  "note": "context",
+  "inject": "context",
+  "context-note": "context",
+  // Benchmark synonyms
+  "benchmark": "benchmark",
+  "perf": "benchmark",
+  "metrics": "benchmark",
+  "measure": "benchmark",
+  // Decision log synonyms
+  "decision_log": "decision_log",
+  "decisions": "decision_log",
+  "log": "decision_log",
+  "decision-log": "decision_log",
+  // Changes synonyms
+  "changes": "changes",
+  "change-log": "changes",
+  "history": "changes",
+};
+
 interface MemoryParams {
-  action: MemoryAction;
+  action?: MemoryAction;
   scope?: string;
   query?: string;
   content?: string;
@@ -46,8 +108,11 @@ interface MemoryParams {
 }
 
 export async function handleMemory(params: MemoryParams): Promise<string> {
-  const { action } = params;
-  sessionMemory.recordToolCall("kuma_memory", { action });
+  // Resolve action with default + aliases
+  const rawAction = params.action || "session";
+  const key = rawAction.toLowerCase().replace(/[\s_-]+/g, "-");
+  const action = MEMORY_ALIASES[key] || rawAction;
+  sessionMemory.recordToolCall("kuma_memory", { action: rawAction });
 
   switch (action) {
     case "decision": return handleDecision(params);

@@ -305,6 +305,39 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
+  // ============================================================
+  // Issue #11: Enterprise — OTel config, cost tracking, sync config
+  // ============================================================
+  db.run(`CREATE TABLE IF NOT EXISTS otel_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT,
+    service_name TEXT DEFAULT 'kuma',
+    enabled INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS cost_tracking (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER REFERENCES sessions(id),
+    tool_name TEXT NOT NULL,
+    token_estimate INTEGER DEFAULT 0,
+    cost_estimate REAL DEFAULT 0.0,
+    budget_limit REAL DEFAULT 0.0,
+    escalated INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  )`);
+
+  // ============================================================
+  // Issue #10: Scratch directory tracking
+  // ============================================================
+  db.run(`CREATE TABLE IF NOT EXISTS scratch_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL,
+    reason TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  )`);
+
+  // ============================================================
   // Proposal 1: Auto-Verification persistence
   // ============================================================
   db.run(`CREATE TABLE IF NOT EXISTS verifications (

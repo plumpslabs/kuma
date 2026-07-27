@@ -261,7 +261,20 @@ async function main(): Promise<void> {
         console.error(`[${SERVER_NAME}] ⚠️ Graph auto-population: ${err}`);
       }
 
-      // 3. Create/update session record in DB
+      // 3. Ensure .kuma/scratch/ directory exists (Issue #10)
+      try {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const scratchDir = path.resolve(process.cwd(), ".kuma", "scratch");
+        if (!fs.existsSync(scratchDir)) {
+          fs.mkdirSync(scratchDir, { recursive: true });
+          console.error(`[${SERVER_NAME}] ✅ Created .kuma/scratch/ for temporary debug artifacts`);
+        }
+      } catch (err) {
+        console.error(`[${SERVER_NAME}] ⚠️ Scratch directory setup: ${err}`);
+      }
+
+      // 4. Create/update session record in DB
       try {
         const { getDb, saveDb } = await import("./engine/kumaDb.js");
         const db = await getDb();

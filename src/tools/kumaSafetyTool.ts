@@ -5,7 +5,7 @@ import { acquireLock, releaseLock, listLocks, cleanStaleLocks } from "../engine/
 import { saveHealthSnapshot, getSecurityFindings, addSecurityFinding, runGarbageCollection, runDoctor, checkPortability, ensureGitignore } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
-type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify";
+type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -48,6 +48,7 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
     case "doctor": return handleDoctor(params);
     case "portability": return handlePortability(params);
     case "gitignore": return handleGitignore(params);
+    case "clean": return handleClean(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -219,6 +220,43 @@ async function handlePortability(_params: SafetyParams): Promise<string> {
 async function handleGitignore(_params: SafetyParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_safety_gitignore", {});
   return await ensureGitignore();
+}
+
+// ============================================================
+// CLEAN — Purge scratch directory & reset drift (Issue #10)
+// ============================================================
+
+async function handleClean(_params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_clean", {});
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const root = process.cwd();
+  const scratchDir = path.resolve(root, ".kuma", "scratch");
+  let removed = 0;
+  if (fs.existsSync(scratchDir)) {
+    try {
+      const entries = fs.readdirSync(scratchDir);
+      for (const entry of entries) {
+        const fullPath = path.join(scratchDir, entry);
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.isFile()) {
+            fs.unlinkSync(fullPath);
+            removed++;
+          } else if (stat.isDirectory()) {
+            fs.rmSync(fullPath, { recursive: true, force: true });
+            removed++;
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  // Also reset drift warnings in session
+  sessionMemory.setGoal(sessionMemory.getSummary().currentGoal as string || "cleaned");
+  const result = removed > 0
+    ? `🧹 **Scratch Clean** — Removed ${removed} item(s) from .kuma/scratch/`
+    : `🧹 **Scratch Clean** — No scratch files to clean.`;
+  return `${result}\n💡 Drift warnings have been reset. Any temporary debug artifacts are now cleared.`;
 }
 
 // ============================================================

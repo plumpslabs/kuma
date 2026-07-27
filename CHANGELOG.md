@@ -1,5 +1,60 @@
 # Changelog
 
+## [2.3.3] — 2026-07-27
+
+### Post-Mortem Batch #2 — 4 New Issues Fully Resolved
+
+Kuma v2.3.3 resolves 4 additional issues from GitHub Issues #8, #9, #10, #11.
+
+---
+
+### 🔧 Issue #8 — Auto-Detect Project Stack & Fallback Test Runners
+
+**`kuma_safety({ action: 'verify' })` now intelligently detects the project stack** and falls back gracefully:
+- Added `node -c` syntax check fallback for Node.js/TypeScript projects without test scripts
+- TypeScript projects auto-fallback to `npx tsc --noEmit` syntax checking
+- Returns informative message instead of crashing when no test runner is configured
+- See: `src/engine/kumaVerifier.ts`
+
+---
+
+### 🧭 Issue #9 — Default Action Fallbacks & Action Aliases
+
+**MCP tools are now resilient to missing or ambiguous action arguments:**
+- `kuma_context()` now defaults to `'init'` when no action is provided
+- `kuma_memory()` now defaults to `'session'` when no action is provided
+- Extensive alias maps for both tools (e.g., `'get'`/`'fetch'`/`'read'` → session, `'save'`/`'store'`/`'write'` → research_save, `'analyze'`/`'whatif'` → impact)
+- Aliases are normalized via `lowercase` + `kebab-case` matching for resilience
+- Prevents `MCP error -32602` enum validation failures
+- See: `src/tools/kumaContextTool.ts`, `src/tools/kumaMemoryTool.ts`
+
+---
+
+### 🧹 Issue #10 — Scratch Directory & Kuma Clean Action
+
+**Dedicated scratch directory for temporary debug artifacts:**
+- Auto-creates `.kuma/scratch/` on cold start bootstrap
+- Anti-pattern detector now skips `.kuma/scratch/` files, preventing false-positive `script-patching` drift warnings
+- New `kuma_safety({ action: 'clean' })` action purges scratch files and resets drift state
+- `scratch_entries` DB table for tracking scratch artifacts
+- See: `src/tools/kumaSafetyTool.ts`, `src/guards/antiPatternDetector.ts`, `src/index.ts`
+
+---
+
+### 🏗️ Issue #11 — RFC: Enterprise Architecture Roadmap
+
+**Enterprise roadmap document + foundational schema stubs:**
+- Created `docs/rfc-enterprise-roadmap.md` covering 4 enterprise capabilities:
+  - **Distributed Knowledge Graph Sync** (PostgreSQL/Redis/Neo4j adapters)
+  - **AST-Based Semantic Regression Guardrails** (per-language AST parsing)
+  - **OpenTelemetry & Observability Integration** (OTLP export to Prometheus/Grafana/Datadog)
+  - **Real-Time Token & Cost Guardrails** (per-session budget with escalation)
+- Added `otel_config` DB table for OTel endpoint configuration
+- Added `cost_tracking` DB table for token/cost budget tracking
+- Migration path with 6 phases defined
+
+---
+
 ## [2.3.2] — 2026-07-27
 
 ### Integrated Auto-Verification & Decision Mining

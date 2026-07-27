@@ -9,8 +9,48 @@ import crypto from "node:crypto";
 
 type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches";
 
+const CONTEXT_ALIASES: Record<string, ContextAction> = {
+  // Research synonyms
+  "research": "research",
+  "search": "research",
+  "explore": "research",
+  "inspect": "research",
+  // Impact synonyms
+  "analyze": "impact",
+  "impact": "impact",
+  "whatif": "impact",
+  "refactor": "impact",
+  // Navigate synonyms
+  "trace": "navigate",
+  "flow": "navigate",
+  "navigate": "navigate",
+  // Init synonyms
+  "init": "init",
+  "start": "init",
+  "load": "init",
+  "brief": "init",
+  "project": "init",
+  "summary": "init",
+  // Changes synonyms
+  "changes": "changes",
+  "log": "changes",
+  "history": "changes",
+  // Health synonyms
+  "health": "health",
+  "score": "health",
+  "status": "health",
+  // Rollback synonyms
+  "rollback": "rollback",
+  "undo": "rollback",
+  "revert": "rollback",
+  // Researches synonyms
+  "researches": "researches",
+  "research-list": "researches",
+  "list-research": "researches",
+};
+
 interface ContextParams {
-  action: ContextAction;
+  action?: ContextAction | string;
   scope?: string;
   target?: string;
   goal?: string;
@@ -19,7 +59,10 @@ interface ContextParams {
 }
 
 export async function handleContext(params: ContextParams): Promise<string> {
-  const { action } = params;
+  // Resolve action with default + aliases
+  const rawAction = params.action || "init";
+  const resolvedAction = CONTEXT_ALIASES[rawAction.toLowerCase()] || rawAction;
+  const action = resolvedAction as ContextAction;
 
   switch (action) {
     case "init": return handleInit(params);

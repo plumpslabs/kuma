@@ -53,10 +53,10 @@ function findPatchScripts(projectRoot: string): GuardWarning[] {
     const ext = path.extname(file).toLowerCase();
     if (!SCRIPT_EXTENSIONS.includes(ext)) continue;
 
-    // Skip files in src/, tests/, node_modules/
+    // Skip files in src/, tests/, node_modules/, .kuma/, and scratch/
     const relativePath = path.relative(projectRoot, file);
     if (relativePath.startsWith("src") || relativePath.startsWith("test")
-        || relativePath.startsWith("node_modules") || relativePath.startsWith(".")) {
+        || relativePath.startsWith("node_modules") || relativePath.startsWith(".") || relativePath.startsWith(".kuma/scratch")) {
       continue;
     }
 
