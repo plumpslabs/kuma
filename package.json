@@ -14,7 +14,7 @@
     "packages/ide/studio/public/"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --clean --out-dir dist",
+    "build": "tsup src/index.ts --format esm --no-splitting --clean --out-dir dist",
     "build:studio": "cd packages/ide/studio && tsup src/index.ts --format esm --clean --out-dir dist",
     "build:all": "pnpm run build && pnpm run build:studio",
     "dev": "tsup src/index.ts --format esm --watch --out-dir dist",

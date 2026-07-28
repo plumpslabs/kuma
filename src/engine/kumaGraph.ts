@@ -5,7 +5,7 @@
 // Stored in SQLite. Supports impact analysis, flow navigation,
 // research queries, and confidence-weighted traversal.
 
-import { getDb, saveDb } from "./kumaDb.js";
+import { getDb, saveDb, flushDb } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
@@ -357,6 +357,7 @@ export async function recordDomainFlow(params: {
       }
     }
 
+    flushDb();
     return { nodeCount, edgeCount };
   } catch (err) {
     console.error(`[KumaGraph] Failed to record domain flow: ${err}`);

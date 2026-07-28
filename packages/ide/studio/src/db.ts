@@ -47,7 +47,7 @@ export function getDashboardData() {
       )
     `),
     nodes: queryJson(
-      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path)) FROM nodes ORDER BY created_at DESC`
+      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path)) FROM nodes ORDER BY updated_at DESC`
     ),
     edges: queryJson(
       `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type)) FROM edges`
