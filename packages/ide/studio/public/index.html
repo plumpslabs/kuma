@@ -80,10 +80,11 @@ header .status .dot.off { background: var(--red); }
 .legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; color: #f1f5f9; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 #graph-tooltip {
-  position: absolute; display: none; background: rgba(22,33,62,0.95);
+  position: absolute; display: none; background: rgba(15, 23, 42, 0.96);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
-  font-size: 12px; z-index: 20; max-width: 320px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+  font-size: 12px; z-index: 20; max-width: 420px; word-break: break-all;
+  overflow-wrap: anywhere; white-space: normal; color: #f8fafc;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6); backdrop-filter: blur(12px);
   pointer-events: none;
 }
 #search-box {
@@ -292,7 +293,7 @@ function renderGraph(data) {
     return {
       id: n.id,
       label: label,
-      title: '<b>' + n.name + '</b> <span style="color:#888">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#06b6d4;font-size:11px">' + n.file_path + '</span>' : ''),
+      title: '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:380px;white-space:normal;line-height:1.4;padding:2px"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>',
       color: { background: color, border: color, highlight: { background: color, border: '#ffffff' } },
       shape: shapes[n.type] || 'dot',
       font: { color: '#ffffff', size: Math.min(14, Math.max(11, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
@@ -416,8 +417,8 @@ function renderGraph(data) {
       var n = allNodes.find(function(x){return x.id===selectedId});
       if (n) {
         tip.style.display = 'block';
-        tip.innerHTML = '<b>' + n.name + '</b> <span style="color:var(--muted)">' + n.type + '</span>' +
-          (n.file_path ? '<br><span style="color:var(--accent2);font-size:11px;word-break:break-all">' + n.file_path + '</span>' : '');
+        tip.innerHTML = '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:390px;white-space:normal;line-height:1.4"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' +
+          (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>';
         // Position tooltip near the clicked node
         var pos = network.getPositions([n.id]);
         if (pos && pos[n.id]) {
