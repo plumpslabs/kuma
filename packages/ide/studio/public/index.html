@@ -71,13 +71,13 @@ header .status .dot.off { background: var(--red); }
 .health-item .meta { font-size: 11px; color: var(--muted); }
 .empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
 #legend {
-  position: absolute; bottom: 16px; left: 16px; background: rgba(22,33,62,0.92);
+  position: absolute; bottom: 16px; left: 16px; background: rgba(22,33,62,0.95);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
   font-size: 11px; z-index: 10; max-height: 200px; overflow-y: auto;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px); color: #f8fafc;
 }
-#legend .title { font-weight: 600; margin-bottom: 6px; color: var(--muted); }
-.legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+#legend .title { font-weight: 600; margin-bottom: 6px; color: #94a3b8; }
+.legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; color: #f1f5f9; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 #graph-tooltip {
   position: absolute; display: none; background: rgba(22,33,62,0.95);
@@ -250,12 +250,32 @@ function renderGraph(data) {
   }
 
   var types = [...new Set(allNodes.map(function(n){return n.type||'unknown'}))];
-  var colors = {feature_domain:'#ef4444',workflow:'#3b82f6',cross_service_link:'#10b981',
-    function:'#7c3aed',class:'#06b6d4',module:'#22c55e',
-    component:'#f97316',file:'#eab308',route:'#ec4899',test:'#14b8a6'};
-  var shapes = {feature_domain:'star',workflow:'ellipse',cross_service_link:'box',
-    function:'box',class:'hexagon',module:'ellipse',
-    component:'diamond',file:'square',route:'triangle',test:'star'};
+  var colors = {
+    feature_domain: '#dc2626',
+    workflow: '#2563eb',
+    cross_service_link: '#059669',
+    function: '#7c3aed',
+    class: '#0891b2',
+    module: '#16a34a',
+    component: '#ea580c',
+    file: '#d97706',
+    route: '#db2777',
+    test: '#0d9488',
+    variable: '#4f46e5'
+  };
+  var shapes = {
+    feature_domain: 'star',
+    workflow: 'ellipse',
+    cross_service_link: 'box',
+    function: 'box',
+    class: 'hexagon',
+    module: 'ellipse',
+    component: 'diamond',
+    file: 'box',
+    route: 'triangle',
+    test: 'star',
+    variable: 'ellipse'
+  };
 
   // Limit nodes for performance if > 200
   var maxNodes = 300;
@@ -265,20 +285,17 @@ function renderGraph(data) {
     displayNodes = allNodes.slice(0, maxNodes);
   }
 
-  var lightTypes = ["module", "file", "class", "cross_service_link", "component", "test", "variable", "route"];
-
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
     var label = truncateLabel(n.name, 28);
     var size = calcNodeSize(n.name, n.type);
-    var color = colors[n.type] || '#888';
-    var textColor = lightTypes.indexOf(n.type) !== -1 ? '#0f172a' : '#ffffff';
+    var color = colors[n.type] || '#64748b';
     return {
       id: n.id,
       label: label,
       title: '<b>' + n.name + '</b> <span style="color:#888">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#06b6d4;font-size:11px">' + n.file_path + '</span>' : ''),
-      color: { background: color, border: color, highlight: { background: color, border: '#fff' } },
+      color: { background: color, border: color, highlight: { background: color, border: '#ffffff' } },
       shape: shapes[n.type] || 'dot',
-      font: { color: textColor, size: Math.min(14, Math.max(11, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
+      font: { color: '#ffffff', size: Math.min(14, Math.max(11, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
       borderWidth: 0,
       size: size,
       mass: 1 + (size / 40),
