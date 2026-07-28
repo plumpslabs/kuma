@@ -266,16 +266,16 @@ function renderGraph(data) {
   };
   var shapes = {
     feature_domain: 'star',
-    workflow: 'ellipse',
+    workflow: 'box',
     cross_service_link: 'box',
     function: 'box',
-    class: 'hexagon',
-    module: 'ellipse',
-    component: 'diamond',
+    class: 'box',
+    module: 'box',
+    component: 'box',
     file: 'box',
-    route: 'triangle',
+    route: 'box',
     test: 'star',
-    variable: 'ellipse'
+    variable: 'box'
   };
 
   // Limit nodes for performance if > 200
@@ -287,7 +287,7 @@ function renderGraph(data) {
   }
 
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
-    var label = truncateLabel(n.name, 28);
+    var label = truncateLabel(n.name, 36);
     var size = calcNodeSize(n.name, n.type);
     var color = colors[n.type] || '#64748b';
     return {
@@ -387,9 +387,10 @@ function renderGraph(data) {
     },
     nodes: {
       borderWidth: 0,
-      font: { color: '#e0e0e0', size: 12, face: 'monospace' },
-      margin: { top: 4, bottom: 4, left: 6, right: 6 },
-      shadow: { enabled: true, color: 'rgba(124,58,237,0.15)', size: 6, x: 0, y: 2 },
+      font: { color: '#ffffff', size: 13, face: 'sans-serif', bold: 'true' },
+      margin: { top: 10, bottom: 10, left: 16, right: 16 },
+      shapeProperties: { borderRadius: 8 },
+      shadow: { enabled: true, color: 'rgba(0,0,0,0.4)', size: 8, x: 0, y: 3 },
     },
     edges: {
       smooth: { type: 'continuous', roundness: 0.3 },
