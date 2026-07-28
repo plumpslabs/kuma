@@ -14,6 +14,15 @@ const DB_FILENAME = "kuma.db";
 let dbInstance: SqlJsDatabase | null = null;
 let initPromise: Promise<SqlJsDatabase> | null = null;
 
+/**
+ * Reset the cached dbInstance so the next getDb() call reloads from disk.
+ * Used by checkpoint rollback to restore DB from snapshot.
+ */
+export function resetDbInstance(): void {
+  dbInstance = null;
+  initPromise = null;
+}
+
 export async function getDb(): Promise<SqlJsDatabase> {
   if (dbInstance) return dbInstance;
   if (initPromise) return initPromise;

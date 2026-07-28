@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "federated" | "gen_test" | "trajectory" | "skills";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -88,6 +88,24 @@ const MEMORY_ALIASES: Record<string, string> = {
   "layers": "layers",
   "3-layer": "layers",
   "memory-layers": "layers",
+  // Federated synonyms (Issue #27)
+  "federated": "federated",
+  "federated-graph": "federated",
+  "kuma-uri": "federated",
+  "remote-graph": "federated",
+  // Test generation synonyms (Issue #28)
+  "gen_test": "gen_test",
+  "gen-test": "gen_test",
+  "generate-test": "gen_test",
+  "gentest": "gen_test",
+  // Trajectory synonyms
+  "trajectory": "trajectory",
+  "trajectories": "trajectory",
+  "traj": "trajectory",
+  // Skills synonyms
+  "skills": "skills",
+  "distilled-skills": "skills",
+  "skill-list": "skills",
 };
 
 interface MemoryParams {
@@ -125,6 +143,9 @@ interface MemoryParams {
   label?: string;
   metrics?: string;
   labelB?: string;
+
+  // Federated params (#27)
+  uri?: string;
 }
 
 export async function handleMemory(params: MemoryParams): Promise<string> {
@@ -150,6 +171,10 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "arch_flow": return handleLayerAction("arch_flow", params);
     case "gotcha": return handleGotchaAction(params);
     case "layers": return handleLayersSummary(params);
+    case "federated": return handleFederated(params);
+    case "gen_test": return handleGenTest(params);
+    case "trajectory": return handleTrajectoryList(params);
+    case "skills": return handleSkillsList(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -428,6 +453,65 @@ async function handleGotchaAction(params: MemoryParams): Promise<string> {
     filePath: params.scope,
     severity: params.status,
   });
+}
+
+// ============================================================
+// FEDERATED — Federated Knowledge Graph (Issue #27)
+// ============================================================
+
+async function handleFederated(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_federated", { scope: params.scope, uri: params.uri });
+
+  // If URI provided, resolve it
+  if (params.uri) {
+    const { resolveFederatedNode } = await import("../engine/kumaGraph.js");
+    return await resolveFederatedNode(params.uri);
+  }
+
+  // List federated references
+  const { listFederatedReferences } = await import("../engine/kumaGraph.js");
+  return await listFederatedReferences();
+}
+
+// ============================================================
+// GEN_TEST — Trajectory-to-Test Generator (Issue #28)
+// ============================================================
+
+async function handleGenTest(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_gen_test", { target: params.target });
+
+  // If target is a trajectory ID, generate test from it
+  if (params.target) {
+    const id = parseInt(params.target, 10);
+    if (!isNaN(id)) {
+      const { generateTestFromTrajectoryId } = await import("../engine/kumaTrajectory.js");
+      return await generateTestFromTrajectoryId(id);
+    }
+  }
+
+  // List generated tests
+  const { listGeneratedTests } = await import("../engine/kumaTrajectory.js");
+  return await listGeneratedTests();
+}
+
+// ============================================================
+// TRAJECTORY — List trajectories
+// ============================================================
+
+async function handleTrajectoryList(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_trajectory", {});
+  const { listTrajectories } = await import("../engine/kumaTrajectory.js");
+  return await listTrajectories(params.limit || 10);
+}
+
+// ============================================================
+// SKILLS — List distilled skills
+// ============================================================
+
+async function handleSkillsList(_params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_skills", {});
+  const { listDistilledSkills } = await import("../engine/kumaTrajectory.js");
+  return await listDistilledSkills();
 }
 
 // ============================================================

@@ -11,12 +11,13 @@ export function registerAllTools(server: McpServer): void {
     "kuma_context",
     "**Call FIRST every session.** Understand your project before making changes. Actions: init (load project brief), research (5-step pipeline: cache→staleness→graph→impact→decision), impact (analyze change effects), navigate (trace code flow), changes (view change log), health (project health score 0-100). RESEARCH IS REQUIRED before editing unfamiliar code.",
     {
-      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize", "digest", "drift"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, digest=ultra-compact <500 token project briefing (Issue #18), drift=detect memory staleness & code drift (Issue #20), health=project health score"),
-      scope: z.string().optional().describe("Research scope for research action (e.g. 'auth', 'database', 'api')"),
+      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize", "digest", "drift", "progressive"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, digest=ultra-compact <500 token project briefing (Issue #18), drift=detect memory staleness & code drift (Issue #20), progressive=progressive context loading (Issue #25), health=project health score"),
+      scope: z.string().optional().describe("Research scope for research/progressive action"),
       target: z.string().optional().describe("Target symbol/file for impact/navigate/changes"),
       goal: z.string().optional().describe("Current goal (for init/health)"),
       since: z.number().optional().describe("Unix timestamp filter for changes"),
       compact: z.boolean().optional().default(false).describe("Compact output mode"),
+      section: z.string().optional().describe("Context section for progressive action (domain_rules, architecture, gotchas, decisions, graph, changes, health)"),
     },
     async (params) => {
       try {
@@ -27,6 +28,7 @@ export function registerAllTools(server: McpServer): void {
           goal: params.goal,
           since: params.since,
           compact: params.compact,
+          section: params.section,
         });
         return { content: [{ type: "text", text }] };
       } catch (err) {
@@ -42,8 +44,8 @@ export function registerAllTools(server: McpServer): void {
     "kuma_memory",
     "Record and retrieve project knowledge. Actions: decision (ADR-style record/template/suggest), mine (mine historical decisions from git log & code comments), research_save (save research), session (session summary), heal (graph repair), search (search all), changes (change log), todo (persistent todo CRUD), context (inject context notes), benchmark (capture/diff metrics), decision_log (living document with status tracking).",
     {
-      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save, session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules (Issue #17), arch_flow=Layer 2 architecture flow (Issue #17), gotcha=Layer 3 known gotchas (Issue #17/#21), layers=all 3 layers summary"),
-      scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine"),
+      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers", "federated", "gen_test", "trajectory", "skills"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save, session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules (Issue #17), arch_flow=Layer 2 architecture flow (Issue #17), gotcha=Layer 3 known gotchas (Issue #17/#21), layers=all 3 layers summary, federated=resolve federated kuma:// URI (Issue #27), gen_test=generate test from trajectory (Issue #28), trajectory=list trajectories, skills=list distilled skills"),
+      scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine/federated"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / context"),
       record: z.string().optional().describe("JSON record string for research_save"),
@@ -59,7 +61,7 @@ export function registerAllTools(server: McpServer): void {
       healAction: z.enum(["check", "heal"]).optional().describe("Heal sub-action"),
       topic: z.string().optional().describe("Memory topic for session"),
       limit: z.number().min(1).max(100).optional().describe("Result limit"),
-      target: z.string().optional().describe("File path for changes / decision_log ID"),
+      target: z.string().optional().describe("File path for changes / decision_log ID / trajectory ID"),
       since: z.number().optional().describe("Timestamp filter for changes"),
       compact: z.boolean().optional().default(false).describe("Compact output mode"),
       // Todo params
@@ -74,6 +76,8 @@ export function registerAllTools(server: McpServer): void {
       label: z.string().optional().describe("Benchmark label"),
       metrics: z.string().optional().describe("Benchmark metrics JSON"),
       labelB: z.string().optional().describe("Second benchmark label for diff"),
+      // Federated params (#27)
+      uri: z.string().optional().describe("Federated URI (kuma://project/node-id)"),
     },
     async (params) => {
       try {
@@ -95,6 +99,7 @@ export function registerAllTools(server: McpServer): void {
           limit: params.limit,
           target: params.target,
           since: params.since,
+          uri: params.uri,
         });
         return { content: [{ type: "text", text }] };
       } catch (err) {
@@ -110,14 +115,14 @@ export function registerAllTools(server: McpServer): void {
     "kuma_safety",
     "Safety checks, policy enforcement, security scanning, integrated auto-verification, and project hygiene. Actions: guard (anti-pattern detection), verify (auto-run scoped tests), check (pre-exec safety), audit (query trail), lock (multi-agent), health (score), security (scan for leaks), gc (garbage collection), doctor (health check), portability (path check), gitignore (auto-config), override (bypass).",
     {
-      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore", "clean", "policy", "ast", "validate"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, clean=purge scratch dir & drift, policy=Policy-as-Code engine (Issue #24), ast/validate=AST-based code validation (Issue #22), override=bypass"),
+      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore", "clean", "policy", "ast", "validate", "checkpoint", "rollback_label", "checkpoint_list", "contract"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, clean=purge scratch dir & drift, policy=Policy-as-Code engine (Issue #24), ast/validate=AST-based code validation (Issue #22), checkpoint=create atomic snapshot (Issue #29), rollback_label=restore from checkpoint (Issue #29), checkpoint_list=list checkpoints, contract=run contract checks (Issue #26), override=bypass"),
       // Verify params
       scope: z.string().optional().describe("Scope for verify or context (e.g. 'auth', file path)"),
       // Guard params
       guardGoal: z.string().optional().describe("Goal for guard check"),
       guardCheck: z.enum(["all", "anti-pattern", "loop", "drift", "context"]).optional().describe("Guard check type"),
       // Check params
-      filePath: z.string().optional().describe("File path for check/lock/security scan"),
+      filePath: z.string().optional().describe("File path for check/lock/security scan/contract"),
       command: z.string().optional().describe("Command for check"),
       // Audit params
       toolName: z.string().optional().describe("Filter audit by tool name"),
@@ -132,6 +137,11 @@ export function registerAllTools(server: McpServer): void {
       // Override params
       reason: z.string().optional().describe("Reason for safety override"),
       compact: z.boolean().optional().default(false).describe("Compact output mode"),
+      // Checkpoint params (#29)
+      label: z.string().optional().describe("Checkpoint label for checkpoint/rollback_label actions"),
+      description: z.string().optional().describe("Description for checkpoint"),
+      // Contract params (#26)
+      phase: z.enum(["pre", "post"]).optional().describe("Contract check phase"),
     },
     async (params) => {
       try {
@@ -151,6 +161,9 @@ export function registerAllTools(server: McpServer): void {
           lockFilePath: params.lockFilePath,
           agentId: params.agentId,
           reason: params.reason,
+          label: params.label,
+          description: params.description,
+          phase: params.phase,
         });
         return { content: [{ type: "text", text }] };
       } catch (err) {

@@ -5,7 +5,7 @@ import { acquireLock, releaseLock, listLocks, cleanStaleLocks } from "../engine/
 import { saveHealthSnapshot, getSecurityFindings, addSecurityFinding, runGarbageCollection, runDoctor, checkPortability, ensureGitignore } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
-type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean" | "policy" | "ast" | "validate";
+type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean" | "policy" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "contract";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -29,6 +29,9 @@ interface SafetyParams {
   agentId?: string;
 
   reason?: string;
+  label?: string;
+  description?: string;
+  phase?: "pre" | "post";
 }
 
 export async function handleSafety(params: SafetyParams): Promise<string> {
@@ -52,6 +55,10 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
     case "policy": return handlePolicy(params);
     case "ast":
     case "validate": return handleAstValidation(params);
+    case "checkpoint": return handleCheckpoint(params);
+    case "rollback_label": return handleRollbackLabel(params);
+    case "checkpoint_list": return handleCheckpointList(params);
+    case "contract": return handleContract(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -335,6 +342,54 @@ async function handleAstValidation(params: SafetyParams): Promise<string> {
 }
 
 
+
+// ============================================================
+// CHECKPOINT — Atomic Sandbox Checkpoint & Rollback (Issue #29)
+// ============================================================
+
+async function handleCheckpoint(params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_checkpoint", { label: params.label });
+  if (!params.label) return "⚠️ label parameter required. Example: kuma_safety({ action: 'checkpoint', label: 'pre-feature-x' })";
+  const { createCheckpoint } = await import("../engine/kumaCheckpoint.js");
+  return await createCheckpoint(params.label, params.description);
+}
+
+async function handleRollbackLabel(params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_rollback_label", { label: params.label });
+  if (!params.label) return "⚠️ label parameter required. Example: kuma_safety({ action: 'rollback_label', label: 'pre-feature-x' })";
+  const { rollbackToCheckpoint } = await import("../engine/kumaCheckpoint.js");
+  return await rollbackToCheckpoint(params.label);
+}
+
+async function handleCheckpointList(_params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_checkpoint_list", {});
+  const { listCheckpoints } = await import("../engine/kumaCheckpoint.js");
+  return listCheckpoints();
+}
+
+// ============================================================
+// CONTRACT — Agent Contract Testing (Issue #26)
+// ============================================================
+
+async function handleContract(params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_contract", {
+    toolName: params.toolName || "edit",
+    filePath: params.filePath,
+    phase: params.phase || "pre",
+  });
+  const { runContractChecks, listContracts } = await import("../engine/kumaContractEngine.js");
+
+  // If no file path, list contracts
+  if (!params.filePath && !params.toolName) {
+    return listContracts();
+  }
+
+  return await runContractChecks(
+    params.toolName || "edit",
+    params.filePath,
+    params.phase || "pre",
+  );
+}
 
 // ============================================================
 // VERIFY — On-Demand Test Verification (SAFETY-GUARDED)

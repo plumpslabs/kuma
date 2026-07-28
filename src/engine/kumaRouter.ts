@@ -1,5 +1,7 @@
-import { handleContext } from "../tools/kumaContextTool.js";
-import { handleMemory } from "../tools/kumaMemoryTool.js";
-import { handleSafety } from "../tools/kumaSafetyTool.js";
+// ============================================================
+// KUMA ROUTER — Re-exports all tool handler functions
+// ============================================================
 
-export { handleContext, handleMemory, handleSafety };
+export { handleContext } from "../tools/kumaContextTool.js";
+export { handleMemory } from "../tools/kumaMemoryTool.js";
+export { handleSafety } from "../tools/kumaSafetyTool.js";

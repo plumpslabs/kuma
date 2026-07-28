@@ -7,7 +7,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift";
+type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift" | "progressive";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   // Research synonyms
@@ -72,6 +72,11 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "staleness": "drift",
   "code-drift": "drift",
   "freshness": "drift",
+  // Progressive context synonyms (Issue #25)
+  "progressive": "progressive",
+  "prog": "progressive",
+  "section": "progressive",
+  "sectional": "progressive",
 };
 
 interface ContextParams {
@@ -81,6 +86,7 @@ interface ContextParams {
   goal?: string;
   since?: number;
   compact?: boolean;
+  section?: string;
 }
 
 export async function handleContext(params: ContextParams): Promise<string> {
@@ -102,7 +108,8 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "visualize": return handleVisualize(params);
     case "digest": return handleDigest(params);
     case "drift": return handleDrift(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize, digest, drift`;
+    case "progressive": return handleProgressive(params);
+    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize, digest, drift, progressive`;
   }
 }
 
@@ -535,6 +542,54 @@ async function handleDrift(_params: ContextParams): Promise<string> {
     return formatDriftReport(records);
   } catch (err) {
     return `Error detecting drift: ${err}`;
+  }
+}
+
+// ============================================================
+// PROGRESSIVE — Progressive Context Loading (Issue #25)
+// ============================================================
+
+async function handleProgressive(params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_progressive", { scope: params.scope, section: params.section });
+  try {
+    const { getProgressiveContext, loadSection } = await import("../engine/kumaProgressiveContext.js");
+
+    // If section is specified, load only that section
+    if (params.section) {
+      const validSections = ["domain_rules", "architecture", "gotchas", "decisions", "graph", "changes", "health"];
+      if (!validSections.includes(params.section)) {
+        return `⚠️ Invalid section "${params.section}". Valid sections: ${validSections.join(", ")}`;
+      }
+      const content = await loadSection(params.section as any, params.scope);
+      return [
+        `🧩 **Progressive Context** — Section: ${params.section}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        "",
+        content,
+      ].join("\n");
+    }
+
+    // Full progressive: meta + relevant sections
+    const result = await getProgressiveContext(params.scope);
+    const lines: string[] = [
+      "🧩 **Progressive Context**",
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      "",
+      `📋 **Meta**: ${result.meta}`,
+      `🔗 **Skill Boundary**: ${result.boundary.name} — ${result.boundary.description}`,
+      "",
+    ];
+
+    for (const section of result.sections) {
+      lines.push(section.content);
+      lines.push("");
+    }
+
+    lines.push("💡 Use kuma_context({ action: 'progressive', section: 'gotchas', scope: 'auth' }) to load specific context on demand.");
+
+    return lines.join("\n");
+  } catch (err) {
+    return `Error generating progressive context: ${err}`;
   }
 }
 
