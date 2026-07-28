@@ -325,7 +325,8 @@ function renderGraph(data) {
   displayNodes.forEach(function(n) {
     if (n.type === 'cross_service_link') {
       var cleanName = n.name.toLowerCase().trim();
-      nameToLinkIds[cleanName] = n.id;
+      if (!nameToLinkIds[cleanName]) nameToLinkIds[cleanName] = [];
+      nameToLinkIds[cleanName].push(n.id);
     }
   });
 
@@ -334,11 +335,13 @@ function renderGraph(data) {
       var fn = n.name.toLowerCase().trim();
       Object.keys(nameToLinkIds).forEach(function(linkName) {
         if (fn.includes(linkName) || linkName.includes(fn)) {
-          var targetLinkId = nameToLinkIds[linkName];
-          edgeList.push({
-            source: n.id,
-            target: targetLinkId,
-            relation: 'contains'
+          var targetLinkIds = nameToLinkIds[linkName];
+          targetLinkIds.forEach(function(linkId) {
+            edgeList.push({
+              source: n.id,
+              target: linkId,
+              relation: 'contains'
+            });
           });
         }
       });
