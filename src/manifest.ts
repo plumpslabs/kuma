@@ -11,7 +11,7 @@ export function registerAllTools(server: McpServer): void {
     "kuma_context",
     "**Call FIRST every session.** Understand your project before making changes. Actions: init (load project brief), research (5-step pipeline: cache→staleness→graph→impact→decision), impact (analyze change effects), navigate (trace code flow), changes (view change log), health (project health score 0-100). RESEARCH IS REQUIRED before editing unfamiliar code.",
     {
-      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, health=project health score"),
+      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, health=project health score"),
       scope: z.string().optional().describe("Research scope for research action (e.g. 'auth', 'database', 'api')"),
       target: z.string().optional().describe("Target symbol/file for impact/navigate/changes"),
       goal: z.string().optional().describe("Current goal (for init/health)"),

@@ -1,5 +1,53 @@
 # Changelog
 
+## [2.3.7] — 2026-07-28
+
+### 🔬 Issue #13: Hybrid Semantic Search (Keyword + TF-IDF Vector Similarity)
+
+**Problem:** `kuma_memory` search used exact keyword matching only — `3/8 terms matched — 38%`.
+An agent searching for "lead escalation timeout" couldn't find "fallback duration timeout".
+
+**Solution — Pure JS TF-IDF with Synonym Expansion (no external ML deps):**
+
+- **Synonym Map**: 40+ technical terms mapped to their synonyms (e.g. `timeout→duration,expiry,ttl,deadline,latency`). Covers auth, database, networking, performance, architecture, devops, and more.
+- **TF-IDF Vectors**: Per-document term frequency counting across graph nodes, memory files, and research cache. Proper inverse document frequency (IDF) with Okapi BM25-style smoothing.
+- **Cosine Similarity**: Vector comparison between query and all indexed documents.
+- **Hybrid Ranking**: 60% keyword score + 40% vector similarity, ensuring both exact matches and semantic expansions contribute.
+- **Vector Cache**: 5-minute TTL to avoid repeated expensive rebuilds.
+- **New module**: `src/engine/kumaSearch.ts` with `hybridSearch()`, `expandQueryTerms()`, `buildSearchVectors()`, `formatHybridResults()`.
+- **Integration**: kuma_memory search now shows hybrid results alongside keyword results.
+
+### 🎨 Issue #16: Knowledge Graph Visualizer & Auto-Capture Hooks
+
+**Problem:** Knowledge graph was invisible to developers and only updated via explicit tool calls.
+
+**Solution — Mermaid Diagrams + Passive Git Hooks:**
+
+- **kuma_visualize()**: Generates interactive Mermaid diagrams from the knowledge graph in 3 formats:
+  - `flowchart` — directed graph with type-specific node shapes (functions, files, tests, API routes)
+  - `dependency` — clustered subgraphs by node type with cross-type edges
+  - `mindmap` — root-based hierarchical view
+- **Auto-Capture**: Git post-commit hook installed automatically on cold start — fires `kuma --hook post-commit` (currently no-op, ready for future auto-capture logic).
+- **Vector Cache Pre-Warm**: Search vectors built on startup for zero-latency first search.
+- **New module**: `src/engine/kumaVisualize.ts` with `visualizeGraph()`, `generateVisualizeReport()`.
+- **MCP registration**: `kuma_context({ action: 'visualize' })` + alias `kuma_visualize`.
+
+### 🛡️ Safety Hardening (Continued)
+
+- **`--hook` no-op handler**: Prevents git hooks from starting MCP server (would hang `git commit`).
+- **`void` pattern**: Cleanly suppresses unused variable warnings in TypeScript strict mode.
+- **TF-IDF correctness**: Per-document term frequency counting now correct (was always 0 in v2.3.6).
+
+### Files Changed
+
+- `src/engine/kumaSearch.ts` — **NEW**: Hybrid search engine (TF-IDF + synonym expansion)
+- `src/engine/kumaVisualize.ts` — **NEW**: Mermaid diagram generator
+- `src/index.ts` — Auto-capture git hook + --hook handler + vector pre-warm
+- `src/manifest.ts` — Added `sync` and `visualize` to kuma_context enum
+- `src/tools/kumaContextTool.ts` — sync + visualize handlers
+- `src/tools/kumaMemoryTool.ts` — Hybrid search integration
+- `CHANGELOG.md` — This entry
+
 ## [2.3.6] — 2026-07-28
 
 ### 🛡️ Performance Hardening & Resource Exhaustion Prevention

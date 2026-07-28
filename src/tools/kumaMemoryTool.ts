@@ -232,9 +232,21 @@ async function handleSearch(params: MemoryParams): Promise<string> {
   const query = params.query || params.scope;
   if (!query) return "⚠️ query or scope parameter required.";
   const limit = params.limit || 20;
+  // ISSUE #13: Hybrid search — combines keyword + vector similarity
   const memResults = sessionMemory.searchMemory(query, limit);
   const { searchGraph } = await import("../engine/kumaGraph.js");
   const graphResults = await searchGraph(query, Math.min(limit, 10));
+  
+  // Hybrid semantic search
+  let hybridResults = "";
+  try {
+    const { hybridSearch, formatHybridResults } = await import("../engine/kumaSearch.js");
+    const semanticResults = await hybridSearch(query, 8);
+    if (semanticResults.length > 0) {
+      hybridResults = "\n" + formatHybridResults(query, semanticResults);
+    }
+  } catch {}
+  
   const lines: string[] = [`🔍 **Search Results** — "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`];
   if (memResults.length > 0) {
     lines.push(`**Session Memory** (${memResults.length}):`);
@@ -242,6 +254,10 @@ async function handleSearch(params: MemoryParams): Promise<string> {
     lines.push("");
   }
   lines.push("**Knowledge Graph:**\n" + graphResults);
+  if (hybridResults) {
+    lines.push("");
+    lines.push(hybridResults);
+  }
   return lines.join("\n");
 }
 

@@ -7,7 +7,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync";
+type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   // Research synonyms
@@ -22,7 +22,7 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "refactor": "impact",
   // Navigate synonyms
   "trace": "navigate",
-  "flow": "navigate",
+  "flow-trace": "navigate",
   "navigate": "navigate",
   // Init synonyms
   "init": "init",
@@ -53,6 +53,13 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "kuma_sync": "sync",
   "unified": "sync",
   "state": "sync",
+  // Visualize synonyms (Issue #16)
+  "visualize": "visualize",
+  "graph": "visualize",
+  "diagram": "visualize",
+  "flow": "visualize",
+  "viz": "visualize",
+  "kuma_visualize": "visualize",
 };
 
 interface ContextParams {
@@ -80,7 +87,8 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "researches": return handleResearches(params);
     case "health": return handleHealth(params);
     case "sync": return handleSync(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync`;
+    case "visualize": return handleVisualize(params);
+    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize`;
   }
 }
 
@@ -464,6 +472,20 @@ async function handleSync(params: ContextParams): Promise<string> {
   lines.push("💡 Sync complete — all state captured in a single roundtrip.");
 
   return lines.join("\n");
+}
+
+// ============================================================
+// VISUALIZE — Knowledge Graph Visualizer (Issue #16)
+// ============================================================
+
+async function handleVisualize(params: ContextParams): Promise<string> {
+  const scope = params.scope;
+  const { generateVisualizeReport } = await import("../engine/kumaVisualize.js");
+  return await generateVisualizeReport({
+    scope,
+    type: "flowchart",
+    maxNodes: 40,
+  });
 }
 
 function computeProjectHash(scope: string): string {

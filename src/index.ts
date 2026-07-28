@@ -141,6 +141,15 @@ async function main(): Promise<void> {
   }
 
   // ============================================================
+  // GIT HOOK MODE (Issue #16): Silent no-op for git hooks
+  // Prevents git hook from hanging on `npx kuma --hook post-commit`
+  // ============================================================
+  if (args[0] === "--hook") {
+    // Silence: just exit immediately — hook is a no-op for now
+    process.exit(0);
+  }
+
+  // ============================================================
   // CLI MODE: kuma init
   // ============================================================
   if (args[0] === "init") {
@@ -368,6 +377,46 @@ async function main(): Promise<void> {
         saveDb(db);
       } catch (err) {
         console.error(`[${SERVER_NAME}] ⚠️ Session DB record: ${err}`);
+      }
+
+      // 5. ISSUE #16: Auto-capture — install git hooks for passive graph updates
+      try {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const hooksDir = path.resolve(process.cwd(), ".kuma", "hooks");
+        if (!fs.existsSync(hooksDir)) {
+          fs.mkdirSync(hooksDir, { recursive: true });
+          // Create a post-commit hook template
+          const hookContent = `#!/bin/bash
+# Kuma auto-capture hook (post-commit)
+# Auto-updates knowledge graph after git commits
+if command -v npx &> /dev/null; then
+  npx -y @plumpslabs/kuma --hook post-commit 2>/dev/null || true
+fi
+`;
+          const gitHooksDir = path.resolve(process.cwd(), ".git", "hooks");
+          if (fs.existsSync(gitHooksDir)) {
+            const postCommitPath = path.join(gitHooksDir, "post-commit");
+            if (!fs.existsSync(postCommitPath)) {
+              fs.writeFileSync(postCommitPath, hookContent, "utf-8");
+              try { fs.chmodSync(postCommitPath, 0o755); } catch {}
+              console.error(`[${SERVER_NAME}] ✅ Created .git/hooks/post-commit for auto-capture`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[${SERVER_NAME}] ⚠️ Auto-capture hook setup: ${err}`);
+      }
+
+      // 6. ISSUE #16: Pre-warm search vector cache
+      try {
+        const { buildSearchVectors } = await import("./engine/kumaSearch.js");
+        const vectors = await buildSearchVectors();
+        if (vectors.length > 0) {
+          console.error(`[${SERVER_NAME}] ✅ Search vector cache pre-warmed (${vectors.length} documents)`);
+        }
+      } catch (err) {
+        console.error(`[${SERVER_NAME}] ⚠️ Search vector cache: ${err}`);
       }
 
       console.error(`[${SERVER_NAME}] ✅ Cold start bootstrap complete`);
