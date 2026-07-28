@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.3.18] — 2026-07-28
+
+### 🔥 Power Curve Alignment — Focus on Exponential Value Actions
+
+**Philosophy shift:** Not all recording is equal. `arch_flow` and `gotcha` are EXPONENTIAL —
+each record saves future agents 5-10 files of reading. `research_save` and `decision` are linear —
+useful but not multiplicative. Function/class/component nodes should be SKIPPED entirely
+(grep/glob is faster than manual recording).
+
+### 🎯 What Changed
+
+- **BOOTSTRAP_LINES** (init.ts + skillGenerator.ts): Updated steps 5-8 descriptions to reflect
+  Power Curve. Added 🔥 for arch_flow/gotcha (exponential value). Added 🟢 SKIP note for
+  function/class/component nodes. Removed misleading "Every read/grep = mini research_save"
+  which caused agent overhead.
+- **getCombinedAgentsMd()**: Same updates for AGENTS.md merge template
+- **handleOpencodeSecondary()**: Same updates for OpenCode SKILL.md template
+- **handleQuickrefGeneration()**: Same updates for .kuma/quickref.md cheat sheet
+- **generateInitMdContent() workflow summary**: Same Power Curve updates
+- **Graph Philosophy quote**: Changed "persist file/func/import nodes" → "persist what you learned"
+
+### 📈 Impact
+
+| Area | Before | After |
+|------|--------|-------|
+| Agent focus | Record everything (overhead) | Record only high-value (arch_flow + gotcha) |
+| Template consistency | 4 different phrasings | All 5 templates aligned |
+| grep/class nodes | Recommended to record | Explicitly SKIP (grep is faster) |
+
+---
+
 ## [2.3.17] — 2026-07-28
 
 ### 🔧 Scanner Regex Improvements, Makefile Detection Fix, Documentation Overhaul

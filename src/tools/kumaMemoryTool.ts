@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "federated" | "gen_test" | "trajectory" | "skills";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "federated" | "gen_test" | "trajectory" | "skills" | "add_node";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -106,6 +106,12 @@ const MEMORY_ALIASES: Record<string, string> = {
   "skills": "skills",
   "distilled-skills": "skills",
   "skill-list": "skills",
+  // Add node synonyms
+  "add_node": "add_node",
+  "add-node": "add_node",
+  "node": "add_node",
+  "create-node": "add_node",
+  "record-node": "add_node",
 };
 
 interface MemoryParams {
@@ -175,6 +181,7 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "gen_test": return handleGenTest(params);
     case "trajectory": return handleTrajectoryList(params);
     case "skills": return handleSkillsList(params);
+    case "add_node": return handleAddNode(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -218,6 +225,22 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
     scope, confidence: params.confidence || 0.8, notes: params.content || "", validatedAt: new Date().toISOString(),
   });
   await saveResearchCache(scope, record, undefined, params.confidence);
+
+  // 🔧 Also create a file + research node so search can find it
+  // research_save populates both search cache AND knowledge graph nodes.
+  // Agent calls `search` to retrieve — not `visualize`.
+  try {
+    const { upsertNode, nodeId } = await import("../engine/kumaGraph.js");
+    await upsertNode({ id: nodeId("file", scope), type: "file", name: scope });
+    // Also record a variable node for the research scope so it shows in search
+    await upsertNode({
+      id: `research::${scope}`,
+      type: "variable",
+      name: `research:${scope}`,
+      metadata: { confidence: params.confidence || 0.8 },
+    });
+  } catch {}
+
   try {
     const researchDir = path.join(getProjectRoot(), ".kuma", "research");
     if (!fs.existsSync(researchDir)) fs.mkdirSync(researchDir, { recursive: true });
@@ -512,6 +535,48 @@ async function handleSkillsList(_params: MemoryParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_memory_skills", {});
   const { listDistilledSkills } = await import("../engine/kumaTrajectory.js");
   return await listDistilledSkills();
+}
+
+// ============================================================
+// ADD NODE — Manual Structural Node Creation
+// ============================================================
+
+async function handleAddNode(params: MemoryParams): Promise<string> {
+  const type = params.title as "function" | "class" | "component" | "file" | "api_route" | "test";
+  const name = params.content;
+  const filePath = params.scope;
+
+  if (!type || !name) {
+    return "⚠️ `title` (node type: function/class/component/file/api_route/test) and `content` (node name) required.\nExample: kuma_memory({ action: 'add_node', title: 'function', content: 'sendMessage', scope: 'ChatService.ts' })";
+  }
+
+  const validTypes = ["function", "class", "component", "file", "api_route", "test"];
+  if (!validTypes.includes(type)) {
+    return `⚠️ Invalid type "${type}". Valid types: ${validTypes.join(", ")}`;
+  }
+
+  try {
+    const { upsertNode, nodeId, addEdge } = await import("../engine/kumaGraph.js");
+    const nodeIdStr = filePath ? `${type}::${filePath}::${name}` : nodeId(type, name);
+    
+    await upsertNode({
+      id: nodeIdStr,
+      type: type as any,
+      name,
+      filePath,
+    });
+
+    // If filePath provided, also create contains edge
+    if (filePath) {
+      const fileNodeId = nodeId("file", filePath);
+      await upsertNode({ id: fileNodeId, type: "file", name: filePath });
+      try { await addEdge({ sourceId: fileNodeId, targetId: nodeIdStr, type: "contains" }); } catch {}
+    }
+
+    return `✅ Node created: **${name}** (${type})${filePath ? ` — ${filePath}` : ""}`;
+  } catch (err) {
+    return `❌ Failed to create node: ${err}`;
+  }
 }
 
 // ============================================================

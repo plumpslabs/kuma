@@ -1,23 +1,30 @@
 // ============================================================
 // KUMA CODE SCANNER — Automated Code Structure Analyzer
 // ============================================================
-// Scans source files to detect:
+// Scans TypeScript/JavaScript source files to detect:
 //   - Function declarations → function nodes
 //   - Class declarations → class nodes
-//   - React components → component nodes (functions returning JSX)
+//   - React/Vue components → component nodes
 //   - API route handlers → api_route nodes
 //   - Test files → test nodes
 //   - Module directories → module nodes
 //   - Import statements → imports edges
 //   - Function calls → calls edges
 //   - Class extends → extends edges
-//   - Class implements → implements edges
-//   - Component composition → composes edges
-//   - File contains symbols → contains edges
-//   - Module owns files → owns edges
 //
-// Lightweight regex-based (no full AST parser dependency).
-// Integrates with kumaGraph.ts to populate the knowledge graph.
+// DESIGN PHILOSOPHY:
+//   Scanner is PURELY for COLD START — populating the knowledge graph on first
+//   session so agents have basic project structure to query. It uses lightweight
+//   regex (not AST parser) for speed and zero dependencies.
+//
+//   For ACCURATE code structure, use AI INLINE RECORDING:
+//   - Read a file → call research_save immediately (persists file/func/import nodes)
+//   - Discover a function → call research_save (persists function node)
+//   - Find a bug → call gotcha immediately (persists gotcha node)
+//   The more you use Kuma, the richer the graph becomes.
+//
+//   Non-TypeScript/JavaScript projects rely ENTIRELY on inline recording —
+//   the scanner only handles TS/JS/TSX/JSX files.
 // ============================================================
 
 import fastGlob from "fast-glob";
@@ -48,6 +55,8 @@ export interface ScanResult {
   edgeCount: number;
   filesScanned: number;
   errors: string[];
+  /** Which parser was used per language */
+  parserUsed?: string;
 }
 
 // ============================================================
@@ -67,47 +76,27 @@ function getRoot(): string {
 }
 
 // ============================================================
-// Regex Patterns
+// Regex Patterns — TypeScript / JavaScript Only
 // ============================================================
 
-// Function declarations: export function foo(), async function foo(), function* foo()
 const FUNCTION_DECL_RE = /(?:export\s+)?(?:async\s+)?function\s*(?:\*\s*)?(\w+)\s*\(/g;
-
-// Arrow function assignments: supports multi-line + generics <T> + type annotations
-// Uses lazy matching for parameters (handles nested parens, generics, multi-line)
 const ARROW_FN_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*[=:]\s*(?:async\s*)?(?:<[^>]+>\s*)?(?:\([\s\S]*?\)|\w+)\s*(?::\s*\w+(?:<[^>]*>)?)?\s*=>/g;
-
-// Typed arrow function assignments: const foo: Type = (...) => ...
-// Same improvements: handles generics <T>(x: T) and multi-line params
 const TYPED_ARROW_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*:\s*(?:\w+(?:<[^>]*>)?)?\s*=\s*(?:async\s*)?(?:<[^>]+>\s*)?\(/g;
-
-// Class declarations: export class Foo extends Bar implements Baz
 const CLASS_RE = /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/g;
-
-// Import statements: import { X } from 'y', import X from 'y', import * as X from 'y'
 const IMPORT_RE = /import\s+(?:\{([^}]*)\}\s+from\s+)?(?:\w+\s+from\s+)?(?:\*\s+as\s+\w+\s+from\s+)?['"]([^'"]+)['"]/g;
-
-// JSX detection
 const JSX_RETURN_RE = /return\s*\(?\s*</;
 const JSX_ELEMENT_RE = /<([A-Z]\w+)[\s/>]/g;
-
-// Route patterns
+const JSX_IMPLICIT_RE = /=>\s*(?:\(\s*)?</;
 const EXPRESS_ROUTE_RE = /\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]\s*,\s*(\w+)/g;
 const HONO_ROUTE_RE = /c\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g;
-
-// Test patterns
-const TEST_PATTERNS = [".test.", ".spec.", "__tests__", "/test/"];
-
-// Export declarations
 const EXPORT_RE = /export\s+(?:default\s+)?(\w+)/g;
-
-// Function call pattern: knownFunctionName(
 const CALL_RE = /(\w+)\s*\(/g;
+const TEST_PATTERNS = [".test.", ".spec.", "__tests__", "/test/"];
 
 // Cross-scan caches
 const knownComponents = new Set<string>();
 const knownFunctions = new Set<string>();
-// Track where each function/component/class is defined: name → filePath
+// Track where each function/component/class is defined: name -> filePath
 const symbolLocations = new Map<string, string>();
 
 // ============================================================
@@ -132,7 +121,7 @@ function getDirectoryDirs(filePaths: string[]): string[] {
 }
 
 // ============================================================
-// Main Scanner
+// Main Scanner — TS/JS only
 // ============================================================
 
 export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResult> {
@@ -142,7 +131,7 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
 
   const result: ScanResult = { nodeCount: 0, edgeCount: 0, filesScanned: 0, errors: [] };
 
-  // 1. Discover source files
+  // 1. Discover source files (TS/JS only — other languages rely on inline recording)
   const includePatterns = options.include || [
     "src/**/*.{ts,tsx,js,jsx}",
     "app/**/*.{ts,tsx,js,jsx}",
@@ -207,7 +196,7 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
       allParsed.push({ filePath, parsed, content });
       scannedFilePaths.push(filePath);
 
-      // Collect names + locations for cross-reference (Fix #1: scoped ID)
+      // Collect names + locations for cross-reference
       for (const comp of parsed.components) {
         knownComponents.add(comp.name);
         if (!symbolLocations.has(comp.name)) symbolLocations.set(comp.name, filePath);
@@ -273,7 +262,7 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
 }
 
 // ============================================================
-// File Parsing
+// File Parsing — TypeScript / JavaScript only
 // ============================================================
 
 interface ParsedFile {
@@ -289,8 +278,13 @@ interface ParsedFile {
 
 function parseFile(filePath: string, content: string): ParsedFile {
   const result: ParsedFile = {
-    filePath, functions: [], classes: [], components: [],
-    routes: [], imports: [], exports: [],
+    filePath,
+    functions: [],
+    classes: [],
+    components: [],
+    routes: [],
+    imports: [],
+    exports: [],
     isTest: TEST_PATTERNS.some((p) => filePath.includes(p)),
   };
 
@@ -303,6 +297,7 @@ function parseFile(filePath: string, content: string): ParsedFile {
     const lineNum = i + 1;
     const trimmed = line.trim();
 
+    // Skip comments
     if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
 
     let m: RegExpExecArray | null;
@@ -366,26 +361,19 @@ function parseFile(filePath: string, content: string): ParsedFile {
     }
   }
 
-  // 7. React components — explicit + implicit return (Fix #2)
-  const JSX_IMPLICIT_RE = /=>\s*(?:\(\s*)?</;
+  // React components detection (only for TSX/JSX files)
   if (hasJSX) {
     for (const fn of [...result.functions]) {
       const fnStartLine = fn.line - 1;
-      const fnLine = lines[fnStartLine];
       const endLine = Math.min(fnStartLine + 50, lines.length);
       let isComponent = false;
-      // Check explicit return: return <Jsx ...
       for (let i = fnStartLine; i < endLine; i++) {
         if (JSX_RETURN_RE.test(lines[i])) { isComponent = true; break; }
       }
-      // Check implicit return: () => <Jsx
-      if (!isComponent && JSX_IMPLICIT_RE.test(fnLine)) isComponent = true;
-      // Check implicit return multi-line: () => newline then <Jsx
-      if (!isComponent && fnLine.includes('=>') && (fnStartLine + 1) < endLine) {
+      if (!isComponent && JSX_IMPLICIT_RE.test(lines[fnStartLine])) isComponent = true;
+      if (!isComponent && (fnStartLine + 1) < endLine) {
         const nextLine = lines[fnStartLine + 1].trim();
-        if (nextLine.startsWith('<') || nextLine.startsWith('(') || nextLine.startsWith('<>')) {
-          isComponent = true;
-        }
+        if (nextLine.startsWith('<') || nextLine.startsWith('(') || nextLine.startsWith('<>')) isComponent = true;
       }
       if (isComponent) {
         result.components.push({ name: fn.name, line: fn.line });
@@ -394,19 +382,15 @@ function parseFile(filePath: string, content: string): ParsedFile {
     }
   }
 
-  // 8. Route handlers (Express)
+  // Route handlers (Express + Hono)
   let rm: RegExpExecArray | null;
   EXPRESS_ROUTE_RE.lastIndex = 0;
   while ((rm = EXPRESS_ROUTE_RE.exec(content)) !== null) {
     result.routes.push({
-      method: rm[1].toUpperCase(),
-      pathPattern: rm[2],
-      handler: rm[3],
+      method: rm[1].toUpperCase(), pathPattern: rm[2], handler: rm[3],
       line: lineAt(content, rm.index),
     });
   }
-
-  // 9. Route handlers (Hono)
   HONO_ROUTE_RE.lastIndex = 0;
   while ((rm = HONO_ROUTE_RE.exec(content)) !== null) {
     result.routes.push({
@@ -455,12 +439,12 @@ async function recordParsedFile(
     }
   }
 
-  // Helper: scoped node ID for file-specific symbols (Fix #1: prevent collision)
+  // Helper: scoped node ID for file-specific symbols
   function scopedId(type: string, name: string, fp: string): string {
     return `${type}::${fp}::${name}`;
   }
 
-  // 2. Functions (Fix #1: use scoped ID)
+  // 2. Functions
   for (const fn of functions) {
     const fnNodeId = scopedId("function", fn.name, filePath);
     await upsertNode({ id: fnNodeId, type: "function", name: fn.name, filePath });
@@ -468,7 +452,7 @@ async function recordParsedFile(
     try { await addEdge({ sourceId: fileNodeId, targetId: fnNodeId, type: "contains" }); result.edgeCount++; } catch {}
   }
 
-  // 3. Components (Fix #1: use scoped ID)
+  // 3. Components
   for (const comp of components) {
     const compNodeId = scopedId("component", comp.name, filePath);
     await upsertNode({ id: compNodeId, type: "component", name: comp.name, filePath });
@@ -476,7 +460,7 @@ async function recordParsedFile(
     try { await addEdge({ sourceId: fileNodeId, targetId: compNodeId, type: "contains" }); result.edgeCount++; } catch {}
   }
 
-  // 4. Classes + extends/implements (Fix #1: use scoped ID for class, unscoped for parent/interface)
+  // 4. Classes + extends/implements
   for (const cls of classes) {
     const clsNodeId = scopedId("class", cls.name, filePath);
     await upsertNode({ id: clsNodeId, type: "class", name: cls.name, filePath });
@@ -519,7 +503,7 @@ async function recordParsedFile(
     }
   }
 
-  // 6. Component composition (composes edges) (Fix #1: scoped ID)
+  // 6. Component composition (composes edges)
   if (content.includes("<")) {
     JSX_ELEMENT_RE.lastIndex = 0;
     let jm: RegExpExecArray | null;
@@ -541,20 +525,18 @@ async function recordParsedFile(
     }
   }
 
-  // 7. Function calls detection (calls edges) — Fix #1: use scoped ID + Fix #4: strip regex literals
-  // Strip comments, string literals, AND regex literals (Fix #4: /regex\/containing\/slash/)
+  // 7. Function calls detection (calls edges)
   const callContent = content
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // multi-line comments (before single-line to avoid overlap)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // multi-line comments
     .replace(/\/\/.*$/gm, ' ')            // single-line comments
-    .replace(/\/[^\n\s][^\n]*?\/[gimsuy]*/g, ' ') // regex literals (Fix #4)
+    .replace(/\/[^\n\s][^\n]*?\/[gimsuy]*/g, ' ') // regex literals
     .replace(/['"`][^'"`]*['"`]/g, ' ');   // string literals
   CALL_RE.lastIndex = 0;
-  const fileCalls = new Set<string>(); // deduplicate per file
+  const fileCalls = new Set<string>();
   let cm: RegExpExecArray | null;
   while ((cm = CALL_RE.exec(callContent)) !== null) {
     const callee = cm[1];
     if (!callee || callee.length < 2) continue;
-    // Skip reserved words (Fix #3: expanded skip list)
     if (["if", "for", "while", "switch", "catch", "return", "typeof", "delete", "throw",
          "import", "export", "function", "class", "new", "try", "yield", "await",
          "this", "super", "undefined", "null", "true", "false", "console",
@@ -568,13 +550,11 @@ async function recordParsedFile(
          "resolve", "reject", "next", "value", "done",
     ].includes(callee)) continue;
 
-    // Check if it's a known function from a DIFFERENT file (Fix #1: scoped ID)
     if (knownFunctions.has(callee)) {
       const isSelf = functions.some((f) => f.name === callee) ||
                      components.some((c) => c.name === callee);
       if (!isSelf && !fileCalls.has(callee)) {
         fileCalls.add(callee);
-        // Use scoped ID from symbolLocations (Fix #1)
         const calleeFile = symbolLocations.get(callee) || filePath;
         const fnId = `function::${calleeFile}::${callee}`;
         try {
