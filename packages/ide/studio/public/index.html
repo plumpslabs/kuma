@@ -162,10 +162,15 @@ const API = "/api";
 let network = null, nodesData = null, allNodes = null, allEdges = null, currentDbSize = "0 KB";
 
 async function resetKumaDb() {
-  if (!confirm("Are you sure you want to reset Kuma DB (.kuma/kuma.db)? All recorded nodes will be cleared.")) return;
+  var confirmation = prompt("⚠️ CRITICAL ACTION: TYPE 'DELETE' TO CONFIRM RESETTING KUMA DB\nThis will permanently wipe all recorded knowledge nodes, edges, gotchas, and trajectories in .kuma/kuma.db:");
+  if (confirmation !== "DELETE") {
+    if (confirmation !== null) alert("Reset cancelled. Confirmation text did not match 'DELETE'.");
+    return;
+  }
   try {
     var res = await fetch(API + "/reset-db", { method: "POST" }).then(function(r){return r.json()});
     if (res.ok) {
+      alert("Kuma DB reset successfully.");
       refetch();
     }
   } catch (e) {
