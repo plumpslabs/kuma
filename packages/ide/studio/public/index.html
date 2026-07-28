@@ -230,19 +230,21 @@ function truncateLabel(name, maxLen) {
 
 /** Calculate node size based on label length and type */
 function calcNodeSize(name, type) {
+  var isGotcha = name && name.toLowerCase().indexOf("gotcha:") === 0;
+  if (isGotcha) return 14;
+  if (type === "variable") return 14;
   var base = 18;
-  if (type === "feature_domain") base = 32;
-  if (type === "workflow") base = 28;
+  if (type === "feature_domain") base = 30;
+  if (type === "workflow") base = 24;
   if (type === "cross_service_link") base = 20;
-  if (type === "function") base = 18;
-  if (type === "class") base = 22;
-  if (type === "module") base = 26;
-  if (type === "component") base = 22;
-  if (type === "route") base = 18;
-  if (type === "test") base = 20;
-  if (type === "variable") base = 20;
+  if (type === "function") base = 16;
+  if (type === "class") base = 20;
+  if (type === "module") base = 22;
+  if (type === "component") base = 20;
+  if (type === "route") base = 16;
+  if (type === "test") base = 18;
   var len = name ? Math.min(name.length, 25) : 4;
-  return Math.min(42, Math.max(base, base + len * 0.5));
+  return Math.min(34, Math.max(base, base + len * 0.4));
 }
 
 
@@ -291,18 +293,19 @@ function renderGraph(data) {
   }
 
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
-    var shape = shapes[n.type] || 'dot';
-    var maxLen = (shape === 'ellipse') ? 18 : 34;
+    var isGotcha = n.name && n.name.toLowerCase().indexOf("gotcha:") === 0;
+    var shape = isGotcha ? 'triangle' : (shapes[n.type] || 'dot');
+    var maxLen = isGotcha ? 20 : (shape === 'ellipse' ? 18 : 32);
     var label = truncateLabel(n.name, maxLen);
     var size = calcNodeSize(n.name, n.type);
-    var color = colors[n.type] || '#64748b';
+    var color = isGotcha ? '#f97316' : (colors[n.type] || '#64748b');
     return {
       id: n.id,
       label: label,
       title: '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:380px;white-space:normal;line-height:1.4;padding:2px"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>',
       color: { background: color, border: color, highlight: { background: color, border: '#ffffff' } },
-      shape: shapes[n.type] || 'dot',
-      font: { color: '#ffffff', size: Math.min(14, Math.max(11, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
+      shape: shape,
+      font: { color: '#ffffff', size: Math.min(13, Math.max(10, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
       borderWidth: 0,
       size: size,
       mass: 1 + (size / 40),
