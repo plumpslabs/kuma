@@ -125,7 +125,15 @@ export function detectTestRunner(root = process.cwd()): { runner: string; baseCo
   if (fs.existsSync(path.join(root, "pytest.ini")) || fs.existsSync(path.join(root, "pyproject.toml"))) return { runner: "pytest", baseCommand: "pytest" };
   if (fs.existsSync(path.join(root, "Cargo.toml"))) return { runner: "cargo", baseCommand: "cargo test" };
   if (fs.existsSync(path.join(root, "go.mod"))) return { runner: "go", baseCommand: "go test ./..." };
-  if (fs.existsSync(path.join(root, "Makefile"))) return { runner: "make", baseCommand: "make test" };
+  if (fs.existsSync(path.join(root, "Makefile"))) {
+    try {
+      const makefileContent = fs.readFileSync(path.join(root, "Makefile"), "utf-8");
+      // Check if Makefile has a 'test' target (line starting with 'test:')
+      const hasTestTarget = /^test:/m.test(makefileContent) || /^\s+test:/.test(makefileContent);
+      if (hasTestTarget) return { runner: "make", baseCommand: "make test" };
+    } catch {}
+    // Makefile exists but no test target — don't use make
+  }
   if (fs.existsSync(path.join(root, "package.json"))) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8"));

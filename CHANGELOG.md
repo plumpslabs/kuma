@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.3.17] — 2026-07-28
+
+### 🔧 Scanner Regex Improvements, Makefile Detection Fix, Documentation Overhaul
+
+**Three fixes based on real-world usage feedback:**
+
+### 🔬 Bug 1: Scanner Regex Too Restrictive (CRITICAL)
+
+**Problem:** Scanner regex patterns for arrow functions missed TypeScript generics (`<T>(x: T) =>`), multi-line params, and certain assignment patterns. Real project scans returned 0 structural nodes despite hundreds of functions.
+
+**Fix — Regex improvements in `kumaCodeScanner.ts`:**
+
+| Pattern | Before | After |
+|---------|--------|-------|
+| Arrow function | `\([^)]*\)` (line-only, no generics) | Supports `<T>` generics, lazy `[\\s\\S]*?` params, handles `:` assignment |
+| Typed arrow | No `<T>` support | Handles `<T>` before params `(?:<[^>]+>\\s*)?\\(` |
+
+### 🛠️ Bug 2: Verify Hardcodes `make test` (MEDIUM)
+
+**Problem:** `detectTestRunner()` returned `make test` whenever a Makefile existed, even if no `test:` target was defined. Projects with Makefile but no test target always failed verification.
+
+**Fix — Makefile target detection:**
+- Before returning `make test`, scanner reads Makefile content and checks for `test:` target via regex
+- If no `test:` target, falls through to other runners (pytest, cargo, go, tsc, node -c)
+- No more false `make test` failures
+
+### 📚 Bug 3: Documentation Gaps (MEDIUM)
+
+**Problem:** init.md lacked explanation of how the scanner works, memory reading, and verification logic. Agents didn't understand limitations or how to effectively use the tools.
+
+**Fix — Three new sections in init.md:**
+- **"How the Scanner Works"** — regex-based (not AST), known limitations, inline recording workaround
+- **"How to Read Memory & Search the Graph"** — knowledge graph vs research cache, quick tips
+- **"How Verification Works"** — auto-detection logic, explicit call requirement, safety guards
+
+### Files Changed
+
+- `src/engine/kumaCodeScanner.ts` — Improved arrow function/typed regex patterns
+- `src/engine/kumaVerifier.ts` — Makefile test target detection before defaulting
+- `src/cli/init.ts` — Three new documentation sections in generateInitMdContent()
+- `package.json` — Version 2.3.17
+- `docs/index.html` — Version v2.3.17
+- `CHANGELOG.md` — This entry
+
 ## [2.3.16] — 2026-07-28
 
 ### 🔄 Inline Recording Philosophy — Record Findings AS YOU WORK, Not at the End

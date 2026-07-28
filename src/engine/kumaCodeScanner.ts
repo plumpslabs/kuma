@@ -73,11 +73,13 @@ function getRoot(): string {
 // Function declarations: export function foo(), async function foo(), function* foo()
 const FUNCTION_DECL_RE = /(?:export\s+)?(?:async\s+)?function\s*(?:\*\s*)?(\w+)\s*\(/g;
 
-// Arrow function assignments: const foo = (...) => ...
-const ARROW_FN_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::\s*\w+(?:<[^>]*>)?)?\s*=>/g;
+// Arrow function assignments: supports multi-line + generics <T> + type annotations
+// Uses lazy matching for parameters (handles nested parens, generics, multi-line)
+const ARROW_FN_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*[=:]\s*(?:async\s*)?(?:<[^>]+>\s*)?(?:\([\s\S]*?\)|\w+)\s*(?::\s*\w+(?:<[^>]*>)?)?\s*=>/g;
 
 // Typed arrow function assignments: const foo: Type = (...) => ...
-const TYPED_ARROW_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*:\s*(?:\w+(?:<[^>]*>)?)?\s*=\s*(?:async\s*)?\(/g;
+// Same improvements: handles generics <T>(x: T) and multi-line params
+const TYPED_ARROW_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*:\s*(?:\w+(?:<[^>]*>)?)?\s*=\s*(?:async\s*)?(?:<[^>]+>\s*)?\(/g;
 
 // Class declarations: export class Foo extends Bar implements Baz
 const CLASS_RE = /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/g;
