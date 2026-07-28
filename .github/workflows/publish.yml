@@ -25,8 +25,12 @@ jobs:
           node-version: "22"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: npx tsc --noEmit
-      - run: pnpm test -- --runInBand
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Run tests
+        run: pnpm exec jest --runInBand
+        env:
+          NODE_OPTIONS: "--experimental-vm-modules"
 
   # ─── Publish to npmjs.com ───
   publish-npm:

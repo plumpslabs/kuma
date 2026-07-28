@@ -33,6 +33,7 @@ Usage:
   npx @plumpslabs/kuma init --merge Append to existing files (default)
   npx @plumpslabs/kuma init --skip-existing Skip generation if file exists
   npx @plumpslabs/kuma init --claude --cursor  Generate specific files
+  npx @plumpslabs/kuma studio        Start Kuma Studio web dashboard (knowledge graph visualizer)
   npx @plumpslabs/kuma init --help  Show this help
 
 Available config files:
@@ -144,6 +145,42 @@ async function main(): Promise<void> {
   // GIT HOOK MODE (Issue #16): Silent no-op for git hooks
   // Prevents git hook from hanging on `npx kuma --hook post-commit`
   // ============================================================
+  // ============================================================
+  // CLI MODE: kuma studio — Start Kuma Studio dashboard
+  // ============================================================
+  if (args[0] === "studio") {
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    const { spawn } = await import("node:child_process");
+    const { existsSync } = await import("node:fs");
+
+    // Resolve studio dist path relative to this script's location
+    const distDir = dirname(fileURLToPath(import.meta.url));
+    const studioPath = join(distDir, "..", "packages", "ide", "studio", "dist", "index.js");
+
+    if (!existsSync(studioPath)) {
+      console.error(`[${SERVER_NAME}] Kuma Studio not found at ${studioPath}`);
+      console.error(`[${SERVER_NAME}] Make sure @plumpslabs/kuma is properly installed.`);
+      console.error(`[${SERVER_NAME}] Or run manually: cd packages/ide/studio && pnpm start`);
+      process.exit(1);
+    }
+
+    const studioArgs = args.slice(1); // --port, --dir, --help flags
+    const child = spawn("node", [studioPath, ...studioArgs], {
+      stdio: "inherit",
+      cwd: process.cwd(),
+    });
+
+    child.on("exit", (code) => process.exit(code ?? 0));
+    child.on("error", (err) => {
+      console.error(`[${SERVER_NAME}] Failed to start Kuma Studio: ${err.message}`);
+      process.exit(1);
+    });
+
+    // Wait for the child to finish
+    return;
+  }
+
   if (args[0] === "--hook") {
     // Silence: just exit immediately — hook is a no-op for now
     process.exit(0);

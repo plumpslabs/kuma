@@ -9,16 +9,21 @@
     "kuma": "dist/index.js"
   },
   "files": [
-    "dist/"
+    "dist/",
+    "packages/ide/studio/dist/",
+    "packages/ide/studio/public/"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --clean --out-dir dist",
+    "build:studio": "cd packages/ide/studio && tsup src/index.ts --format esm --clean --out-dir dist",
+    "build:all": "pnpm run build && pnpm run build:studio",
     "dev": "tsup src/index.ts --format esm --watch --out-dir dist",
     "start": "node dist/index.js",
-    "studio": "bun run packages/ide/studio/src/index.ts",
+    "studio": "node dist/index.js studio",
+    "studio:dev": "bun run packages/ide/studio/src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'No linting configured'",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "pnpm run build:all",
     "test": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // ============================================================
 // KUMA STUDIO — Web-Based Knowledge Graph Visualizer
 // ============================================================
