@@ -77,10 +77,10 @@ const AGENT_DETECTORS: AgentDetector[] = [
   },
   {
     type: "opencode",
-    checkFiles: ["opencode.json"],
-    checkDirs: [],
+    checkFiles: [".agents/skills/kuma/SKILL.md"],
+    checkDirs: [".agents"],
     priority: 65,
-    label: "OpenCode (opencode.json)",
+    label: "OpenCode (.agents/skills/kuma/SKILL.md)",
   },
   {
     type: "kiro",
@@ -214,7 +214,7 @@ export function getSkillPath(type: AgentType): string {
     case "codex":
       return ".agents/skills/kuma/SKILL.md"; // Same path as Antigravity
     case "opencode":
-      return "opencode.json";
+      return ".agents/skills/kuma/SKILL.md";
     case "aider":
       return "CONVENTIONS.md";
     case "windsurf":

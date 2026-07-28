@@ -9,8 +9,8 @@ import type { AgentType } from "./agentDetector.js";
 
 // Shared bootstrap message — points to .kuma/init.md as single source of truth
 const BOOTSTRAP = [
-  "Kuma MCP tools are available. All behavioral rules are in `.kuma/init.md`.",
-  "**Before coding, call `kuma_init()`** to load project context and session memory.",
+  "Kuma MCP tools are available (kuma_context, kuma_memory, kuma_safety). All behavioral rules are in `.kuma/init.md`.",
+  "**Before coding, call `kuma_context({ action: \"init\" })`** to load project context and session memory.",
   "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
 ].join("\n");
 
@@ -192,21 +192,22 @@ function generateCodexConfigToml(): string {
 }
 
 /**
- * OpenCode: `opencode.json`
- * Format: JSON plugin configuration
+ * OpenCode: `.agents/skills/kuma/SKILL.md`
+ * Format: SKILL.md with YAML frontmatter (no more opencode.json)
  */
 function generateOpencodeSkill(): string {
-  return JSON.stringify({
-    $schema: "https://opencode-ai.github.io/schema.json",
-    mcp: {
-      kuma: {
-        type: "local",
-        command: ["npx", "-y", "@plumpslabs/kuma"],
-        enabled: true,
-      },
-    },
-    instructions: [".kuma/init.md"],
-  }, null, 2) + "\n";
+  return [
+    "---",
+    "name: kuma-mcp",
+    "description: Kuma MCP — safety toolkit for AI coding agents. Research, memory, and safety guard.",
+    "---",
+    "",
+    "Kuma MCP tools are installed. All behavioral rules are in `.kuma/init.md`.",
+    "**Before coding, call `kuma_init()` to load project context and session memory.**",
+    "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
+  ].join("\n");
 }
 
 /**

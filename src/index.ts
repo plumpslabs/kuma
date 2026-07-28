@@ -44,7 +44,7 @@ Available config files:
   --cline      .clinerules/kuma.md          (Cline)
   --aider      CONVENTIONS.md + .aider.conf.yml  (Aider)
   --antigravity .agents/skills/kuma/SKILL.md    (Antigravity CLI)
-  --opencode    opencode.json                (OpenCode)
+  --opencode    AGENTS.md + .agents/skills/      (OpenCode)
   --codex       AGENTS.md + .codex/          (Codex CLI - OpenAI)
   --qwen        AGENTS.md + settings.json    (Qwen Code)
   --kiro        .kiro/steering/kuma.md       (Kiro)
@@ -528,7 +528,7 @@ function interactiveSelect(): Promise<ConfigType[]> {
       type: "antigravity" as ConfigType,
       label: "7) Antigravity CLI (.agents/skills/)",
     },
-    { type: "opencode" as ConfigType, label: "8) OpenCode (opencode.json)" },
+    { type: "opencode" as ConfigType, label: "8) OpenCode (AGENTS.md + skills)" },
     {
       type: "codex" as ConfigType,
       label: "9) Codex CLI - OpenAI (AGENTS.md + .codex/config.toml)",
