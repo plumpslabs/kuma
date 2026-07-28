@@ -160,7 +160,11 @@ let network = null, nodesData = null, allNodes = null, allEdges = null;
 function resetGraphFocus() {
   if (!network) return;
   network.body.data.nodes.forEach(function(n) {
-    network.body.data.nodes.update({ id: n.id, opacity: 1.0 });
+    network.body.data.nodes.update({
+      id: n.id,
+      opacity: 1.0,
+      font: { color: '#ffffff', bold: true }
+    });
   });
   document.getElementById("graph-tooltip").style.display = 'none';
   var searchInput = document.getElementById("node-search");
@@ -411,9 +415,14 @@ function renderGraph(data) {
       connectedNodeIds.add(selectedId);
 
       network.body.data.nodes.forEach(function(n) {
+        var isConnected = connectedNodeIds.has(n.id);
         network.body.data.nodes.update({
           id: n.id,
-          opacity: connectedNodeIds.has(n.id) ? 1.0 : 0.15
+          opacity: isConnected ? 1.0 : 0.12,
+          font: {
+            color: isConnected ? '#ffffff' : 'rgba(255,255,255,0.2)',
+            bold: isConnected
+          }
         });
       });
 
@@ -436,7 +445,11 @@ function renderGraph(data) {
     } else {
       tip.style.display = 'none';
       network.body.data.nodes.forEach(function(n) {
-        network.body.data.nodes.update({ id: n.id, opacity: 1.0 });
+        network.body.data.nodes.update({
+          id: n.id,
+          opacity: 1.0,
+          font: { color: '#ffffff', bold: true }
+        });
       });
     }
   });
