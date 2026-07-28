@@ -1,30 +1,30 @@
 // ============================================================
-// KUMA CODE SCANNER — Automated Code Structure Analyzer
+// KUMA CODE SCANNER — Legacy Code Structure Analyzer (DEPRECATED)
 // ============================================================
-// Scans TypeScript/JavaScript source files to detect:
-//   - Function declarations → function nodes
-//   - Class declarations → class nodes
-//   - React/Vue components → component nodes
-//   - API route handlers → api_route nodes
-//   - Test files → test nodes
-//   - Module directories → module nodes
-//   - Import statements → imports edges
-//   - Function calls → calls edges
-//   - Class extends → extends edges
+// ⚠️ LEGACY: This scanner uses regex to detect AST-level nodes
+// (functions, classes, imports, components). It is INACCURATE for
+// modern TypeScript/JSX code and often returns 0 structural nodes.
 //
-// DESIGN PHILOSOPHY:
-//   Scanner is PURELY for COLD START — populating the knowledge graph on first
-//   session so agents have basic project structure to query. It uses lightweight
-//   regex (not AST parser) for speed and zero dependencies.
+// Kuma's PRIMARY knowledge graph is now DOMAIN FLOW GRAPH —
+// High-level FeatureDomain → Workflow → CrossServiceLink chains
+// recorded via kuma_memory({ action: 'arch_flow' }).
 //
-//   For ACCURATE code structure, use AI INLINE RECORDING:
-//   - Read a file → call research_save immediately (persists file/func/import nodes)
-//   - Discover a function → call research_save (persists function node)
-//   - Find a bug → call gotcha immediately (persists gotcha node)
-//   The more you use Kuma, the richer the graph becomes.
+// WHAT THIS SCANNER STILL DOES (Cold Start Only):
+//   - Detects file existence → file nodes
+//   - Detects imports → basic edges (unreliable)
+//   - Basic function/class detection (low accuracy for modern TS)
 //
-//   Non-TypeScript/JavaScript projects rely ENTIRELY on inline recording —
-//   the scanner only handles TS/JS/TSX/JSX files.
+// WHAT TO USE INSTEAD:
+//   - For function/class structure → LSP, grep, or ast-grep
+//   - For architecture flow → kuma_memory arch_flow (recordDomainFlow)
+//   - For bugs/quirks → kuma_memory gotcha
+//   - For decisions → kuma_memory decision
+//
+// DESIGN NOTE:
+//   Scanner output is marked as [STALE-PRONE] — function/class/variable
+//   nodes may become outdated after refactoring. Domain flow nodes
+//   (feature_domain, workflow, cross_service_link) are STABLE because
+//   they record ARCHITECTURE INTENT, not code syntax.
 // ============================================================
 
 import fastGlob from "fast-glob";

@@ -262,6 +262,10 @@ function getNodeShape(type: string): string {
     case "interface": return "(";
     case "module": return "[";
     case "variable": return "(";
+    // Domain Flow shapes (V4)
+    case "feature_domain": return "[";  // box with rounded corners
+    case "workflow": return "([";        // stadium shape
+    case "cross_service_link": return "[";
     default: return "[";
   }
 }
@@ -290,6 +294,10 @@ function getEdgeStyle(type: string): string {
     case "depends_on": return " -.-> ";
     case "owns": return " --- ";
     case "modified_by": return " -.-> ";
+    // Domain Flow edge styles (V4)
+    case "flows_through": return " ==> ";
+    case "triggers": return " -.-> ";
+    case "syncs_with": return " <==> ";
     default: return " --- ";
   }
 }

@@ -447,6 +447,58 @@ async function handleMine(params: MemoryParams): Promise<string> {
 
 async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: MemoryParams): Promise<string> {
   const { readLayer, writeLayer } = await import("../engine/domainRules.js");
+
+  if (layer === "arch_flow" && params.content) {
+    // ENHANCED: recordDomainFlow - creates interconnected Domain-level graph nodes
+    // Format: "domain: <name> | hops: <hop1> → <hop2> → <hop3> | gotchas: <g1>, <g2>"
+    // Or plain text: just save to text-based layer (backward compat)
+    const content = params.content;
+
+    // Try to detect structured format
+    const domainMatch = content.match(/domain\s*[:]\s*([^|\n]+)/i);
+    const hopsMatch = content.match(/hops\s*[:]\s*([^|\n]+)/i);
+    const gotchasMatch = content.match(/gotchas?\s*[:]\s*([^|\n]+)/i);
+    const decisionsMatch = content.match(/decisions?\s*[:]\s*([^|\n]+)/i);
+    const filesMatch = content.match(/files?\s*[:]\s*([^|\n]+)/i);
+
+    if (domainMatch) {
+      const domain = domainMatch[1].trim();
+      const hopsStr = hopsMatch ? hopsMatch[1].trim() : "";
+      const gotchasStr = gotchasMatch ? gotchasMatch[1].trim() : "";
+      const decisionsStr = decisionsMatch ? decisionsMatch[1].trim() : "";
+      const filesStr = filesMatch ? filesMatch[1].trim() : "";
+
+      const hops = hopsStr ? hopsStr.split("→").map(h => h.trim()).filter(Boolean).map((h, i, arr) => ({
+        from: i === 0 ? domain : arr[i - 1],
+        to: h,
+        relation: "flows",
+        description: h,
+      })) : [];
+
+      const gotchas = gotchasStr ? gotchasStr.split(",").map(g => g.trim()).filter(Boolean) : [];
+      const decisions = decisionsStr ? decisionsStr.split(",").map(d => d.trim()).filter(Boolean) : [];
+      const filePaths = filesStr ? filesStr.split(",").map(f => f.trim()).filter(Boolean) : [];
+
+      try {
+        const { recordDomainFlow } = await import("../engine/kumaGraph.js");
+        const flow = await recordDomainFlow({ domain, hops, gotchas, decisions, filePaths });
+
+        // Also save to text-based layer for backward compat
+        await writeLayer("arch_flow", content);
+
+        return `✅ Domain flow "${domain}" recorded — ${flow.nodeCount} nodes, ${flow.edgeCount} edges created.\n🏛️ **Domain Anchor:** ${domain}\n🔄 **Hops:** ${hops.length}\n⚠️ **Gotchas:** ${gotchas.length}\n📁 **Files:** ${filePaths.length}`;
+      } catch (err) {
+        // Fallback to text-only if graph recording fails
+        await writeLayer("arch_flow", content);
+        return `✅ Architecture flow saved (text only). Graph recording failed: ${err}`;
+      }
+    }
+
+    // Plain text — backward compat
+    return writeLayer("arch_flow", content);
+  }
+
+  // domain_rules or reading arch_flow
   if (params.content) {
     return writeLayer(layer, params.content);
   }

@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.3.19] — 2026-07-28
+
+### 🐛 Tool Name Consistency Fixes
+
+**Three fixes from V3 audit review — ensuring correct tool names across all platforms.**
+
+### 🔧 What Changed
+
+- **`windsurfRulesTemplate()`**: Fixed `kuma_init()` → `kuma_context({ action: "init" })`
+  (old tool name didn't exist as MCP tool)
+- **`opencodeAgentsMdTemplate()`**: No longer reuses `KUMA_CORE_INSTRUCTIONS` (which has
+  `kuma_*` prefix). Now has its own inline template with `kuma_kuma_*` prefix — correct
+  for OpenCode's double-prefixing behavior.
+- **`generateInitMdContent()`**: Added platform prefix note at the top of init.md,
+  explaining `kuma_*` vs `kuma_kuma_*` difference.
+- **Scanner**: kumaCodeScanner.ts improvements
+- **Graph**: kumaGraph.ts + kumaVisualize.ts enhancements
+- **Memory**: kumaMemoryTool.ts + kumaDb.ts updates
+
+---
+
 ## [2.3.18] — 2026-07-28
 
 ### 🔥 Power Curve Alignment — Focus on Exponential Value Actions

@@ -110,7 +110,7 @@ function createSchema(db: SqlJsDatabase): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL REFERENCES nodes(id),
     target_id TEXT NOT NULL REFERENCES nodes(id),
-    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes')),
+    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with')),
     weight REAL DEFAULT 1.0,
     metadata TEXT DEFAULT '{}',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -121,14 +121,14 @@ function createSchema(db: SqlJsDatabase): void {
   try {
     const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='edges'`);
     const edgeSql = schema[0]?.values?.[0]?.[0] as string || '';
-    if (edgeSql.includes('contains') === false || edgeSql.includes('composes') === false) {
+    if (edgeSql.includes('flows_through') === false) {
       // Need migration — recreate edges table with new types
       db.run(`ALTER TABLE edges RENAME TO edges_old`);
       db.run(`CREATE TABLE IF NOT EXISTS edges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_id TEXT NOT NULL REFERENCES nodes(id),
         target_id TEXT NOT NULL REFERENCES nodes(id),
-        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes')),
+        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with')),
         weight REAL DEFAULT 1.0,
         metadata TEXT DEFAULT '{}',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),

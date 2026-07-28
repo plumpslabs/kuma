@@ -8,8 +8,10 @@
 import { getDb, saveDb } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
 
-export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component";
-export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes";
+export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
+  | "feature_domain" | "workflow" | "cross_service_link";
+export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes"
+  | "flows_through" | "triggers" | "syncs_with";
 
 interface GraphNode {
   id: string;
@@ -166,6 +168,202 @@ export async function recordApiRoute(route: string, handler: string): Promise<vo
   await addEdge({ sourceId: routeId, targetId: handlerId, type: "routes" });
 }
 
+// ============================================================
+// DOMAIN FLOW GRAPH — High-Level Architecture Recording (V4)
+// ============================================================
+
+/**
+ * DomainFlowHop — a single step in a domain-level flow chain.
+ */
+export interface DomainFlowHop {
+  from: string;       // Source file/service/module name
+  to: string;         // Target file/service/module name
+  relation: string;   // e.g. "calls API", "renders UI", "queries DB", "syncs data"
+  description?: string;
+}
+
+/**
+ * Record a domain-level architecture flow, creating interconnected
+ * FeatureDomain → Workflow → CrossServiceLink nodes.
+ *
+ * Unlike AST-level nodes (function/class/import), this creates
+ * HIGH-LEVEL interconnected chains that persist across sessions.
+ *
+ * Usage:
+ *   await recordDomainFlow({
+ *     domain: "WhatsApp Omnichannel",
+ *     hops: [
+ *       { from: "Webhook Inbound", to: "ProspectService", relation: "calls API", description: "Inbound msg → normalize" },
+ *       { from: "ProspectService", to: "crm_conversations", relation: "queries DB" },
+ *       { from: "crm_conversations", to: "Redux Panel Sync", relation: "syncs data" },
+ *     ],
+ *     gotchas: ["display_contact must be non-null"],
+ *     filePaths: ["src/services/ProspectService.ts"],
+ *   });
+ */
+export async function recordDomainFlow(params: {
+  domain: string;
+  hops: DomainFlowHop[];
+  gotchas?: string[];
+  decisions?: string[];
+  filePaths?: string[];
+}): Promise<{ nodeCount: number; edgeCount: number }> {
+  let nodeCount = 0;
+  let edgeCount = 0;
+
+  try {
+    // 1. Create/update the FeatureDomain anchor node
+    const domainId = nodeId("feature_domain", params.domain);
+    await upsertNode({
+      id: domainId,
+      type: "feature_domain",
+      name: params.domain,
+      metadata: {
+        hops: params.hops.length,
+        gotchas: params.gotchas?.length || 0,
+        decisions: params.decisions?.length || 0,
+        filePaths: params.filePaths || [],
+      },
+    });
+    nodeCount++;
+
+    // 2. Create workflow nodes for each hop + edges
+    for (let i = 0; i < params.hops.length; i++) {
+      const hop = params.hops[i];
+
+      // Create source node (cross_service_link)
+      const fromId = nodeId("cross_service_link", `${params.domain}::${hop.from}`);
+      await upsertNode({
+        id: fromId,
+        type: "cross_service_link",
+        name: hop.from,
+        metadata: {
+          domain: params.domain,
+          relation: hop.relation,
+          description: hop.description || "",
+          hopIndex: i,
+        },
+      });
+      nodeCount++;
+
+      // Create target node (cross_service_link)
+      const toId = nodeId("cross_service_link", `${params.domain}::${hop.to}`);
+      await upsertNode({
+        id: toId,
+        type: "cross_service_link",
+        name: hop.to,
+        metadata: {
+          domain: params.domain,
+          relation: hop.relation,
+          description: hop.description || "",
+          hopIndex: i,
+        },
+      });
+      nodeCount++;
+
+      // Edge: from → flows_through → to
+      await addEdge({
+        sourceId: fromId,
+        targetId: toId,
+        type: "flows_through",
+        metadata: { relation: hop.relation, description: hop.description },
+      });
+      edgeCount++;
+
+      // Edge: Domain → contains → from
+      await addEdge({
+        sourceId: domainId,
+        targetId: fromId,
+        type: "contains",
+        metadata: { hopIndex: i },
+      });
+      edgeCount++;
+
+      // Edge: Domain → contains → to
+      await addEdge({
+        sourceId: domainId,
+        targetId: toId,
+        type: "contains",
+        metadata: { hopIndex: i },
+      });
+      edgeCount++;
+    }
+
+    // 3. Link gotchas to domain
+    if (params.gotchas) {
+      for (const gotcha of params.gotchas) {
+        const gotchaId = `gotcha::${params.domain}::${gotcha.substring(0, 40)}`;
+        try {
+          await upsertNode({
+            id: gotchaId,
+            type: "variable",
+            name: `gotcha:${gotcha.substring(0, 60)}`,
+            metadata: { domain: params.domain, gotcha, source: "arch_flow" },
+          });
+          nodeCount++;
+          await addEdge({
+            sourceId: domainId,
+            targetId: gotchaId,
+            type: "depends_on",
+            metadata: { type: "gotcha" },
+          });
+          edgeCount++;
+        } catch { /* skip duplicates */ }
+      }
+    }
+
+    // 4. Link decisions to domain
+    if (params.decisions) {
+      for (const decision of params.decisions) {
+        const decisionId = `decision::${params.domain}::${decision.substring(0, 40)}`;
+        try {
+          await upsertNode({
+            id: decisionId,
+            type: "variable",
+            name: `decision:${decision.substring(0, 60)}`,
+            metadata: { domain: params.domain, decision, source: "arch_flow" },
+          });
+          nodeCount++;
+          await addEdge({
+            sourceId: domainId,
+            targetId: decisionId,
+            type: "depends_on",
+            metadata: { type: "decision" },
+          });
+          edgeCount++;
+        } catch { /* skip duplicates */ }
+      }
+    }
+
+    // 5. Link file paths to domain
+    if (params.filePaths) {
+      for (const fp of params.filePaths) {
+        const fileId = nodeId("file", fp);
+        try {
+          await upsertNode({
+            id: fileId,
+            type: "file",
+            name: fp,
+          });
+          nodeCount++;
+          await addEdge({
+            sourceId: domainId,
+            targetId: fileId,
+            type: "owns",
+            metadata: { domain: params.domain },
+          });
+          edgeCount++;
+        } catch { /* skip duplicates */ }
+      }
+    }
+
+    return { nodeCount, edgeCount };
+  } catch (err) {
+    console.error(`[KumaGraph] Failed to record domain flow: ${err}`);
+    return { nodeCount, edgeCount };
+  }
+}
+
 /**
  * Query the knowledge graph.
  */
@@ -211,6 +409,9 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
           r.type === "api_route" ? "🌐" :
           r.type === "db_table" ? "🗄️" :
           r.type === "class" ? "🏗️" :
+          r.type === "feature_domain" ? "🏛️" :
+          r.type === "workflow" ? "🔄" :
+          r.type === "cross_service_link" ? "🔗" :
           "📌";
         lines.push(`${typeEmoji} **${r.name}** (${r.type})`);
         if (r.file_path) lines.push(`   📍 ${r.file_path}`);
@@ -718,6 +919,9 @@ export async function getGraphStats(): Promise<string> {
           t.type === "api_route" ? "🌐" :
           t.type === "db_table" ? "🗄️" :
           t.type === "class" ? "🏗️" :
+          t.type === "feature_domain" ? "🏛️" :
+          t.type === "workflow" ? "🔄" :
+          t.type === "cross_service_link" ? "🔗" :
           "📌";
         lines.push(`  ${emoji} ${t.type}: ${t.cnt}`);
       }
