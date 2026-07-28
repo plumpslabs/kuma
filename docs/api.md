@@ -94,6 +94,82 @@ Project health dashboard (0-100 score).
 
 **Returns:** Safety score, dimension breakdown, risk level, summary.
 
+#### `rollback`
+
+Rollback a specific change by ID from the change log.
+
+```json
+{
+  "action": "rollback",
+  "target": "5"
+}
+```
+
+**Returns:** Rollback result with restored file content.
+
+#### `researches`
+
+List all cached research scopes.
+
+```json
+{
+  "action": "researches"
+}
+```
+
+**Returns:** List of cached research with scope, confidence, and age.
+
+#### `sync`
+
+Unified batch API — combines init + health + memory state in single roundtrip (~60-70% token savings).
+
+```json
+{
+  "action": "sync",
+  "goal": "add password reset",
+  "compact": false
+}
+```
+
+**Returns:** Session state, health score, graph stats, proactive memories.
+
+#### `visualize`
+
+Generate Mermaid knowledge graph diagrams.
+
+```json
+{
+  "action": "visualize",
+  "scope": "auth"
+}
+```
+
+**Returns:** Mermaid flowchart diagram of the knowledge graph.
+
+#### `digest`
+
+Ultra-compact project briefing (<500 tokens). Fastest way to bootstrap context.
+
+```json
+{
+  "action": "digest"
+}
+```
+
+**Returns:** Compact summary: 3-layer memory status, overview, gotchas.
+
+#### `drift`
+
+Detect memory staleness & code drift between knowledge graph and filesystem.
+
+```json
+{
+  "action": "drift"
+}
+```
+
+**Returns:** Stale records, code drift warnings, freshness status.
+
 ---
 
 ## kuma_memory
@@ -208,6 +284,109 @@ View change log (alternative to `kuma_context` changes).
 }
 ```
 
+#### `todo`
+
+Persistent todo CRUD with scope, dependencies, and success criteria.
+
+```json
+{
+  "action": "todo",
+  "title": "Refactor auth service",
+  "scope": "auth",
+  "description": "Split monolithic auth service into smaller modules",
+  "deps": "[\"Create UserService\"]",
+  "success_criteria": "All auth tests pass, auth.ts < 300 lines"
+}
+```
+
+**Returns:** Todo list or creation confirmation.
+
+#### `context`
+
+Inject context notes from external sources.
+
+```json
+{
+  "action": "context",
+  "source": "slack",
+  "content": "Per discussion in #engineering: we're moving to JWT for auth tokens",
+  "scope": "auth"
+}
+```
+
+#### `benchmark`
+
+Before/after metric capture & diff.
+
+```json
+{
+  "action": "benchmark",
+  "label": "phase-3",
+  "metrics": "{\"tsc_errors\": 245, \"test_count\": 120}"
+}
+```
+
+#### `decision_log`
+
+Living decision document with active/superseded/deprecated status tracking.
+
+```json
+{
+  "action": "decision_log",
+  "title": "Use JWT for auth",
+  "rationale": "Stateless, mobile-compatible",
+  "status": "active"
+}
+```
+
+#### `domain_rules`
+
+Layer 1 — Read/write business domain rules (Issue #17).
+
+```json
+{
+  "action": "domain_rules",
+  "content": "All password reset tokens expire in 15 minutes. Refresh tokens last 7 days."
+}
+```
+
+#### `arch_flow`
+
+Layer 2 — Read/write architecture flow maps (Issue #17).
+
+```json
+{
+  "action": "arch_flow",
+  "content": "Auth Flow: POST /login → AuthController.login → AuthService.validate → UserRepository.findByEmail"
+}
+```
+
+#### `gotcha`
+
+Layer 3 — Record/list known gotchas & anti-regression facts (Issue #17/#21).
+
+```json
+{
+  "action": "gotcha",
+  "scope": "src/auth.ts",
+  "content": "PasswordResetService uses synchronous bcrypt — will block event loop",
+  "status": "high",
+  "description": "Use bcrypt.hash() with async/await instead"
+}
+```
+
+#### `layers`
+
+Show all 3 memory layers summary.
+
+```json
+{
+  "action": "layers"
+}
+```
+
+**Returns:** Summary of domain rules, architecture flows, and known gotchas.
+
 ---
 
 ## kuma_safety
@@ -302,6 +481,103 @@ Logged safety bypass.
 }
 ```
 
+#### `security`
+
+Security leak scanner — regex-based credential/token detection.
+
+```json
+{
+  "action": "security",
+  "filePath": "src/config.ts"
+}
+```
+
+#### `gc`
+
+Kuma garbage collection — orphan cleanup, VACUUM, index maintenance.
+
+```json
+{
+  "action": "gc"
+}
+```
+
+#### `doctor`
+
+Kuma health diagnostics — DB integrity check, schema audit, process monitoring.
+
+```json
+{
+  "action": "doctor"
+}
+```
+
+#### `portability`
+
+Check path portability — ensure no absolute paths in stored data.
+
+```json
+{
+  "action": "portability"
+}
+```
+
+#### `gitignore`
+
+Auto-configure `.gitignore` to include `.kuma/`.
+
+```json
+{
+  "action": "gitignore"
+}
+```
+
+#### `clean`
+
+Purge scratch directory + reset drift warnings (Issue #10).
+
+```json
+{
+  "action": "clean"
+}
+```
+
+#### `policy`
+
+Policy-as-Code engine — evaluate commands against `.kuma/policy.yml` (Issue #24).
+
+```json
+{
+  "action": "policy",
+  "command": "rm -rf node_modules"
+}
+```
+
+**Returns:** Command verdict (allowed/blocked), blocked-by rule, warnings.
+
+#### `ast` / `validate`
+
+AST-based code validation — validate JS/TS code structure & patterns (Issue #22).
+
+```json
+{
+  "action": "ast",
+  "scope": "src/auth.ts"
+}
+```
+
+Or validate inline code:
+
+```json
+{
+  "action": "validate",
+  "command": "function foo() { return bar; }",
+  "scope": "example.ts"
+}
+```
+
+**Returns:** Validation findings with line numbers, severities, and descriptions.
+
 ---
 
 ## Parameter Types
@@ -309,7 +585,7 @@ Logged safety bypass.
 | Parameter | Type | Used In |
 |-----------|------|---------|
 | `action` | `enum` | All tools |
-| `scope` | `string?` | context, memory |
+| `scope` | `string?` | context, memory, safety |
 | `target` | `string?` | context, memory |
 | `goal` | `string?` | context, safety |
 | `query` | `string?` | memory |
@@ -335,3 +611,15 @@ Logged safety bypass.
 | `since` | `number?` | context, memory |
 | `limit` | `number?` | memory, safety |
 | `compact` | `boolean?` | context, memory |
+| `force` | `boolean?` | safety (verify) |
+| `command` | `string?` | safety (check/policy/ast) |
+| `description` | `string?` | memory (todo/gotcha) |
+| `deps` | `string?` | memory (todo) |
+| `success_criteria` | `string?` | memory (todo) |
+| `source` | `string?` | memory (context) |
+| `label` | `string?` | memory (benchmark) |
+| `metrics` | `string?` | memory (benchmark) |
+| `labelB` | `string?` | memory (benchmark diff) |
+| `todoId` | `number?` | memory (todo status update) |
+| `status` | `string?` | memory (todo/gotcha/decision_log) |
+| `filePath` | `string?` | safety (check/lock/security) |

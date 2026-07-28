@@ -11,7 +11,7 @@ export function registerAllTools(server: McpServer): void {
     "kuma_context",
     "**Call FIRST every session.** Understand your project before making changes. Actions: init (load project brief), research (5-step pipeline: cache→staleness→graph→impact→decision), impact (analyze change effects), navigate (trace code flow), changes (view change log), health (project health score 0-100). RESEARCH IS REQUIRED before editing unfamiliar code.",
     {
-      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, health=project health score"),
+      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize", "digest", "drift"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, digest=ultra-compact <500 token project briefing (Issue #18), drift=detect memory staleness & code drift (Issue #20), health=project health score"),
       scope: z.string().optional().describe("Research scope for research action (e.g. 'auth', 'database', 'api')"),
       target: z.string().optional().describe("Target symbol/file for impact/navigate/changes"),
       goal: z.string().optional().describe("Current goal (for init/health)"),
@@ -42,7 +42,7 @@ export function registerAllTools(server: McpServer): void {
     "kuma_memory",
     "Record and retrieve project knowledge. Actions: decision (ADR-style record/template/suggest), mine (mine historical decisions from git log & code comments), research_save (save research), session (session summary), heal (graph repair), search (search all), changes (change log), todo (persistent todo CRUD), context (inject context notes), benchmark (capture/diff metrics), decision_log (living document with status tracking).",
     {
-      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save, session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions"),
+      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save, session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules (Issue #17), arch_flow=Layer 2 architecture flow (Issue #17), gotcha=Layer 3 known gotchas (Issue #17/#21), layers=all 3 layers summary"),
       scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / context"),
@@ -110,7 +110,7 @@ export function registerAllTools(server: McpServer): void {
     "kuma_safety",
     "Safety checks, policy enforcement, security scanning, integrated auto-verification, and project hygiene. Actions: guard (anti-pattern detection), verify (auto-run scoped tests), check (pre-exec safety), audit (query trail), lock (multi-agent), health (score), security (scan for leaks), gc (garbage collection), doctor (health check), portability (path check), gitignore (auto-config), override (bypass).",
     {
-      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore", "clean"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, clean=purge scratch dir & drift, override=bypass"),
+      action: z.enum(["guard", "verify", "check", "audit", "lock", "health", "override", "security", "gc", "doctor", "portability", "gitignore", "clean", "policy", "ast", "validate"]).describe("Safety action: guard=anti-patterns, verify=auto-run scoped tests, check=pre-exec safety, audit=query trail, lock=multi-agent, health=score, security=scan leaks, gc=garbage collect, doctor=health check, portability=paths, gitignore=config, clean=purge scratch dir & drift, policy=Policy-as-Code engine (Issue #24), ast/validate=AST-based code validation (Issue #22), override=bypass"),
       // Verify params
       scope: z.string().optional().describe("Scope for verify or context (e.g. 'auth', file path)"),
       // Guard params

@@ -371,6 +371,85 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
+  // Issue #17: 3-Layer Memory Engine tables (already file-based)
+  // ============================================================
+
+  // ============================================================
+  // Issue #19: Blackboard Events table
+  // ============================================================
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS blackboard_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      severity TEXT NOT NULL DEFAULT 'info'
+        CHECK(severity IN ('info','warning','critical')),
+      tags TEXT DEFAULT '[]',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_bb_type ON blackboard_events(type)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_bb_topic ON blackboard_events(topic)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_bb_severity ON blackboard_events(severity)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_bb_created ON blackboard_events(created_at)`);
+
+  // ============================================================
+  // Issue #21: Known Gotchas table
+  // ============================================================
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS known_gotchas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_path TEXT NOT NULL,
+      description TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'medium'
+        CHECK(severity IN ('low','medium','high','critical')),
+      workaround TEXT,
+      added_by TEXT DEFAULT 'agent',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_gotchas_file ON known_gotchas(file_path)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_gotchas_severity ON known_gotchas(severity)`);
+
+  // ============================================================
+  // Issue #23: Trajectory tables
+  // ============================================================
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS trajectories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal TEXT NOT NULL,
+      steps TEXT NOT NULL DEFAULT '[]',
+      total_duration_ms INTEGER DEFAULT 0,
+      success_rate REAL DEFAULT 0.0,
+      complexity INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_traj_goal ON trajectories(goal)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_traj_complexity ON trajectories(complexity)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_traj_created ON trajectories(created_at)`);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS distilled_skills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      parameters TEXT DEFAULT '[]',
+      success_count INTEGER DEFAULT 1,
+      avg_duration_ms INTEGER DEFAULT 0,
+      source_trajectory_id INTEGER,
+      last_used_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_skills_name ON distilled_skills(name)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_skills_used ON distilled_skills(last_used_at)`);
+
+  // ============================================================
   // Part 5 #7: Portability tracking
   // ============================================================
   db.run(`CREATE TABLE IF NOT EXISTS portability_entries (
@@ -850,7 +929,7 @@ export async function runDoctor(): Promise<string> {
     } catch { checks.push("**Database Integrity**: ❌ check failed"); }
 
     // 2. Schema health
-    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries", "verifications", "health_snapshots", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "scratch_entries", "portability_entries"];
+    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries", "verifications", "health_snapshots", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "scratch_entries", "portability_entries", "blackboard_events", "known_gotchas", "trajectories", "distilled_skills"];
     let existing = 0;
     for (const t of allTables) {
       try {

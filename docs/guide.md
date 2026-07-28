@@ -205,6 +205,73 @@ What it checks:
 
 ---
 
+## New in This Release
+
+### 🧬 3-Layer Memory Engine (Issue #17)
+
+Kuma now has structured memory across 3 layers:
+
+| Layer | Action | What it stores |
+|-------|--------|----------------|
+| **Layer 1 — Domain Rules** | `kuma_memory({ action: 'domain_rules' })` | Business logic constraints, project invariants |
+| **Layer 2 — Architecture Flow** | `kuma_memory({ action: 'arch_flow' })` | Code flow maps, entry-to-exit paths |
+| **Layer 3 — Gotchas** | `kuma_memory({ action: 'gotcha' })` | Known pitfalls, workarounds, anti-regression facts |
+
+```bash
+# View all layers
+kuma_memory({ action: "layers" })
+```
+
+### 📜 Policy-as-Code Engine (Issue #24)
+
+Evaluate commands against `.kuma/policy.yml` before execution:
+
+```bash
+kuma_safety({ action: "policy", command: "rm -rf node_modules" })
+```
+
+**Returns:** Command verdict (allowed/blocked), blocked-by rule, warnings, and override instructions.
+
+### 🔬 AST-Based Code Validation (Issue #22)
+
+Validate JS/TS code structure & patterns:
+
+```bash
+# Validate a file
+kuma_safety({ action: "ast", scope: "src/auth.ts" })
+
+# Validate inline code
+kuma_safety({ action: "validate", command: "function foo() { return bar; }", scope: "example.ts" })
+```
+
+### ⚡ Context Digest & Drift Detection
+
+```bash
+# Ultra-compact project briefing (<500 tokens)
+kuma_context({ action: "digest" })
+
+# Detect memory staleness & code drift
+kuma_context({ action: "drift" })
+```
+
+### 🎨 Knowledge Graph Visualizer (Issue #16)
+
+Generate interactive Mermaid diagrams:
+
+```bash
+kuma_context({ action: "visualize", scope: "auth" })
+```
+
+### 🔄 Unified Batch API (Issue #12)
+
+Combine init + health + memory in one call (~60-70% token savings):
+
+```bash
+kuma_context({ action: "sync", goal: "add password reset" })
+```
+
+---
+
 ## Safety Features
 
 ### Safety Guard
@@ -256,6 +323,27 @@ kuma_safety({ action: "lock", lockAction: "acquire", lockFilePath: "auth.ts" })
 kuma_safety({ action: "lock", lockAction: "release", lockFilePath: "auth.ts" })
 kuma_safety({ action: "lock", lockAction: "list" })
 kuma_safety({ action: "lock", lockAction: "clean" })
+```
+
+### Security Leak Scanner
+
+Scan files for leaked credentials/tokens:
+
+```bash
+kuma_safety({ action: "security", filePath: "src/config.ts" })
+```
+
+### Kuma Hygiene — GC, Doctor, Clean
+
+```bash
+# Garbage collection — orphan cleanup, VACUUM, index maintenance
+kuma_safety({ action: "gc" })
+
+# Health diagnostics — DB integrity, schema health, process monitoring
+kuma_safety({ action: "doctor" })
+
+# Purge scratch directory + reset drift warnings
+kuma_safety({ action: "clean" })
 ```
 
 ---

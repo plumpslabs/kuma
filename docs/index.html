@@ -284,7 +284,7 @@ table tr:hover td { background: var(--gray-800); }
       <ellipse cx="50" cy="50" rx="10" ry="6" fill="#B45309"/>
       <path d="M35 58 Q50 72 65 58" stroke="#1F2937" stroke-width="3.5" fill="none" stroke-linecap="round"/>
     </svg>
-    <div><span>Kuma</span><small>v2.3.7</small></div>
+    <div><span>Kuma</span><small>v2.3.8</small></div>
   </a>
   <div class="sidebar-nav">
     <span class="sidebar-section">Getting Started</span>
@@ -418,7 +418,13 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
       <tr><td><code>impact</code></td><td>Graph traversal</td><td>"Change validateToken → 42 refs, 15 files, 3 tests."</td></tr>
       <tr><td><code>navigate</code></td><td>Graph BFS</td><td>Trace full call chain from route to database.</td></tr>
       <tr><td><code>changes</code></td><td>Change log query</td><td>Session changes with selective undo support.</td></tr>
+      <tr><td><code>rollback</code></td><td>File restore</td><td>Rollback a change by ID from the change log.</td></tr>
+      <tr><td><code>researches</code></td><td>Cache list</td><td>List all cached research with confidence & age.</td></tr>
       <tr><td><code>health</code></td><td>Aggregate scoring</td><td>Project health dashboard: 0-100 score.</td></tr>
+      <tr><td><code>sync</code></td><td>Unified batch</td><td>Init + health + memory state in one call (~60-70% token savings).</td></tr>
+      <tr><td><code>visualize</code></td><td>Mermaid diagram</td><td>Generate knowledge graph visualizations.</td></tr>
+      <tr><td><code>digest</code></td><td>Ultra-compact brief</td><td>&lt;500 token project briefing (Issue #18).</td></tr>
+      <tr><td><code>drift</code></td><td>Staleness detection</td><td>Detect memory staleness &amp; code drift (Issue #20).</td></tr>
     </tbody>
   </table>
 
@@ -427,12 +433,20 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     <thead><tr><th>Action</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>decision</code></td><td>ADR-style recording. Template, suggest, or record.</td></tr>
-      <tr><td><code>mine</code></td><td>Mine historical decisions from git log & inline comments.</td></tr>
+      <tr><td><code>mine</code></td><td>Mine historical decisions from git log &amp; inline comments.</td></tr>
       <tr><td><code>research_save</code></td><td>Save results to graph + <code>.kuma/research/</code></td></tr>
       <tr><td><code>session</code></td><td>Session summary — files, failures, progress.</td></tr>
       <tr><td><code>heal</code></td><td>Self-heal graph — stale detection, git repair.</td></tr>
-      <tr><td><code>search</code></td><td>Search memories + knowledge graph.</td></tr>
+      <tr><td><code>search</code></td><td>Search memories + knowledge graph (TF-IDF hybrid).</td></tr>
       <tr><td><code>changes</code></td><td>View change log for selective undo.</td></tr>
+      <tr><td><code>todo</code></td><td>Persistent todo CRUD with scope &amp; success criteria.</td></tr>
+      <tr><td><code>context</code></td><td>Inject context notes (Slack, Jira, meetings).</td></tr>
+      <tr><td><code>benchmark</code></td><td>Before/after metric capture &amp; diff.</td></tr>
+      <tr><td><code>decision_log</code></td><td>Living decision document with status tracking.</td></tr>
+      <tr><td><code>domain_rules</code></td><td>Layer 1 — Business domain rules (Issue #17).</td></tr>
+      <tr><td><code>arch_flow</code></td><td>Layer 2 — Architecture flow maps (Issue #17).</td></tr>
+      <tr><td><code>gotcha</code></td><td>Layer 3 — Known gotchas &amp; anti-regression (Issue #17/#21).</td></tr>
+      <tr><td><code>layers</code></td><td>Show all 3 memory layers summary.</td></tr>
     </tbody>
   </table>
 
@@ -441,12 +455,20 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     <thead><tr><th>Action</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>guard</code></td><td>Anti-pattern, drift, and tool-loop detection.</td></tr>
-      <tr><td><code>verify</code></td><td>Integrated auto-verification — auto-detect runner & run scoped tests.</td></tr>
+      <tr><td><code>verify</code></td><td>Auto-verification — auto-detect runner, scope tests, 5-layer safety guard.</td></tr>
       <tr><td><code>check</code></td><td>Pre-exec safety: policy, path, lock, risk.</td></tr>
       <tr><td><code>audit</code></td><td>Query audit trail with stats and overrides.</td></tr>
       <tr><td><code>lock</code></td><td>Multi-agent file locking.</td></tr>
       <tr><td><code>health</code></td><td>Health score 0-100 with breakdown.</td></tr>
       <tr><td><code>override</code></td><td>Logged safety bypass.</td></tr>
+      <tr><td><code>security</code></td><td>Leak scanner — credential/token detection.</td></tr>
+      <tr><td><code>gc</code></td><td>Garbage collection — orphan cleanup, VACUUM.</td></tr>
+      <tr><td><code>doctor</code></td><td>Health diagnostics — DB, schema, process status.</td></tr>
+      <tr><td><code>portability</code></td><td>Check path portability (no absolute paths).</td></tr>
+      <tr><td><code>gitignore</code></td><td>Auto-configure <code>.gitignore</code>.</td></tr>
+      <tr><td><code>clean</code></td><td>Purge scratch &amp; reset drift warnings.</td></tr>
+      <tr><td><code>policy</code></td><td>Policy-as-Code engine (Issue #24).</td></tr>
+      <tr><td><code>ast</code> / <code>validate</code></td><td>AST-based code validation (Issue #22).</td></tr>
     </tbody>
   </table>
 </section>
@@ -634,7 +656,7 @@ kuma_memory({ action: "heal" })</code></pre>
   <table>
     <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>action</code></td><td><code>"init" | "research" | "impact" | "navigate" | "changes" | "health"</code></td><td>Action to perform</td></tr>
+      <tr><td><code>action</code></td><td><code>"init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift"</code></td><td>Action to perform</td></tr>
       <tr><td><code>scope</code></td><td><code>string?</code></td><td>Research scope (e.g. "auth")</td></tr>
       <tr><td><code>target</code></td><td><code>string?</code></td><td>Symbol/file for impact/navigate</td></tr>
       <tr><td><code>goal</code></td><td><code>string?</code></td><td>Current goal</td></tr>
@@ -647,7 +669,7 @@ kuma_memory({ action: "heal" })</code></pre>
   <table>
     <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>action</code></td><td><code>"decision" | "research_save" | "session" | "heal" | "search" | "changes"</code></td><td>Action to perform</td></tr>
+      <tr><td><code>action</code></td><td><code>"decision" | "mine" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "domain_rules" | "arch_flow" | "gotcha" | "layers"</code></td><td>Action to perform</td></tr>
       <tr><td><code>scope</code></td><td><code>string?</code></td><td>Scope for research_save/search</td></tr>
       <tr><td><code>query</code></td><td><code>string?</code></td><td>Search query</td></tr>
       <tr><td><code>content</code></td><td><code>string?</code></td><td>Content for research_save</td></tr>
@@ -661,8 +683,13 @@ kuma_memory({ action: "heal" })</code></pre>
       <tr><td><code>healAction</code></td><td><code>"check" | "heal"?</code></td><td>Heal sub-action</td></tr>
       <tr><td><code>topic</code></td><td><code>string?</code></td><td>Session topic</td></tr>
       <tr><td><code>limit</code></td><td><code>number?</code></td><td>Result limit</td></tr>
-      <tr><td><code>target</code></td><td><code>string?</code></td><td>File for changes</td></tr>
+      <tr><td><code>target</code></td><td><code>string?</code></td><td>File for changes / decision_log ID</td></tr>
       <tr><td><code>since</code></td><td><code>number?</code></td><td>Timestamp filter</td></tr>
+      <tr><td><code>description</code></td><td><code>string?</code></td><td>Todo/gotcha description</td></tr>
+      <tr><td><code>status</code></td><td><code>string?</code></td><td>Status for todo/gotcha/decision_log</td></tr>
+      <tr><td><code>source</code></td><td><code>string?</code></td><td>Context source (slack, jira, meeting)</td></tr>
+      <tr><td><code>label</code></td><td><code>string?</code></td><td>Benchmark label</td></tr>
+      <tr><td><code>metrics</code></td><td><code>string?</code></td><td>Benchmark metrics JSON</td></tr>
     </tbody>
   </table>
 
@@ -670,7 +697,7 @@ kuma_memory({ action: "heal" })</code></pre>
   <table>
     <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>action</code></td><td><code>"guard" | "check" | "audit" | "lock" | "health" | "override"</code></td><td>Action to perform</td></tr>
+      <tr><td><code>action</code></td><td><code>"guard" | "verify" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "clean" | "policy" | "ast" | "validate"</code></td><td>Action to perform</td></tr>
       <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
       <tr><td><code>guardCheck</code></td><td><code>"anti-pattern" | "loop" | "drift" | "context" | "all"?</code></td><td>Guard check type</td></tr>
       <tr><td><code>actionCheck</code></td><td><code>string?</code></td><td>Action type for check</td></tr>
@@ -681,6 +708,15 @@ kuma_memory({ action: "heal" })</code></pre>
       <tr><td><code>lockFilePath</code></td><td><code>string?</code></td><td>File for lock</td></tr>
       <tr><td><code>agentId</code></td><td><code>string?</code></td><td>Agent ID for lock</td></tr>
       <tr><td><code>limit</code></td><td><code>number?</code></td><td>Audit result limit</td></tr>
+      <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
+      <tr><td><code>guardCheck</code></td><td><code>"all" | "anti-pattern" | "loop" | "drift" | "context"?</code></td><td>Guard check type</td></tr>
+      <tr><td><code>command</code></td><td><code>string?</code></td><td>Command for check/policy/ast</td></tr>
+      <tr><td><code>reason</code></td><td><code>string?</code></td><td>Override reason</td></tr>
+      <tr><td><code>force</code></td><td><code>boolean?</code></td><td>Force bypass cache for verify</td></tr>
+      <tr><td><code>toolName</code></td><td><code>string?</code></td><td>Tool name for audit/override</td></tr>
+      <tr><td><code>riskLevel</code></td><td><code>string?</code></td><td>Filter audit by risk level</td></tr>
+      <tr><td><code>allowed</code></td><td><code>boolean?</code></td><td>Filter audit by allowed/blocked</td></tr>
+      <tr><td><code>lockAction</code></td><td><code>"acquire" | "release" | "list" | "clean"?</code></td><td>Lock sub-action</td></tr>
     </tbody>
   </table>
 </section>

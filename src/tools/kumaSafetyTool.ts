@@ -5,7 +5,7 @@ import { acquireLock, releaseLock, listLocks, cleanStaleLocks } from "../engine/
 import { saveHealthSnapshot, getSecurityFindings, addSecurityFinding, runGarbageCollection, runDoctor, checkPortability, ensureGitignore } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
-type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean";
+type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean" | "policy" | "ast" | "validate";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -49,6 +49,9 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
     case "portability": return handlePortability(params);
     case "gitignore": return handleGitignore(params);
     case "clean": return handleClean(params);
+    case "policy": return handlePolicy(params);
+    case "ast":
+    case "validate": return handleAstValidation(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -258,6 +261,80 @@ async function handleClean(_params: SafetyParams): Promise<string> {
     : `🧹 **Scratch Clean** — No scratch files to clean.`;
   return `${result}\n💡 Drift warnings have been reset. Any temporary debug artifacts are now cleared.`;
 }
+
+// ============================================================
+// POLICY — Policy-as-Code Engine (Issue #24)
+// ============================================================
+
+async function handlePolicy(params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_policy", {});
+
+  // Evaluate a command against policy
+  if (params.command) {
+    const { evaluateCommand, evaluateFilePath } = await import("../engine/kumaPolicyEngine.js");
+    const commandVerdict = evaluateCommand(params.command);
+    const lines: string[] = [];
+
+    lines.push(`📜 **Policy Check**: ${commandVerdict.allowed ? "✅ Allowed" : "⛔ Blocked"}`);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    lines.push("");
+    lines.push(`💻 Command: \`${params.command}\``);
+    lines.push(`📋 Result: ${commandVerdict.message}`);
+
+    if (commandVerdict.blockedBy) {
+      lines.push("");
+      lines.push(`🔴 **Blocked by rule**: ${commandVerdict.blockedBy.description}`);
+      if (commandVerdict.requiresOverride) {
+        lines.push(`🔑 Use kuma_safety({ action: 'override', toolName: 'policy', reason: '...' }) to bypass.`);
+      }
+    }
+
+    for (const w of commandVerdict.warnings) {
+      lines.push(`🟡 **Warning**: ${w.description}`);
+    }
+
+    // Also check file path
+    if (params.filePath) {
+      const fileVerdict = evaluateFilePath(params.filePath);
+      if (!fileVerdict.allowed) {
+        lines.push("");
+        lines.push(fileVerdict.message);
+      }
+    }
+
+    return lines.join("\n");
+  }
+
+  // Show current policy status
+  const { formatPolicyStatus } = await import("../engine/kumaPolicyEngine.js");
+  return formatPolicyStatus();
+}
+
+// ============================================================
+// AST VALIDATION — AST-Based Code Validation (Issue #22)
+// ============================================================
+
+async function handleAstValidation(params: SafetyParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_ast", { scope: params.scope });
+
+  const { validateCodeContent, validateFile, formatValidationFindings } = await import("../engine/kumaAstValidator.js");
+
+  // If content is provided, validate it directly
+  if (params.command) {
+    const findings = validateCodeContent(params.command, params.scope);
+    return formatValidationFindings(findings, params.scope);
+  }
+
+  // If scope is a file path, validate the file
+  if (params.scope) {
+    const findings = validateFile(params.scope);
+    return formatValidationFindings(findings, params.scope);
+  }
+
+  return "⚠️ Provide a scope (file path) or command (code content) to validate.";
+}
+
+
 
 // ============================================================
 // VERIFY — On-Demand Test Verification (SAFETY-GUARDED)

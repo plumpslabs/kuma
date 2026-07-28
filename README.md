@@ -108,7 +108,7 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 
 ### 🧠 `kuma_context` — Context & Research
 
-| Action | Pipelina | Use case |
+| Action | Pipeline | Use case |
 |--------|----------|----------|
 | `init` | Project brief | **Call first every session.** Load graph, detect stack, show structure. |
 | `research` | 5-step pipeline | **WAJIB before editing.** Cache → staleness → graph → impact → decisions. |
@@ -116,6 +116,12 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 | `navigate` | BFS traversal | "How does login work?" — full call chain from route to database. |
 | `changes` | Change log query | "What changed this session?" — selective undo support. |
 | `health` | Aggregate scoring | Project health dashboard 0-100 across 9 dimensions. |
+| `rollback` | File restore | Rollback a specific change by ID from the change log. |
+| `researches` | Cache list | List all cached research scopes with confidence & age. |
+| `sync` | Unified batch | Combines init + health + memory state in single roundtrip (~60-70% token savings). |
+| `visualize` | Mermaid diagram | Generate interactive knowledge graph diagrams (flowchart, dependency, mindmap). |
+| `digest` | Ultra-compact brief | <500 token project briefing — fastest way to bootstrap context (Issue #18). |
+| `drift` | Staleness detection | Detect memory staleness & code drift between graph and actual filesystem (Issue #20). |
 
 ### 📝 `kuma_memory` — Decision & Knowledge
 
@@ -126,20 +132,36 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 | `research_save` | Persist research to graph + `.kuma/research/<scope>.json`. |
 | `session` | "What happened this session?" — files, failures, progress. |
 | `heal` | Self-heal knowledge graph — stale detection, git repair. |
-| `search` | Search across memories + knowledge graph. |
+| `search` | Search across memories + knowledge graph (with TF-IDF hybrid semantic search). |
 | `changes` | Change log for selective undo. |
+| `todo` | Persistent todo CRUD — add, list, update status with scope & success criteria. |
+| `context` | Inject context notes from external sources (Slack, Jira, meetings). |
+| `benchmark` | Before/after metric capture & diff (e.g., type errors, test count). |
+| `decision_log` | Living decision document with status tracking (active/superseded/deprecated). |
+| `domain_rules` | Layer 1 — Business/domain rules knowledge (Issue #17). |
+| `arch_flow` | Layer 2 — Architecture flow mapping (Issue #17). |
+| `gotcha` | Layer 3 — Known gotchas & anti-regression shield (Issue #17/#21). |
+| `layers` | Show all 3 memory layers summary. |
 
 ### 🛡️ `kuma_safety` — Safety & Policy
 
 | Action | Use case |
 |--------|----------|
 | `guard` | Anti-pattern, drift, tool-loop, and failure checks. |
-| `verify` | **SAFETY-GUARDED** on-demand test verification — only runs via explicit tool call. Auto-detects runner (pnpm/npm/yarn/pytest/cargo/go), scopes to session changes, rate-limited (60s min interval), concurrency-locked (1 at a time), cached (< 5 min returns stale result), runaway-protected (> 3 calls in 5 min auto-blocks). ⚠️ NEVER auto-triggered — only via explicit `kuma_safety({ action: "verify" })`. |
+| `verify` | **SAFETY-GUARDED** on-demand test verification — only runs via explicit tool call. Auto-detects runner (pnpm/npm/yarn/pytest/cargo/go), scopes to session changes, rate-limited (30s handler + 60s verifier cooldown), concurrency-locked (intra-process + cross-process file lock), cached (< 5 min returns stale result), runaway-protected (> 3 calls in 5 min auto-blocks), hard timeout (30s + SIGKILL). ⚠️ NEVER auto-triggered — only via explicit `kuma_safety({ action: "verify" })`. |
 | `check` | Pre-execution safety: policy, path, lock, risk level. |
 | `audit` | Query audit trail + stats + override log. |
 | `lock` | Multi-agent file locking. |
 | `health` | Safety score 0-100 with dimension breakdown. |
 | `override` | Logged safety bypass with reason. |
+| `security` | Security leak scanner — regex-based credential/token detection. |
+| `gc` | Kuma garbage collection — orphan cleanup, VACUUM, index maintenance. |
+| `doctor` | Kuma health diagnostics — DB integrity, schema health, process status, verification history. |
+| `portability` | Check path portability — no absolute paths in stored data. |
+| `gitignore` | Auto-configure `.gitignore` to include `.kuma/`. |
+| `clean` | Purge scratch directory + reset drift warnings. |
+| `policy` | Policy-as-Code engine — evaluate commands against `.kuma/policy.yml` (Issue #24). |
+| `ast` / `validate` | AST-based code validation — validate JS/TS code structure & patterns (Issue #22). |
 
 ---
 

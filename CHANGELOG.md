@@ -1,5 +1,56 @@
 # Changelog
 
+## [2.3.8] — 2026-07-28
+
+### 🔴 Runaway Detection Gap Closed — Critical Fix Restored (Issue #CRITICAL-001 Continuation)
+
+**Problem:** During the v2.3.5 cross-process lock refactor, the explicit sliding-window
+runaway detection (>3 verify calls in 5 min auto-block) was inadvertently dropped.
+The system still had defense-in-depth (file lock + handler cooldown + `_localRunning`)
+but lacked the dedicated runaway counter.
+
+**Fix — Full Runaway Detection Restored:**
+
+| Layer | Guard | Detail |
+|-------|-------|--------|
+| 🔴 P1 | **Sliding Window Counter** | `_verifyCallTimestamps[]` — tracks verify calls per-process with 5-minute window |
+| 🔴 P1 | **Auto-Block** | >3 calls in window → formatted error with estimated wait time |
+| 🟢 P2 | **File Lock** | Cross-process atomic mkdir lock (unchanged from v2.3.5) |
+| 🟢 P2 | **Handler Cooldown** | 30s secondary rate limit at `handleVerify` level |
+| 🟢 P2 | **Concurrency** | `_localRunning` flag for intra-process fast path |
+| 🟢 P2 | **Staleness Cache** | <5 min returns cached verification result |
+| 🟢 P2 | **Hard Timeout** | 30s + SIGKILL kill switch |
+
+- **New**: `checkRunaway()` function with timestamp array pruning
+- **New**: Sliding window config: `RUNAWAY_WINDOW_MS=300_000` (5 min), `RUNAWAY_MAX_CALLS=3`
+- **Changed**: `runAutoVerification()` now calls `checkRunaway()` after file lock, before staleness check
+
+### 📚 Documentation Overhaul
+
+All docs updated to reflect current feature set:
+
+- **README.md** — Full tool tables with all 43 actions across 3 tools
+- **docs/api.md** — Complete API reference: all new actions documented with JSON examples
+- **docs/index.html** — Updated 3 tools tables + API Reference tables + version → v2.3.8
+- **docs/guide.md** — New "New in This Release" section covering:
+  - 3-Layer Memory Engine (Issue #17)
+  - Policy-as-Code Engine (Issue #24)
+  - AST-Based Code Validation (Issue #22)
+  - Context Digest & Drift Detection (Issue #18, #20)
+  - Knowledge Graph Visualizer (Issue #16)
+  - Unified Batch API (Issue #12)
+  - Security Leak Scanner & Kuma Hygiene
+
+### Files Changed
+
+- `src/engine/kumaVerifier.ts` — Added sliding window runaway detection
+- `README.md` — Full tool table overhaul
+- `docs/api.md` — Complete new action documentation
+- `docs/guide.md` — New features section
+- `docs/index.html` — Updated tools + API tables, version bump
+- `package.json` — Version bump to 2.3.8
+- `CHANGELOG.md` — This entry
+
 ## [2.3.7] — 2026-07-28
 
 ### 🔬 Issue #13: Hybrid Semantic Search (Keyword + TF-IDF Vector Similarity)

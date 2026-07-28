@@ -7,7 +7,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize";
+type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   // Research synonyms
@@ -60,6 +60,18 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "flow": "visualize",
   "viz": "visualize",
   "kuma_visualize": "visualize",
+  // Digest synonyms (Issue #18)
+  "digest": "digest",
+  "bootstrap": "digest",
+  "kuma_digest": "digest",
+  "kuma_bootstrap": "digest",
+  "briefing": "digest",
+  "overview": "digest",
+  // Drift detection synonyms (Issue #20)
+  "drift": "drift",
+  "staleness": "drift",
+  "code-drift": "drift",
+  "freshness": "drift",
 };
 
 interface ContextParams {
@@ -88,7 +100,9 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "health": return handleHealth(params);
     case "sync": return handleSync(params);
     case "visualize": return handleVisualize(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize`;
+    case "digest": return handleDigest(params);
+    case "drift": return handleDrift(params);
+    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize, digest, drift`;
   }
 }
 
@@ -486,6 +500,42 @@ async function handleVisualize(params: ContextParams): Promise<string> {
     type: "flowchart",
     maxNodes: 40,
   });
+}
+
+// ============================================================
+// DIGEST — Ultra-Compact Context Digest (Issue #18)
+// ============================================================
+
+async function handleDigest(_params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_digest", {});
+  try {
+    const { generateContextDigest } = await import("../engine/contextDigest.js");
+    return await generateContextDigest();
+  } catch (err) {
+    // Fallback to generateDigest from domainRules
+    try {
+      const { generateDigest } = await import("../engine/domainRules.js");
+      return generateDigest();
+    } catch {
+      return `Error generating digest: ${err}`;
+    }
+  }
+}
+
+// ============================================================
+// DRIFT — Code Drift Detection (Issue #20)
+// ============================================================
+
+async function handleDrift(_params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_drift", {});
+  try {
+    const { detectDrift, formatDriftReport, flagStaleRecords } = await import("../engine/kumaDriftDetector.js");
+    await flagStaleRecords();
+    const records = await detectDrift();
+    return formatDriftReport(records);
+  } catch (err) {
+    return `Error detecting drift: ${err}`;
+  }
 }
 
 function computeProjectHash(scope: string): string {

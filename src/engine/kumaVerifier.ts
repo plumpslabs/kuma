@@ -84,6 +84,28 @@ let _currentProcess: ChildProcess | null = null;
 const STALE_RESULT_MS = 300_000;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+// 🔴 RUNAWAY DETECTION: Sliding window — max 3 calls per 5 minutes
+const RUNAWAY_WINDOW_MS = 300_000;  // 5 minutes
+const RUNAWAY_MAX_CALLS = 3;
+const _verifyCallTimestamps: number[] = [];
+
+function checkRunaway(): string | null {
+  const now = Date.now();
+  // Prune timestamps outside window
+  while (_verifyCallTimestamps.length > 0 && _verifyCallTimestamps[0] < now - RUNAWAY_WINDOW_MS) {
+    _verifyCallTimestamps.shift();
+  }
+  // Check if runaway threshold exceeded
+  if (_verifyCallTimestamps.length >= RUNAWAY_MAX_CALLS) {
+    const oldestInWindow = _verifyCallTimestamps[0];
+    const waitMs = RUNAWAY_WINDOW_MS - (now - oldestInWindow);
+    const waitSec = Math.ceil(waitMs / 1000);
+    return `⛔ **Runaway protection active** — ${RUNAWAY_MAX_CALLS}+ verify calls in the last 5 minutes. Please wait ${waitSec}s before trying again.\n💡 This prevents resource exhaustion (CPU/RAM) from uncontrolled test spawning.`;
+  }
+  _verifyCallTimestamps.push(now);
+  return null;
+}
+
 export function getRunningVerificationPid(): number | null {
   return _currentProcess?.pid ?? null;
 }
@@ -160,6 +182,13 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
   // 🚨 SAFETY GUARD: Cross-process file lock
   const denial = checkAllowed(root);
   if (denial) return denial;
+
+  // 🚨 SAFETY GUARD: Runaway detection (sliding window >3 calls/5min)
+  const runawayBlock = checkRunaway();
+  if (runawayBlock) {
+    releaseFileLock(root);
+    return runawayBlock;
+  }
 
   try {
     // ⏩ STALENESS CHECK (release lock if cache hit)

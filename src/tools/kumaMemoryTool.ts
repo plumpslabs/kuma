@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -68,6 +68,26 @@ const MEMORY_ALIASES: Record<string, string> = {
   "changes": "changes",
   "change-log": "changes",
   "history": "changes",
+  // Layer 1: Domain Rules (Issue #17)
+  "domain_rules": "domain_rules",
+  "domain-rules": "domain_rules",
+  "domain": "domain_rules",
+  "business-rules": "domain_rules",
+  // Layer 2: Architecture Flow (Issue #17)
+  "arch_flow": "arch_flow",
+  "arch-flow": "arch_flow",
+  "architecture": "arch_flow",
+  "flow-map": "arch_flow",
+  // Layer 3: Gotchas (Issue #17 / #21)
+  "gotcha": "gotcha",
+  "gotchas": "gotcha",
+  "known-gotchas": "gotcha",
+  "legacy": "gotcha",
+  "quirk": "gotcha",
+  // Layers summary
+  "layers": "layers",
+  "3-layer": "layers",
+  "memory-layers": "layers",
 };
 
 interface MemoryParams {
@@ -126,6 +146,10 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "context": return handleContext(params);
     case "benchmark": return handleBenchmark(params);
     case "decision_log": return handleDecisionLog(params);
+    case "domain_rules": return handleLayerAction("domain_rules", params);
+    case "arch_flow": return handleLayerAction("arch_flow", params);
+    case "gotcha": return handleGotchaAction(params);
+    case "layers": return handleLayersSummary(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -367,5 +391,51 @@ async function handleMine(params: MemoryParams): Promise<string> {
     confirm: params.confirm,
     limit: params.limit,
   });
+}
+
+// ============================================================
+// LAYER ACTIONS — 3-Layer Memory Engine (Issue #17)
+// ============================================================
+
+async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: MemoryParams): Promise<string> {
+  const { readLayer, writeLayer } = await import("../engine/domainRules.js");
+  if (params.content) {
+    return writeLayer(layer, params.content);
+  }
+  return readLayer(layer);
+}
+
+// ============================================================
+// GOTCHA ACTION — Anti-Regression Shield (Issue #21)
+// ============================================================
+
+async function handleGotchaAction(params: MemoryParams): Promise<string> {
+  // If adding a new gotcha
+  if (params.content && params.scope) {
+    const { addGotcha } = await import("../engine/kumaGotchas.js");
+    return await addGotcha({
+      filePath: params.scope,
+      description: params.content,
+      severity: (params.status as "low" | "medium" | "high" | "critical") || "medium",
+      workaround: params.description,
+    });
+  }
+
+  // If listing gotchas (optionally filtered by filePath)
+  const { listGotchas, syncGotchasToDb } = await import("../engine/kumaGotchas.js");
+  await syncGotchasToDb();
+  return await listGotchas({
+    filePath: params.scope,
+    severity: params.status,
+  });
+}
+
+// ============================================================
+// LAYERS SUMMARY — Show all 3 layers status
+// ============================================================
+
+async function handleLayersSummary(_params: MemoryParams): Promise<string> {
+  const { getLayersSummary } = await import("../engine/domainRules.js");
+  return getLayersSummary();
 }
 
