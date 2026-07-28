@@ -281,7 +281,7 @@ function renderGraph(data) {
     file: 'box',
     route: 'triangleDown',
     test: 'star',
-    variable: 'database'
+    variable: 'box'
   };
 
   // Limit nodes for performance if > 200
@@ -294,10 +294,11 @@ function renderGraph(data) {
 
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
     var isGotcha = n.name && n.name.toLowerCase().indexOf("gotcha:") === 0;
+    var isVariable = n.type === 'variable' && !isGotcha;
     var shape = isGotcha ? 'triangle' : (shapes[n.type] || 'dot');
-    var maxLen = isGotcha ? 20 : (shape === 'ellipse' ? 18 : 32);
+    var maxLen = isGotcha ? 20 : (shape === 'ellipse' ? 18 : (isVariable ? 16 : 32));
     var label = truncateLabel(n.name, maxLen);
-    var size = calcNodeSize(n.name, n.type);
+    var size = isGotcha ? 12 : (isVariable ? 10 : calcNodeSize(n.name, n.type));
     var color = isGotcha ? '#f97316' : (colors[n.type] || '#64748b');
     return {
       id: n.id,
@@ -310,7 +311,9 @@ function renderGraph(data) {
         hover: { background: color, border: '#a855f7' }
       },
       shape: shape,
-      font: { color: '#ffffff', size: Math.min(13, Math.max(10, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
+      font: isVariable
+        ? { color: '#ffffff', size: 10, face: 'sans-serif', multi: false, bold: true }
+        : { color: '#ffffff', size: Math.min(13, Math.max(10, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
       borderWidth: 0,
       size: size,
       mass: 1 + (size / 40),
