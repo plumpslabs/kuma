@@ -1,0 +1,2 @@
+cargo:rustc-link-lib=static=wit_bindgen_cabi_realloc0_41_0
+cargo:rustc-link-search=native=/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/wasm32-wasip2/debug/build/wit-bindgen-rt-eff90579b07c6a84/out

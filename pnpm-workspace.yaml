@@ -1,2 +1,8 @@
+packages:
+  - 'packages/ide/*'
 allowBuilds:
   esbuild: false
+  keytar: set this to true or false
+minimumReleaseAgeExclude:
+  - '@modelcontextprotocol/core@2.0.0'
+  - '@modelcontextprotocol/server@2.0.0'

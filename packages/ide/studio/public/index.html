@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kuma Studio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♢</text></svg>">
+<script src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js"></script>
+<style>
+:root {
+  --bg: #1a1a2e; --surface: #16213e; --border: #2a2a4a;
+  --text: #e0e0e0; --muted: #888; --accent: #7c3aed; --accent2: #06b6d4;
+  --green: #22c55e; --yellow: #eab308; --orange: #f97316; --red: #ef4444;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+}
+header {
+  display: flex; align-items: center; gap: 16px; padding: 12px 24px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+header h1 { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+header .status { font-size: 12px; color: var(--muted); }
+header .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+header .status .dot.on { background: var(--green); }
+header .status .dot.off { background: var(--red); }
+.stats-bar {
+  display: flex; gap: 8px; padding: 8px 24px; background: var(--surface);
+  border-bottom: 1px solid var(--border); font-size: 12px;
+  overflow-x: auto;
+}
+.stat { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; background: var(--bg); white-space: nowrap; }
+.stat .num { font-weight: 700; color: var(--accent2); }
+.stat .lbl { color: var(--muted); }
+#main { display: flex; height: calc(100vh - 100px); }
+#graph-panel { flex: 1; position: relative; min-width: 0; overflow: hidden; }
+#graph-container { width: 100%; height: 100%; background: radial-gradient(ellipse at center, #1e1e3a 0%, var(--bg) 70%); }
+#sidebar { width: 340px; min-width: 340px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tab {
+  flex: 1; padding: 10px; text-align: center; cursor: pointer; font-size: 12px;
+  color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.2s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-content { flex: 1; overflow-y: auto; padding: 12px; }
+.panel { display: none; }
+.panel.active { display: block; }
+.gotcha-item {
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 8px;
+  background: var(--bg); border-left: 3px solid var(--muted);
+}
+.gotcha-item .file { font-size: 11px; color: var(--accent2); margin-bottom: 4px; word-break: break-all; }
+.gotcha-item .desc { font-size: 13px; margin-bottom: 4px; }
+.gotcha-item .sev-tag { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.sev-critical { background: #ef444420; color: var(--red); border-color: var(--red); }
+.sev-high { background: #f9731620; color: var(--orange); border-color: var(--orange); }
+.sev-medium { background: #eab30820; color: var(--yellow); border-color: var(--yellow); }
+.sev-low { background: #22c55e20; color: var(--green); border-color: var(--green); }
+.traj-item { padding: 8px 12px; margin-bottom: 6px; background: var(--bg); border-radius: 6px; }
+.traj-item .goal { font-size: 13px; font-weight: 600; word-break: break-all; }
+.traj-item .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.health-item { padding: 8px 12px; margin-bottom: 6px; background: var(--bg); border-radius: 6px; }
+.health-item .score { font-size: 20px; font-weight: 700; }
+.health-item .score.good { color: var(--green); }
+.health-item .score.ok { color: var(--yellow); }
+.health-item .score.bad { color: var(--red); }
+.health-item .meta { font-size: 11px; color: var(--muted); }
+.empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+#legend {
+  position: absolute; bottom: 16px; left: 16px; background: rgba(22,33,62,0.92);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
+  font-size: 11px; z-index: 10; max-height: 200px; overflow-y: auto;
+  backdrop-filter: blur(8px);
+}
+#legend .title { font-weight: 600; margin-bottom: 6px; color: var(--muted); }
+.legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+#graph-tooltip {
+  position: absolute; display: none; background: rgba(22,33,62,0.95);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
+  font-size: 12px; z-index: 20; max-width: 320px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+#search-box {
+  position: absolute; top: 16px; right: 16px; z-index: 10;
+}
+#search-box input {
+  background: rgba(22,33,62,0.92); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 12px;
+  width: 200px; outline: none; backdrop-filter: blur(8px);
+  transition: border-color 0.2s;
+}
+#search-box input:focus { border-color: var(--accent); }
+#search-box input::placeholder { color: var(--muted); }
+#graph-controls {
+  position: absolute; bottom: 16px; right: 16px; z-index: 10;
+  display: flex; gap: 6px;
+}
+#graph-controls button {
+  background: rgba(22,33,62,0.92); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); padding: 6px 10px;
+  font-size: 11px; cursor: pointer; backdrop-filter: blur(8px);
+  transition: background 0.2s;
+}
+#graph-controls button:hover { background: var(--accent); border-color: var(--accent); }
+#loading {
+  position: fixed; inset: 0; background: var(--bg); display: flex;
+  align-items: center; justify-content: center; z-index: 100;
+  font-size: 18px; color: var(--accent); flex-direction: column; gap: 16px;
+}
+#loading .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div>Connecting to Kuma...</div>
+<header>
+  <h1>&#9826; Kuma Studio</h1>
+  <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">connecting...</span></div>
+  <button onclick="refetch()" id="refetch-btn" style="margin-left:auto;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s;-webkit-app-region:no-drag" onmouseover="this.style.background='rgba(124,58,237,0.3)'" onmouseout="this.style.background='rgba(124,58,237,0.15)'">&#8635; Refetch</button>
+</header>
+<div class="stats-bar" id="stats-bar"></div>
+<div id="main">
+  <div id="graph-panel">
+    <div id="graph-container"></div>
+    <div id="search-box"><input id="node-search" type="text" placeholder="Search nodes..." /></div>
+    <div id="graph-controls">
+      <button onclick="if(network)network.fit()">Fit</button>
+      <button onclick="if(network)network.startSimulation()">Restart</button>
+      <button onclick="if(network)network.stopSimulation()">Stop</button>
+    </div>
+    <div id="graph-tooltip"></div>
+    <div id="legend"></div>
+  </div>
+  <div id="sidebar">
+    <div class="tabs">
+      <div class="tab active" data-tab="gotchas">&#9888; Gotchas</div>
+      <div class="tab" data-tab="trajectories">&#8599; Trajectories</div>
+      <div class="tab" data-tab="health">&#9829; Health</div>
+    </div>
+    <div class="tab-content" id="tab-content"></div>
+  </div>
+</div>
+
+<script>
+const API = "/api";
+let network = null, nodesData = null, allNodes = null, allEdges = null;
+
+async function init() {
+  var status = await fetch(API+"/status").then(function(r){return r.json()});
+  var dot = document.getElementById("status-dot");
+  var txt = document.getElementById("status-text");
+  if (status.ok) {
+    dot.className = "dot on";
+    txt.textContent = status.project || "connected";
+  } else {
+    dot.className = "dot off";
+    txt.textContent = "no kuma.db found";
+  }
+  document.getElementById("loading").style.display = "none";
+  var data = await fetch(API+"/dashboard").then(function(r){return r.json()});
+  if (data.error) return showError(data.error);
+  setupTabs();
+  renderStats(data);
+  renderGraph(data);
+  renderGotchas(data);
+  renderTrajectories(data);
+  renderHealth(data);
+  setupSearch();
+}
+init();
+
+function showError(msg) {
+  document.getElementById("graph-container").innerHTML = '<div class="empty">&#9888; '+msg+'</div>';
+}
+
+function renderStats(data) {
+  var s = data.stats || {};
+  var hc = s.health_score;
+  var hcColor = hc >= 80 ? "var(--green)" : hc >= 50 ? "var(--yellow)" : "var(--red)";
+  document.getElementById("stats-bar").innerHTML =
+    '<div class="stat"><span class="num">'+(s.node_count||0)+'</span><span class="lbl">nodes</span></div>'+
+    '<div class="stat"><span class="num">'+(s.edge_count||0)+'</span><span class="lbl">edges</span></div>'+
+    '<div class="stat"><span class="num">'+(s.gotcha_count||0)+'</span><span class="lbl">gotchas</span></div>'+
+    '<div class="stat"><span class="num">'+(s.trajectory_count||0)+'</span><span class="lbl">trajectories</span></div>'+
+    '<div class="stat"><span class="num" style="color:'+hcColor+'">'+(hc||0)+'</span><span class="lbl">health</span></div>';
+}
+
+/** Truncate long labels for display */
+function truncateLabel(name, maxLen) {
+  if (!name) return "";
+  if (name.length <= maxLen) return name;
+  return name.substring(0, maxLen-2) + "..";
+}
+
+/** Calculate node size based on label length and type */
+function calcNodeSize(name, type) {
+  var base = 14;
+  if (type === "function") base = 16;
+  if (type === "class") base = 18;
+  if (type === "module") base = 12;
+  if (type === "component") base = 16;
+  if (type === "route") base = 14;
+  if (type === "test") base = 13;
+  // Gentle scaling for long labels
+  var len = name ? Math.min(name.length, 20) : 4;
+  return Math.min(28, Math.max(base, base + len * 0.4));
+}
+
+
+function renderGraph(data) {
+  allNodes = data.nodes || [];
+  allEdges = data.edges || [];
+  if (!allNodes.length) {
+    document.getElementById("graph-container").innerHTML = '<div class="empty">Knowledge Graph is empty</div>';
+    return;
+  }
+
+  var types = [...new Set(allNodes.map(function(n){return n.type||'unknown'}))];
+  var colors = {function:'#7c3aed',class:'#06b6d4',module:'#22c55e',
+    component:'#f97316',file:'#eab308',route:'#ec4899',test:'#14b8a6'};
+  var shapes = {function:'box',class:'hexagon',module:'ellipse',
+    component:'diamond',file:'square',route:'triangle',test:'star'};
+
+  // Limit nodes for performance if > 200
+  var maxNodes = 300;
+  var displayNodes = allNodes;
+  var truncated = allNodes.length > maxNodes;
+  if (truncated) {
+    displayNodes = allNodes.slice(0, maxNodes);
+  }
+
+  var visNodes = new vis.DataSet(displayNodes.map(function(n){
+    var label = truncateLabel(n.name, 28);
+    var size = calcNodeSize(n.name, n.type);
+    var color = colors[n.type] || '#888';
+    return {
+      id: n.id,
+      label: label,
+      title: '<b>' + n.name + '</b> <span style="color:#888">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#06b6d4;font-size:11px">' + n.file_path + '</span>' : ''),
+      color: { background: color, border: color, highlight: { background: color, border: '#fff' } },
+      shape: shapes[n.type] || 'dot',
+      font: { color: '#e0e0e0', size: Math.min(14, Math.max(10, size * 0.5)), face: 'monospace' },
+      borderWidth: 0,
+      size: size,
+      mass: 1 + (size / 40),
+    };
+  }));
+
+  var nodeIds = new Set(displayNodes.map(function(n){return n.id}));
+  var displayEdges = allEdges.filter(function(e){
+    return nodeIds.has(e.source) && nodeIds.has(e.target);
+  }).slice(0, 500);
+
+  var visEdges = new vis.DataSet(displayEdges.map(function(e){
+    return {
+      from: e.source, to: e.target,
+      label: e.relation || '',
+      arrows: { to: { enabled: true, scaleFactor: 0.6, type: 'arrow' } },
+      color: { color: '#4a4a6a', highlight: '#7c3aed', hover: '#7c3aed', opacity: 0.5 },
+      font: { size: 10, color: '#666', strokeWidth: 0, background: 'transparent' },
+      smooth: { type: 'continuous', roundness: 0.3 },
+      width: 1.5,
+      hoverWidth: 2.5,
+      selectionWidth: 2.5,
+    };
+  }));
+
+  var container = document.getElementById("graph-container");
+  network = new vis.Network(container, {nodes: visNodes, edges: visEdges}, {
+    physics: {
+      enabled: true,
+      solver: 'barnesHut',
+      barnesHut: {
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: 150,
+        springConstant: 0.04,
+        damping: 0.6,
+        avoidOverlap: 0.5,
+      },
+      stabilization: { iterations: 400, updateInterval: 25, onlyDynamicEdges: false },
+      adaptiveTimestep: true,
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 300,
+      zoomView: true,
+      dragView: true,
+      dragNodes: true,
+      keyboard: true,
+      multiselect: true,
+      selectable: true,
+      selectConnectedEdges: false,
+    },
+    nodes: {
+      borderWidth: 0,
+      font: { color: '#e0e0e0', size: 12, face: 'monospace' },
+      margin: { top: 4, bottom: 4, left: 6, right: 6 },
+      shadow: { enabled: true, color: 'rgba(124,58,237,0.15)', size: 6, x: 0, y: 2 },
+    },
+    edges: {
+      smooth: { type: 'continuous', roundness: 0.3 },
+      width: 1.5,
+      color: { color: '#4a4a6a', highlight: '#7c3aed' },
+    },
+    configure: { enabled: false },
+  });
+
+  // Click node → show tooltip with file path
+  network.on('click', function(params) {
+    var tip = document.getElementById("graph-tooltip");
+    if (params.nodes.length) {
+      var n = allNodes.find(function(x){return x.id===params.nodes[0]});
+      if (n) {
+        tip.style.display = 'block';
+        tip.innerHTML = '<b>' + n.name + '</b> <span style="color:var(--muted)">' + n.type + '</span>' +
+          (n.file_path ? '<br><span style="color:var(--accent2);font-size:11px;word-break:break-all">' + n.file_path + '</span>' : '');
+        // Position tooltip near the clicked node
+        var pos = network.getPositions([n.id]);
+        if (pos && pos[n.id]) {
+          var canvasPos = network.canvasToDOM(pos[n.id]);
+          var panelRect = container.getBoundingClientRect();
+          var tipX = Math.min(canvasPos.x + 12, panelRect.width - 340);
+          var tipY = Math.max(canvasPos.y - 10, 0);
+          tip.style.left = Math.max(tipX, 8) + 'px';
+          tip.style.top = tipY + 'px';
+        }
+      }
+    } else {
+      tip.style.display = 'none';
+    }
+  });
+
+  // Hover highlight
+  network.on('hoverNode', function(params) {
+    var nodeId = params.node;
+    network.body.data.nodes.updateOnly({
+      id: nodeId,
+      borderWidth: 2,
+      borderWidthSelected: 2,
+    });
+  });
+  network.on('blurNode', function(params) {
+    network.body.data.nodes.updateOnly({
+      id: params.node,
+      borderWidth: 0,
+      borderWidthSelected: 0,
+    });
+  });
+
+  renderLegend(types, colors);
+
+  // Show truncation warning
+  if (truncated) {
+    var warn = document.createElement('div');
+    warn.style.cssText = 'position:absolute;top:16px;left:16px;z-index:10;background:rgba(234,179,8,0.15);color:var(--yellow);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:8px 14px;font-size:12px;backdrop-filter:blur(8px);pointer-events:none';
+    warn.innerHTML = '&#9888; Showing ' + maxNodes + ' / ' + allNodes.length + ' nodes';
+    document.getElementById('graph-panel').appendChild(warn);
+  }
+
+  // Fit after stabilization
+  network.once('stabilizationIterationsDone', function() {
+    network.fit({ animation: { duration: 500, easingFunction: 'easeOutQuad' } });
+  });
+}
+
+async function refetch() {
+  var btn = document.getElementById('refetch-btn');
+  btn.innerHTML = '&#8635; Refetching...';
+  btn.style.opacity = '0.6';
+  try {
+    // Update status too
+    var status = await fetch(API+'/status').then(function(r){return r.json()});
+    var dot = document.getElementById('status-dot');
+    var txt = document.getElementById('status-text');
+    if (status.ok) {
+      dot.className = 'dot on';
+      txt.textContent = status.project || 'connected';
+    } else {
+      dot.className = 'dot off';
+      txt.textContent = 'no kuma.db found';
+    }
+    // Refetch dashboard data
+    var data = await fetch(API+'/dashboard').then(function(r){return r.json()});
+    if (data.error) { showError(data.error); return; }
+    renderStats(data);
+    renderGraph(data);
+    renderGotchas(data);
+    renderTrajectories(data);
+    renderHealth(data);
+  } catch(e) {
+    showError('Refetch failed: ' + e.message);
+  }
+  btn.innerHTML = '&#8635; Refetch';
+  btn.style.opacity = '1';
+}
+
+function renderLegend(types, colors){
+  document.getElementById("legend").innerHTML = '<div class="title">Legend</div>' +
+    types.map(function(t){
+      return '<div class="legend-item"><div class="legend-dot" style="background:'+(colors[t]||'#888')+'"></div>' + t + '</div>';
+    }).join('');
+}
+
+function setupTabs(){
+  var content = document.getElementById("tab-content");
+  content.innerHTML =
+    '<div class="panel active" id="panel-gotchas"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-trajectories"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-health"><div class="empty">Loading...</div></div>';
+  document.querySelectorAll('.tab').forEach(function(tab){
+    tab.onclick = function(){
+      document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+      this.classList.add('active');
+      document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active')});
+      var p = document.getElementById('panel-'+this.dataset.tab);
+      if(p) p.classList.add('active');
+    };
+  });
+  document.querySelector('.tab.active').click();
+}
+
+function renderGotchas(data){
+  var items = data.gotchas || [];
+  var el = document.getElementById("panel-gotchas");
+  if(!el) return;
+  if(!items.length){el.innerHTML='<div class="empty">No gotchas yet</div>';return;}
+  el.innerHTML = items.map(function(g){
+    var color = g.severity==='critical'?'red':g.severity==='high'?'orange':g.severity==='medium'?'yellow':'green';
+    return '<div class="gotcha-item" style="border-color:var(--'+color+')">' +
+      '<div class="file">'+(g.file_path||'global')+'</div>' +
+      '<div class="desc">'+g.description+'</div>' +
+      '<span class="sev-tag sev-'+g.severity+'">'+g.severity+'</span>' +
+      (g.workaround ? ' <span style="font-size:11px;color:var(--muted)">&#128161; '+g.workaround+'</span>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function renderTrajectories(data){
+  var items = data.trajectories || [];
+  var el = document.getElementById("panel-trajectories");
+  if(!el) return;
+  if(!items.length){el.innerHTML='<div class="empty">No trajectories yet</div>';return;}
+  el.innerHTML = items.map(function(t){
+    var dur = t.total_duration_ms ? (t.total_duration_ms/1000).toFixed(1)+'s' : '-';
+    var rate = t.success_rate != null ? (t.success_rate*100).toFixed(0)+'%' : '-';
+    var date = t.created_at ? new Date(t.created_at*1000).toLocaleDateString() : '-';
+    return '<div class="traj-item"><div class="goal">'+t.goal+'</div><div class="meta">&#9201; '+dur+' &middot; &#10004; '+rate+' &middot; '+date+'</div></div>';
+  }).join('');
+}
+
+function renderHealth(data){
+  var items = data.health || [];
+  var el = document.getElementById("panel-health");
+  if(!el) return;
+  if(!items.length){el.innerHTML='<div class="empty">No health data yet</div>';return;}
+  el.innerHTML = items.map(function(h){
+    var cls = h.score>=80?'good':h.score>=50?'ok':'bad';
+    var summary = h.summary||h.risk_level||'-';
+    var date = h.created_at ? new Date(h.created_at*1000).toLocaleDateString() : '-';
+    return '<div class="health-item"><div class="score '+cls+'">'+h.score+'</div><div class="meta">'+summary+' &middot; '+date+'</div></div>';
+  }).join('');
+}
+
+function setupSearch() {
+  document.getElementById("node-search").oninput = function() {
+    var query = this.value.toLowerCase().trim();
+    if (!network || !allNodes) return;
+    if (!query) {
+      network.body.data.nodes.forEach(function(n){
+        network.body.data.nodes.update({id:n.id,opacity:1.0});
+      });
+      return;
+    }
+    var matched = new Set();
+    allNodes.forEach(function(n){
+      if (n.name.toLowerCase().includes(query) || (n.file_path && n.file_path.toLowerCase().includes(query))) {
+        matched.add(n.id);
+      }
+    });
+    network.body.data.nodes.forEach(function(n){
+      network.body.data.nodes.update({
+        id: n.id,
+        opacity: matched.has(n.id) ? 1.0 : 0.15,
+      });
+    });
+  };
+}
+</script>
+</body>
+</html>

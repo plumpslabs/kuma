@@ -1,0 +1,20 @@
+{
+  "name": "@kuma/studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kuma Studio — web-based knowledge graph visualizer & dashboard. Usage: `bun run src/index.ts`",
+  "bin": {
+    "kuma-studio": "src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "@hono/node-server": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0"
+  }
+}

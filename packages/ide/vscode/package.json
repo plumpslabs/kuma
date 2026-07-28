@@ -1,0 +1,73 @@
+{
+  "name": "vscode-kuma",
+  "version": "0.1.0",
+  "private": true,
+  "displayName": "Kuma IDE",
+  "description": "Visual dashboard for Kuma — knowledge graph, gotchas, trajectories, checkpoints, and more.",
+  "publisher": "plumpslabs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "kuma",
+    "knowledge-graph",
+    "mcp",
+    "ai",
+    "agent"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "icon": "icon.png",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kuma-sidebar",
+          "title": "Kuma",
+          "icon": "$(graph)"
+        }
+      ]
+    },
+    "views": {
+      "kuma-sidebar": [
+        {
+          "type": "webview",
+          "id": "kuma.dashboard",
+          "name": "Dashboard"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "kuma.openDashboard",
+        "title": "Kuma: Open Dashboard"
+      },
+      {
+        "command": "kuma.refreshDashboard",
+        "title": "Kuma: Refresh Dashboard"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "dev": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.9.3",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "@kuma/ide-core": "workspace:*"
+  }
+}

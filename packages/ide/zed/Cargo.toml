@@ -1,0 +1,18 @@
+[package]
+name = "kuma-zed"
+version = "0.1.0"
+edition = "2021"
+description = "Kuma Dashboard for Zed — knowledge graph, gotchas, trajectories, and more"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.1.0"
+serde = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

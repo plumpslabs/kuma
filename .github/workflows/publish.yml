@@ -3,9 +3,15 @@ name: Publish Package
 on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (--dry-run)"
+        type: boolean
+        default: false
 
 jobs:
-  # ─── Test + Build (shared steps) ───
+  # ─── Test + Typecheck ───
   check:
     runs-on: ubuntu-latest
     steps:
@@ -18,9 +24,9 @@ jobs:
         with:
           node-version: "22"
           cache: "pnpm"
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: npx tsc --noEmit
-      - run: pnpm test
+      - run: pnpm test -- --runInBand
 
   # ─── Publish to npmjs.com ───
   publish-npm:
@@ -28,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -40,9 +47,18 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
+      - name: Approve sql.js build
+        run: pnpm config set onlyBuiltDependencies "sql.js" --location project 2>/dev/null; true
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
-      - run: npm publish --access public
+
+      - name: Publish to npm
+        run: |
+          FLAGS="--access public --no-git-checks"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+          pnpm publish $FLAGS
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -66,17 +82,15 @@ jobs:
           registry-url: "https://npm.pkg.github.com"
           scope: "@plumpslabs"
           cache: "pnpm"
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run build
 
-      - name: Adapt package name for GitHub Packages
+      - name: Publish to GitHub Packages
         run: |
-          node -e "
-            const pkg = JSON.parse(require('fs').readFileSync('package.json','utf8'));
-            pkg.name = '@plumpslabs/kuma';
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-      - run: npm publish
+          FLAGS="--no-git-checks"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+          pnpm publish $FLAGS
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

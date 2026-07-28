@@ -1,0 +1,12 @@
+id = "kuma-dashboard"
+name = "Kuma Dashboard"
+version = "0.1.0"
+schema_version = 1
+authors = ["plumpslabs"]
+description = "Kuma dashboard for Zed — knowledge graph, gotchas, trajectories, and more"
+repository = "https://github.com/plumpslabs/kuma"
+
+[slash_commands.kuma]
+description = "Show Kuma dashboard data"
+requires_argument = false
+tooltip_text = "Kuma Dashboard"

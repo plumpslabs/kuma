@@ -261,8 +261,8 @@ async function handleResearch(params: ContextParams): Promise<string> {
   }
   lines.push("");
 
-  // STEP 3: Graph Query + Codebase Fallback
-  lines.push("**Step 3/5: Graph Query**");
+  // STEP 3: Graph Query + Codebase Fallback + Auto-Scan
+  lines.push("**Step 3/5: Graph Query + Code Scan**");
   try {
     const graphResult = await searchGraph(scope, 15);
     const graphLines = graphResult.split("\n");
@@ -295,6 +295,15 @@ async function handleResearch(params: ContextParams): Promise<string> {
   } catch {
     lines.push("  ⚠️ Graph query failed");
   }
+  // Auto-scan: if graph is sparse, run code scanner to populate it
+  try {
+    const { scanCodebase } = await import("../engine/kumaCodeScanner.js");
+    const scanResult = await scanCodebase({ scope, maxFiles: 100 });
+    if (scanResult.nodeCount > 0 || scanResult.edgeCount > 0) {
+      lines.push(`  🔬 Auto-scanned ${scanResult.filesScanned} files → ${scanResult.nodeCount} nodes, ${scanResult.edgeCount} edges`);
+    }
+  } catch { /* scanner unavailable — non-critical */ }
+
   lines.push("");
 
   // STEP 4: Impact Analysis

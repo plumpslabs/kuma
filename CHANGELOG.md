@@ -1,5 +1,77 @@
 # Changelog
 
+## [2.3.9] — 2026-07-28
+
+### 🎨 Kuma Studio — Web-Based Knowledge Graph Visualizer & Dashboard
+
+**New package:** `packages/ide/studio/` — real-time web dashboard for Kuma data.
+
+- **Knowledge Graph View** — Interactive D3.js force-directed graph with draggable nodes, zoom/pan
+- **Health Dashboard** — Real-time health score with historical trend charts
+- **Gotchas Panel** — Known gotchas with severity badges (low/medium/high/critical)
+- **Trajectory View** — Session trajectories with success rates and duration
+- **Tabbed Layout** — Graph / Gotchas / Health / Trajectories tabs
+- **CLI:** `pnpm run studio` or `kuma-studio --port=3322 --dir=./path`
+- **Auto-refresh:** 5-second polling interval with manual refetch button
+- **Project auto-detection** — finds `.kuma/kuma.db` automatically
+
+### 🔬 Enhanced Code Scanner — Module Nodes, Calls Detection & Critical Fixes
+
+**New: Module Nodes (Issue extension)**
+- Added `module` node type for directory structure
+- `owns` edges connect module → direct child files
+- All ancestor directories extracted from scanned file paths
+
+**New: Calls Detection**
+- `calls` edges from file → called function (cross-file)
+- Strips comments, string literals, and regex literals before scanning
+- Comprehensive skip list prevents false positives
+- Deduplication per file
+
+**🔴 Critical Fix: Node ID Collision (Review Issue #2)**
+- Function/class/component IDs now scoped: `type::filePath::name`
+- `symbolLocations` Map tracks function locations across files
+- Fixes graph corruption when multiple files share function names (`handler`, `validate`, `init`)
+
+**🟡 Important: JSX Implicit Return Detection (Review Issue #3)**
+- `const Foo = () => <div/>` now detected without `return` keyword
+- Multi-line check: `() =>` then next line `<Jsx`
+- Preserves existing explicit `return <Jsx` detection
+
+**🟢 Minor: Expanded Skip List + Regex Literal Stripping**
+- Added to skip list: `exports`, `call`, `apply`, `bind`, `then`, `catch`, `finally`, `resolve`, `reject`, `next`, `value`, `done`
+- Regex literals (`/pattern/g`) now stripped before call content scanning
+
+### 🛠️ IDE Integration — Zed Extension & MCP Server
+
+- **Zed IDE Extension** — WASM-based extension with slash commands (`/kuma`, `/kuma-graph`, `/kuma-health`, `/kuma-gotchas`, `/kuma-trajectories`)
+- **MCP Server for IDE** — Dedicated MCP server (`packages/ide/mcp-server/`) exposing Kuma tools to IDE agents
+- **pnpm workspace** — Monorepo structure with `packages/` directory
+
+### 🚀 CI/CD — Publish Workflow Fixes
+
+- Changed `npm publish` → `pnpm publish --no-git-checks` (fixes pnpm symlink compatibility)
+- Added `pnpm.onlyBuiltDependencies: ["sql.js"]` for pnpm v10 approval
+- Removed useless "Adapt package name" step (name was already correct)
+- Added `workflow_dispatch` trigger with `dry_run` input
+- Added `id-token: write` for npm provenance
+
+### Files Changed
+
+- `packages/ide/studio/` — **NEW**: Kuma Studio web dashboard (Hono + D3.js)
+- `packages/ide/zed/` — **NEW**: Zed IDE extension (WASM + Rust)
+- `packages/ide/mcp-server/` — **NEW**: IDE MCP server
+- `packages/ide/core/` — **NEW**: Shared core library for IDE integrations
+- `src/engine/kumaCodeScanner.ts` — **NEW**: Module nodes + calls detection + critical fixes
+- `src/engine/kumaGraph.ts` — Updated for new node/edge types
+- `src/engine/kumaDb.ts` — Schema updates
+- `src/tools/kumaContextTool.ts` — Handling updates
+- `.github/workflows/publish.yml` — Fixed publish pipeline
+- `pnpm-workspace.yaml` — Monorepo config
+- `package.json` — Version bump to 2.3.9 + pnpm config
+- `docs/index.html` — Version bump to v2.3.9
+- `CHANGELOG.md` — This entry
+
 ## [2.3.8] — 2026-07-28
 
 ### 🔴 Runaway Detection Gap Closed — Critical Fix Restored (Issue #CRITICAL-001 Continuation)

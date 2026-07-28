@@ -1,0 +1,2 @@
+cargo:rerun-if-changed=build.rs
+cargo:rustc-env=DEBUG_OUTPUT_DIR=/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/build/wit-bindgen-rust-macro-fa60ccc55a4a1832/out

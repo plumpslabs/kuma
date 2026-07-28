@@ -1,0 +1,30 @@
+{
+  "name": "@kuma/ide-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Core library for Kuma IDE extensions — reads .kuma/kuma.db and provides structured data for knowledge graph, gotchas, trajectories, checkpoints, and more.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

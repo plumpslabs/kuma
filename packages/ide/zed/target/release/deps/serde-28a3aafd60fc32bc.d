@@ -1,0 +1,14 @@
+/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/deps/serde-28a3aafd60fc32bc.d: /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/build/serde-949d940e9505fe5c/out/private.rs
+
+/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/deps/libserde-28a3aafd60fc32bc.rlib: /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/build/serde-949d940e9505fe5c/out/private.rs
+
+/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/deps/libserde-28a3aafd60fc32bc.rmeta: /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/build/serde-949d940e9505fe5c/out/private.rs
+
+/Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/Users/mawa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/build/serde-949d940e9505fe5c/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/mawa/Development/my_projects/kuma/packages/ide/zed/target/release/build/serde-949d940e9505fe5c/out

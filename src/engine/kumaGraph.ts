@@ -8,8 +8,8 @@
 import { getDb, saveDb } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
 
-export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable";
-export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by";
+export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component";
+export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes";
 
 interface GraphNode {
   id: string;
@@ -36,7 +36,7 @@ interface GraphQuery {
 /**
  * Generate a stable node ID from type and name.
  */
-function nodeId(type: NodeType, name: string): string {
+export function nodeId(type: NodeType, name: string): string {
   return `${type}::${name}`;
 }
 

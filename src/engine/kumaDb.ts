@@ -104,16 +104,40 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // Edges: relationships between nodes
+  // NOTE: 'contains' = file→symbol (file contains function/class/component)
+  //       'composes' = component→component (component uses sub-component)
   db.run(`CREATE TABLE IF NOT EXISTS edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL REFERENCES nodes(id),
     target_id TEXT NOT NULL REFERENCES nodes(id),
-    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by')),
+    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes')),
     weight REAL DEFAULT 1.0,
     metadata TEXT DEFAULT '{}',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     UNIQUE(source_id, target_id, type)
   )`);
+
+  // Migration: if edges table exists with old CHECK constraint, recreate it
+  try {
+    const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='edges'`);
+    const edgeSql = schema[0]?.values?.[0]?.[0] as string || '';
+    if (edgeSql.includes('contains') === false || edgeSql.includes('composes') === false) {
+      // Need migration — recreate edges table with new types
+      db.run(`ALTER TABLE edges RENAME TO edges_old`);
+      db.run(`CREATE TABLE IF NOT EXISTS edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id TEXT NOT NULL REFERENCES nodes(id),
+        target_id TEXT NOT NULL REFERENCES nodes(id),
+        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes')),
+        weight REAL DEFAULT 1.0,
+        metadata TEXT DEFAULT '{}',
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        UNIQUE(source_id, target_id, type)
+      )`);
+      db.run(`INSERT OR IGNORE INTO edges SELECT * FROM edges_old`);
+      db.run(`DROP TABLE edges_old`);
+    }
+  } catch { /* migration non-critical */ }
 
   // Session analytics
   db.run(`CREATE TABLE IF NOT EXISTS sessions (
