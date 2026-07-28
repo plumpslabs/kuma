@@ -30,7 +30,18 @@ export function query(sql: string): string {
 export function queryJson<T = any>(sql: string): T {
   const raw = query(sql);
   if (!raw) return [] as any;
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    try {
+      // Fix unescaped newlines in JSON strings from sqlite3 CLI
+      const sanitized = raw.replace(/[\r\n]+/g, " ");
+      return JSON.parse(sanitized);
+    } catch (e) {
+      console.warn("[Studio DB] queryJson parse failed:", e);
+      return [] as any;
+    }
+  }
 }
 
 /** Get all dashboard data at once */
@@ -53,13 +64,13 @@ export function getDashboardData() {
       `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type)) FROM edges`
     ),
     gotchas: queryJson(
-      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',description,'severity',severity,'workaround',workaround)) FROM known_gotchas ORDER BY severity DESC`
+      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''))) FROM known_gotchas ORDER BY severity DESC`
     ),
     trajectories: queryJson(
-      `SELECT json_group_array(json_object('id',id,'goal',goal,'total_duration_ms',total_duration_ms,'success_rate',success_rate,'created_at',created_at)) FROM trajectories ORDER BY created_at DESC LIMIT 20`
+      `SELECT json_group_array(json_object('id',id,'goal',REPLACE(REPLACE(goal,char(10),' '),char(13),''),'total_duration_ms',total_duration_ms,'success_rate',success_rate,'created_at',created_at)) FROM trajectories ORDER BY created_at DESC LIMIT 20`
     ),
     health: queryJson(
-      `SELECT json_group_array(json_object('score',score,'summary',summary,'risk_level',risk_level,'created_at',created_at)) FROM health_snapshots ORDER BY created_at DESC LIMIT 10`
+      `SELECT json_group_array(json_object('score',score,'summary',REPLACE(REPLACE(COALESCE(summary,''),char(10),' '),char(13),''),'risk_level',risk_level,'created_at',created_at)) FROM health_snapshots ORDER BY created_at DESC LIMIT 10`
     ),
   };
 }
