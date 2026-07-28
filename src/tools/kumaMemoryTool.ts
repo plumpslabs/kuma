@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "federated" | "gen_test" | "trajectory" | "skills" | "add_node";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "federated" | "gen_test" | "trajectory" | "skills" | "add_node" | "delete_node" | "clear";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -112,6 +112,19 @@ const MEMORY_ALIASES: Record<string, string> = {
   "node": "add_node",
   "create-node": "add_node",
   "record-node": "add_node",
+  // Delete node synonyms
+  "delete_node": "delete_node",
+  "delete-node": "delete_node",
+  "remove-node": "delete_node",
+  "delete": "delete_node",
+  "remove": "delete_node",
+  "destroy": "delete_node",
+  // Clear synonyms
+  "clear": "clear",
+  "clear-graph": "clear",
+  "wipe": "clear",
+  "reset": "clear",
+  "purge-all": "clear",
 };
 
 interface MemoryParams {
@@ -182,6 +195,7 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "trajectory": return handleTrajectoryList(params);
     case "skills": return handleSkillsList(params);
     case "add_node": return handleAddNode(params);
+    case "delete_node": return handleDeleteNode(params);
     case "clear": {
       const { clearGraph } = await import("../engine/kumaGraph.js");
       await clearGraph();
@@ -237,10 +251,10 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
   try {
     const { upsertNode, nodeId } = await import("../engine/kumaGraph.js");
     await upsertNode({ id: nodeId("file", scope), type: "file", name: scope });
-    // Also record a variable node for the research scope so it shows in search
+    // Also record a research node for the research scope so it shows in search
     await upsertNode({
       id: `research::${scope}`,
-      type: "variable",
+      type: "research",
       name: `research:${scope}`,
       metadata: { confidence: params.confidence || 0.8 },
     });
@@ -330,7 +344,7 @@ async function handleSearch(params: MemoryParams): Promise<string> {
     for (const r of memResults.slice(0, 5)) lines.push(`  • ${r.content.substring(0, 120)}`);
     lines.push("");
   }
-  lines.push("**Knowledge Graph:**\n" + graphResults);
+  lines.push("**Knowledge Graph:\n" + graphResults);
   if (hybridResults) {
     lines.push("");
     lines.push(hybridResults);
@@ -536,6 +550,98 @@ async function handleGotchaAction(params: MemoryParams): Promise<string> {
 }
 
 // ============================================================
+// DELETE NODE — Remove specific nodes/gotchas/todos/decisions
+// ============================================================
+
+async function handleDeleteNode(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_delete", { scope: params.scope, target: params.target });
+
+  const { getDb, saveDb } = await import("../engine/kumaDb.js");
+  const db = await getDb();
+
+  // Pattern 1: scope + target (delete a specific record by scope + ID)
+  if (params.scope && params.target) {
+    const id = parseInt(params.target, 10);
+    if (isNaN(id)) return `⚠️ target "${params.target}" is not a valid numeric ID.`;
+
+    switch (params.scope) {
+      case "gotcha":
+      case "gotchas": {
+        db.run("DELETE FROM known_gotchas WHERE id = ?", [id]);
+        saveDb(db);
+        return `🗑️ **Gotcha #${id} deleted.**`;
+      }
+      case "todo":
+      case "todos": {
+        db.run("DELETE FROM todos WHERE id = ?", [id]);
+        saveDb(db);
+        return `🗑️ **Todo #${id} deleted.**`;
+      }
+      case "decision":
+      case "decision_log":
+      case "decisions": {
+        db.run("DELETE FROM decision_log WHERE id = ?", [id]);
+        saveDb(db);
+        return `🗑️ **Decision #${id} deleted.**`;
+      }
+      case "trajectory":
+      case "trajectories": {
+        db.run("DELETE FROM trajectories WHERE id = ?", [id]);
+        saveDb(db);
+        return `🗑️ **Trajectory #${id} deleted.**`;
+      }
+      case "checkpoint": {
+        db.run("DELETE FROM health_snapshots WHERE id = ?", [id]);
+        saveDb(db);
+        return `🗑️ **Checkpoint #${id} deleted.**`;
+      }
+      default:
+        return `⚠️ Unknown scope "${params.scope}". Supported: gotcha, todo, decision, trajectory, checkpoint`;
+    }
+  }
+
+  // Pattern 2: target is a graph node ID (e.g. "function::sendMessage" or "feature_domain::omnichannel-conversation-flow")
+  if (params.target) {
+    const { flushDb } = await import("../engine/kumaDb.js");
+
+    if (params.target.includes("::") || params.target.includes(":") || params.target.includes("-")) {
+      try {
+        const targetId = params.target;
+        const domainName = targetId.startsWith("feature_domain::") ? targetId.replace("feature_domain::", "") : targetId;
+
+        // Cascade delete if deleting a feature_domain
+        if (targetId.startsWith("feature_domain::")) {
+          db.run("DELETE FROM nodes WHERE id LIKE ? OR id LIKE ? OR id LIKE ?", [
+            `feature_domain::${domainName}`,
+            `cross_service_link::${domainName}::%`,
+            `gotcha::${domainName}::%`,
+          ]);
+          db.run("DELETE FROM edges WHERE source_id LIKE ? OR target_id LIKE ?", [`%${domainName}%`, `%${domainName}%`]);
+        } else {
+          db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [targetId, targetId]);
+          db.run("DELETE FROM nodes WHERE id = ?", [targetId]);
+        }
+
+        flushDb(db);
+        return `🗑️ **Node & relations deleted instantly from RAM and Disk:** ${params.target}`;
+      } catch (err) {
+        return `❌ Failed to delete node: ${err}`;
+      }
+    }
+
+    // Try as numeric ID
+    const id = parseInt(params.target, 10);
+    if (!isNaN(id)) {
+      db.run("DELETE FROM nodes WHERE rowid = ?", [id]);
+      flushDb(db);
+      return `🗑️ **Node #${id} deleted.**`;
+    }
+  }
+
+  return "⚠️ Provide `target` (node ID) to delete, or `scope` + `target` (numeric ID) for gotcha/todo/decision/trajectory/checkpoint.\n\nExamples:\n- `delete_node`, target: 'function::sendMessage'\n- `delete_node`, scope: 'gotcha', target: '42'\n- `delete_node`, scope: 'todo', target: '7'\n- `delete_node`, scope: 'decision', target: '3'\n- `delete_node`, scope: 'trajectory', target: '5'\n- `delete_node`, scope: 'checkpoint', target: '1'";
+}
+
+// ============================================================
 // FEDERATED — Federated Knowledge Graph (Issue #27)
 // ============================================================
 
@@ -644,4 +750,3 @@ async function handleLayersSummary(_params: MemoryParams): Promise<string> {
   const { getLayersSummary } = await import("../engine/domainRules.js");
   return getLayersSummary();
 }
-

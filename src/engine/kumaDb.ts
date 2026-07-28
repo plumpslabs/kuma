@@ -24,9 +24,6 @@ export function resetDbInstance(): void {
 }
 
 export async function getDb(): Promise<SqlJsDatabase> {
-  const kumaDir = getKumaDir();
-  const dbPath = path.join(kumaDir, DB_FILENAME);
-
   if (dbInstance) return dbInstance;
   if (initPromise) return initPromise;
   initPromise = initDb();

@@ -32,8 +32,39 @@ const BOOTSTRAP = [
   "🧠 Knowledge graph is persistent — nodes/edges accumulate across sessions, getting richer over time.",
   "",
   "⛔ Do NOT skip steps 5-10 after research — even if no code was changed.",
+  "🗑️ **Delete/Clear:** `delete_node` (delete node/gotcha/todo/decision) | `clear` (wipe entire graph)",
   "📖 Full rules: `.kuma/init.md`",
   "🧠 Tools: `kuma_context` | `kuma_memory` | `kuma_safety`",
+].join("\n");
+
+// OpenCode-specific bootstrap — uses kuma_kuma_* prefix (OpenCode doubles the prefix)
+const BOOTSTRAP_OPENCODE = [
+  "Kuma MCP tools are available (kuma_kuma_context, kuma_kuma_memory, kuma_kuma_safety).",
+  "**Before coding, call `kuma_kuma_context({ action: \"init\" })`** to load project context.",
+  "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+  "",
+  "⚠️ **MANDATORY WORKFLOW** — Follow in order every session (including research-only):",
+  "",
+  "  1. `kuma_kuma_context({ action: \"init\" })`                     — Load context (START HERE)",
+  "  2. `kuma_kuma_safety({ action: \"guard\" })`                     — Safety check before work",
+  "  3. `kuma_kuma_context({ action: \"research\", scope: \"<area>\" })` — Research before editing",
+  "  4. *(edit/read using native tools)*",
+  "  5. `kuma_kuma_memory({ action: \"research_save\", ... })`        — After exploring area (creates search cache)",
+  "  6. `kuma_kuma_memory({ action: \"gotcha\" })`                    — 🔥 IMMEDIATELY when bug found (exponential value)",
+  "  7. `kuma_kuma_memory({ action: \"arch_flow\" })`                 — 🔥 IMMEDIATELY after each flow hop (exponential value)",
+  "  8. `kuma_kuma_memory({ action: \"decision\" })`                  — When choosing between options (preserves rationale)",
+  "  9. `kuma_kuma_safety({ action: \"verify\", ... })`               — Run tests / confirm nothing broken",
+  " 10. `kuma_kuma_context({ action: \"changes\" })`                  — Review session activity",
+  "",
+  "🔥 **Power Curve:** `arch_flow` + `gotcha` are EXPONENTIAL — each record saves 5-10 files next session.",
+  "   The more you record, the more overpowered the agent becomes. These are the highest-value actions.",
+  "🟢 **SKIP** recording function/class/component nodes — grep/glob is faster.",
+  "🧠 Knowledge graph is persistent — nodes/edges accumulate across sessions, getting richer over time.",
+  "",
+  "⛔ Do NOT skip steps 5-10 after research — even if no code was changed.",
+  "🗑️ **Delete/Clear:** `delete_node` (delete node/gotcha/todo/decision) | `clear` (wipe entire graph)",
+  "📖 Full rules: `.kuma/init.md`",
+  "🧠 Tools: `kuma_kuma_context` | `kuma_kuma_memory` | `kuma_kuma_safety`",
 ].join("\n");
 
 /**
@@ -158,7 +189,7 @@ function generateClineSkill(): string {
 
 /**
  * Antigravity CLI: `.agents/skills/kuma/SKILL.md`
- * Format: Folder-based skill with SKILL.md (same as Claude)
+ * Uses kuma_kuma_* prefix (same as OpenCode — .agents/ dir adds kuma_ prefix)
  */
 function generateAntigravitySkill(): string {
   return [
@@ -167,13 +198,13 @@ function generateAntigravitySkill(): string {
     "description: Kuma MCP — safety toolkit for AI coding agents",
     "---",
     "",
-    BOOTSTRAP,
+    "⚠️ **Antigravity platform note:** Tool names use `kuma_kuma_*` prefix",
+    "   (server name `kuma` + already-prefixed `kuma_context`).",
+    "   Example: `kuma_kuma_context({ action: \"init\" })`",
     "",
-    "📖 **Usage:**",
-    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
-    "  • `kuma_safety({ action: \"guard\" })` — safety check",
-    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
-    "  • `.kuma/init.md` — full behavioral rules",
+    BOOTSTRAP_OPENCODE,
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
   ].join("\n");
 }
 
@@ -194,10 +225,19 @@ function generateAntigravityMcpConfig(): string {
 
 /**
  * Codex CLI: `.agents/skills/kuma/SKILL.md`
- * Same path as Antigravity
+ * Uses regular kuma_* prefix (Codex may not add server prefix like OpenCode/Antigravity)
  */
 function generateCodexSkill(): string {
-  return generateAntigravitySkill();
+  return [
+    "---",
+    "name: kuma-mcp",
+    "description: Kuma MCP — safety toolkit for AI coding agents",
+    "---",
+    "",
+    BOOTSTRAP,
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
+  ].join("\n");
 }
 
 /**
@@ -217,7 +257,7 @@ function generateCodexConfigToml(): string {
 
 /**
  * OpenCode: `.agents/skills/kuma/SKILL.md`
- * Format: SKILL.md with YAML frontmatter (no more opencode.json)
+ * Uses kuma_kuma_* prefix (OpenCode adds kuma_ prefix to tool names)
  */
 function generateOpencodeSkill(): string {
   return [
@@ -230,7 +270,7 @@ function generateOpencodeSkill(): string {
     "   (server name `kuma` + already-prefixed `kuma_context`).",
     "   Example: `kuma_kuma_context({ action: \"init\" })`",
     "",
-    BOOTSTRAP,
+    BOOTSTRAP_OPENCODE,
     "",
     "📖 Read `.kuma/init.md` for detailed rules.",
   ].join("\n");
@@ -269,7 +309,7 @@ function generateAiderConfig(): string {
 
 /**
  * Windsurf: `.windsurf/rules/kuma.md`
- * Format: Plain markdown rules file (NO YAML frontmatter — Windsurf rules don't use frontmatter)
+ * Format: Plain markdown rules file (NO YAML frontmatter)
  */
 function generateWindsurfSkill(): string {
   return [

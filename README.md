@@ -165,6 +165,24 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 
 ---
 
+## 🔥 Power Curve — What Matters Most
+
+Not all recordings are equal. Kuma categorizes actions by their long-term impact:
+
+| Tier | Actions | Impact | Why |
+|------|---------|--------|-----|
+| 🔥 **Exponential** | `arch_flow` + `gotcha` | **Each record saves 5-10 files next session** | Architecture flows multiply: 10 flow hops = agent skips 50-100 files. Gotchas prevent re-discovery of bugs. |
+| 🟡 **Linear** | `decision` + `research_save` | **Useful but not multiplicative** | Decisions preserve rationale context. Research saves create searchable cache. |
+| 🟢 **SKIP** | Function/class/component nodes | **Not worth MCP call — grep is faster** | Use `grep funcName(`, `grep class ClassName`, `glob **/*Component*` instead |
+
+**Rule of thumb:**
+- **ALWAYS record** `arch_flow` + `gotcha` inline — they're the highest-value actions
+- **Record** `decision` + `research_save` when relevant
+- **NEVER record** function/class/component nodes via MCP — native grep is faster
+- Let the auto-scanner handle structural nodes during research step 3
+
+---
+
 ## VPS / Collective — What Is It?
 
 Kuma has an optional feature called **Kolektif** — collective intelligence. It lets multiple Kuma instances across different projects share anonymized patterns to your own VPS.

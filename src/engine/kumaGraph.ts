@@ -9,7 +9,8 @@ import { getDb, saveDb, flushDb } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
-  | "feature_domain" | "workflow" | "cross_service_link";
+  | "feature_domain" | "workflow" | "cross_service_link"
+  | "gotcha" | "decision" | "research";
 export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes"
   | "flows_through" | "triggers" | "syncs_with";
 
@@ -296,7 +297,7 @@ export async function recordDomainFlow(params: {
         try {
           await upsertNode({
             id: gotchaId,
-            type: "variable",
+            type: "gotcha",
             name: `gotcha:${gotcha.substring(0, 60)}`,
             metadata: { domain: params.domain, gotcha, source: "arch_flow" },
           });
@@ -319,7 +320,7 @@ export async function recordDomainFlow(params: {
         try {
           await upsertNode({
             id: decisionId,
-            type: "variable",
+            type: "decision",
             name: `decision:${decision.substring(0, 60)}`,
             metadata: { domain: params.domain, decision, source: "arch_flow" },
           });
@@ -376,6 +377,7 @@ export async function clearGraph(): Promise<number> {
     db.run("DELETE FROM known_gotchas;");
     db.run("DELETE FROM trajectories;");
     db.run("DELETE FROM health_snapshots;");
+    db.run("DELETE FROM research_cache;");
     flushDb(db);
     return 0;
   } catch (err) {
@@ -570,7 +572,7 @@ export async function buildFromSessionMemory(): Promise<number> {
         if (scope) {
           await upsertNode({
             id: `research::${scope}`,
-            type: "variable",
+            type: "research",
             name: `research:${scope}`,
             metadata: { confidence: params.confidence || 0.0 },
           });

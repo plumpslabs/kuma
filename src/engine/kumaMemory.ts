@@ -139,7 +139,7 @@ async function recordDecisionToGraph(decision: DecisionRecord): Promise<void> {
     // 1. Create the decision node
     await upsertNode({
       id: decisionId,
-      type: "variable",
+      type: "decision",
       name: `ADR: ${decision.title.substring(0, 80)}`,
       metadata: {
         type: "architectural-decision",
@@ -167,7 +167,7 @@ async function recordDecisionToGraph(decision: DecisionRecord): Promise<void> {
     if (decision.outcome && decision.outcome !== "implemented") {
       try {
         const outcomeId = `decision-outcome::${decision.outcome.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}`;
-        await upsertNode({ id: outcomeId, type: "variable", name: `Outcome: ${decision.outcome.substring(0, 60)}` });
+        await upsertNode({ id: outcomeId, type: "decision", name: `Outcome: ${decision.outcome.substring(0, 60)}` });
         await addEdge({ sourceId: decisionId, targetId: outcomeId, type: "depends_on" });
       } catch {}
     }

@@ -144,11 +144,11 @@ header .status .dot.off { background: var(--red); }
     <div id="graph-container"></div>
     <div id="search-box"><input id="node-search" type="text" placeholder="Search nodes..." /></div>
     <div id="graph-controls">
-      <button onclick="resetGraphFocus()">Reset Focus</button>
-      <button onclick="if(network)network.fit()">Fit</button>
-      <button onclick="exportGraphPNG()">Export PNG</button>
-      <button id="btn-unfreeze-physics" class="active" onclick="restartPhysics()">Unfreeze Physics</button>
-      <button id="btn-freeze-physics" onclick="stopPhysics()">Freeze Physics</button>
+      <button onclick="resetGraphFocus()" title="Reset node opacity and search">Reset Focus</button>
+      <button onclick="if(network)network.fit()" title="Fit graph to viewport">Fit</button>
+      <button onclick="exportGraphPNG()" title="Export graph as PNG image">Export PNG</button>
+      <button id="btn-unfreeze-physics" class="active" onclick="restartPhysics()" title="Enable physics simulation (nodes will move freely)">Unfreeze Physics</button>
+      <button id="btn-freeze-physics" onclick="stopPhysics()" title="Freeze physics simulation (lock nodes in place)">Freeze Physics</button>
     </div>
     <div id="graph-tooltip"></div>
     <div id="legend"></div>
@@ -358,7 +358,7 @@ function renderGraph(data) {
     return {
       id: n.id,
       label: label,
-      title: '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:380px;white-space:normal;line-height:1.4;padding:2px"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>',
+
       color: {
         background: color,
         border: color,
@@ -410,7 +410,8 @@ function renderGraph(data) {
     return nodeIds.has(e.source) && nodeIds.has(e.target);
   }).slice(0, 500);
 
-  var visEdges = new vis.DataSet(displayEdges.map(function(e){
+  var edgeDefaults = {};
+  var visEdges = new vis.DataSet(displayEdges.map(function(e, idx){
     var edgeColor = '#64748b';
     var width = 1.5;
     var dashes = false;
@@ -419,7 +420,9 @@ function renderGraph(data) {
     if (e.relation === 'syncs_with') { edgeColor = '#10b981'; width = 2; }
     if (e.relation === 'contains') { edgeColor = '#64748b'; width = 1.5; dashes = true; }
 
+    edgeDefaults['e'+idx] = { color: edgeColor, width: width };
     return {
+      id: 'e'+idx,
       from: e.source, to: e.target,
       label: e.relation || '',
       arrows: { to: { enabled: true, scaleFactor: 0.7, type: 'arrow' } },
@@ -475,9 +478,8 @@ function renderGraph(data) {
     configure: { enabled: false },
   });
 
-  // Click node → show tooltip with file path + highlight connected neighborhood
+  // Click node → highlight connected neighborhood (tooltip via hover only)
   network.on('click', function(params) {
-    var tip = document.getElementById("graph-tooltip");
     if (params.nodes.length) {
       var selectedId = params.nodes[0];
       var connectedNodeIds = new Set(network.getConnectedNodes(selectedId));
@@ -489,30 +491,34 @@ function renderGraph(data) {
           id: n.id,
           opacity: isConnected ? 1.0 : 0.12,
           font: {
-            color: isConnected ? '#ffffff' : 'rgba(255,255,255,0.2)',
+            color: isConnected ? '#ffffff' : 'rgba(255,255,255,0.07)',
             bold: isConnected
           }
         });
       });
 
-      var n = allNodes.find(function(x){return x.id===selectedId});
-      if (n) {
-        tip.style.display = 'block';
-        tip.innerHTML = '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:390px;white-space:normal;line-height:1.4"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' +
-          (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>';
-        // Position tooltip near the clicked node
-        var pos = network.getPositions([n.id]);
-        if (pos && pos[n.id]) {
-          var canvasPos = network.canvasToDOM(pos[n.id]);
-          var panelRect = container.getBoundingClientRect();
-          var tipX = Math.min(canvasPos.x + 12, panelRect.width - 340);
-          var tipY = Math.max(canvasPos.y - 10, 0);
-          tip.style.left = Math.max(tipX, 8) + 'px';
-          tip.style.top = tipY + 'px';
-        }
-      }
+      network.body.data.edges.forEach(function(e) {
+        var def = edgeDefaults[e.id];
+        var isConnected = connectedNodeIds.has(e.from) && connectedNodeIds.has(e.to);
+        network.body.data.edges.update({
+          id: e.id,
+          color: {
+            color: isConnected ? (def ? def.color : '#64748b') : 'rgba(100,116,139,0.05)',
+            highlight: '#a855f7',
+            hover: '#38bdf8',
+            opacity: isConnected ? 0.85 : 0.05
+          },
+          width: isConnected ? (def ? def.width : 1.5) : 0.3,
+          font: {
+            color: isConnected ? '#94a3b8' : 'rgba(148,163,184,0.1)',
+            size: 10,
+            strokeWidth: 0,
+            background: 'transparent'
+          }
+        });
+      });
     } else {
-      tip.style.display = 'none';
+      document.getElementById("graph-tooltip").style.display = 'none';
       network.body.data.nodes.forEach(function(n) {
         network.body.data.nodes.update({
           id: n.id,
@@ -520,10 +526,24 @@ function renderGraph(data) {
           font: { color: '#ffffff', bold: true }
         });
       });
+      network.body.data.edges.forEach(function(e) {
+        var def = edgeDefaults[e.id];
+        network.body.data.edges.update({
+          id: e.id,
+          color: {
+            color: def ? def.color : '#64748b',
+            highlight: '#a855f7',
+            hover: '#38bdf8',
+            opacity: 0.85
+          },
+          width: def ? def.width : 1.5,
+          font: { size: 10, color: '#94a3b8', strokeWidth: 0, background: 'transparent' }
+        });
+      });
     }
   });
 
-  // Hover highlight
+  // Hover node → show tooltip + border highlight
   network.on('hoverNode', function(params) {
     var nodeId = params.node;
     network.body.data.nodes.updateOnly({
@@ -531,6 +551,23 @@ function renderGraph(data) {
       borderWidth: 2,
       borderWidthSelected: 2,
     });
+
+    var n = allNodes.find(function(x){return x.id===nodeId});
+    if (n) {
+      var tip = document.getElementById("graph-tooltip");
+      tip.style.display = 'block';
+      tip.innerHTML = '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:390px;white-space:normal;line-height:1.4"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' +
+        (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>';
+      var pos = network.getPositions([n.id]);
+      if (pos && pos[n.id]) {
+        var canvasPos = network.canvasToDOM(pos[n.id]);
+        var panelRect = container.getBoundingClientRect();
+        var tipX = Math.min(canvasPos.x + 12, panelRect.width - 340);
+        var tipY = Math.max(canvasPos.y - 10, 0);
+        tip.style.left = Math.max(tipX, 8) + 'px';
+        tip.style.top = tipY + 'px';
+      }
+    }
   });
   network.on('blurNode', function(params) {
     network.body.data.nodes.updateOnly({
@@ -538,6 +575,7 @@ function renderGraph(data) {
       borderWidth: 0,
       borderWidthSelected: 0,
     });
+    document.getElementById("graph-tooltip").style.display = 'none';
   });
 
   renderLegend(types, colors);

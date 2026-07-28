@@ -1,5 +1,61 @@
 # Changelog
 
+## [2.3.22] — 2026-07-28
+
+### 🐛 Bug Fixes & Graph Consistency
+
+- **NodeType Enum & Persistence (`kumaGraph.ts`, `kumaMemory.ts`, `kumaMemoryTool.ts`)**: Added `gotcha`, `decision`, and `research` to `NodeType` enum so nodes are stored with correct type shapes instead of falling back to `variable`.
+- **Instant `flushDb` Sync (`kumaDb.ts`, `kumaMemoryTool.ts`, `kumaGraph.ts`)**: Replaced debounced `saveDb` with instant `flushDb` on `delete_node` and `clear` operations to prevent background server in-memory RAM state from overwriting disk deletes on shutdown/restart.
+- **Cascade `delete_node` Support (`kumaMemoryTool.ts`)**: Added cascade delete for `feature_domain::*` nodes to clean up associated hops, edges, and gotchas in one command. Fixed SQL query ordering for FTS index deletion.
+- **Manifest Schema Sync (`src/manifest.ts`)**: Exposed `delete_node` and `clear` actions directly in MCP Zod schema for native agent consumption.
+
+## [2.3.21] — 2026-07-28
+
+### 📐 Template Audit & Consistency Fix — All Gaps Closed
+
+**Comprehensive audit of all auto-generated templates against actual source code.**
+Fixed 5 critical gaps where generated content (init.md, SKILL.md, quickref.md, README) didn't match reality.
+
+### 🐛 Bug Fixes
+
+- **Antigravity SKILL.md prefix** (`src/cli/init.ts`): `antigravitySkillTemplate()` was using `kuma_*`
+  prefix but Antigravity (like OpenCode) needs `kuma_kuma_*` prefix for `.agents/` directory skills.
+  Now uses inline `kuma_kuma_*` content matching the init.md platform note.
+- **Codex SKILL.md prefix** (`src/utils/skillGenerator.ts`): `generateCodexSkill()` was delegating to
+  `generateAntigravitySkill()` which now uses `kuma_kuma_*`, but Codex isn't listed as a kuma_kuma_*
+  platform. Now returns its own content with regular `BOOTSTRAP`.
+- **OpenCode SKILL.md bootstrap** (`src/utils/skillGenerator.ts`): `generateOpencodeSkill()` added a
+  note about `kuma_kuma_*` prefix but then used `BOOTSTRAP` with `kuma_*` examples. Created new
+  `BOOTSTRAP_OPENCODE` constant with correct `kuma_kuma_*` prefix throughout.
+- **Unused variable** (`src/engine/kumaDb.ts`): Removed unused `dbPath` in `getDb()` that caused
+  TypeScript error TS6133.
+- **Manifest description** (`src/manifest.ts`): kuma_memory description still said "every read/grep
+  that finds new files" — updated to "after exploring area (creates search cache)" per Power Curve.
+
+### 📚 Documentation
+
+- **init.md Legend** (`src/cli/init.ts`): Added missing node types: `db_table`, `interface`, `type`,
+  `variable`, `workflow`. Fixed `route` → `api_route`. Added missing edge types: `flows_through`,
+  `triggers`, `syncs_with`, `owns`, `modified_by`.
+- **init.md Tool Reference** (`src/cli/init.ts`): Added missing actions across all 3 tools:
+  - kuma_context: `rollback`, `researches`, `sync`, `visualize`
+  - kuma_memory: `federated`, `gen_test`, `trajectory`, `skills`
+  - kuma_safety: `rollback_label`, `checkpoint_list`, `override`, `security`, `gc`, `doctor`,
+    `portability`, `gitignore`, `clean`
+- **README.md**: Added Power Curve section explaining exponential (arch_flow+gotcha) vs linear
+  (decision+research_save) vs SKIP (function/class/component nodes) hierarchy.
+
+### Files Changed
+
+- `src/cli/init.ts` — Antigravity prefix fix, Legend update, Tool Reference tables update
+- `src/utils/skillGenerator.ts` — BOOTSTRAP_OPENCODE, OpenCode/Antigravity/Codex fixes
+- `src/manifest.ts` — Description fix
+- `src/engine/kumaDb.ts` — Removed unused variable
+- `README.md` — Power Curve section
+- `package.json`, `docs/index.html` — Version v2.3.21
+
+---
+
 ## [2.3.20] — 2026-07-28
 
 ### 🏛️ Domain Flow Knowledge Graph (V4) & Kuma Studio UI/UX Overhaul
