@@ -1,5 +1,54 @@
 # Changelog
 
+## [2.3.16] — 2026-07-28
+
+### 🔄 Inline Recording Philosophy — Record Findings AS YOU WORK, Not at the End
+
+**Problem:** `gotcha`, `arch_flow`, `decision` were documented as "steps 6-8 at the end of research" — but the best time to record is **when you discover/find/decide**, not when you reach a designated step. Agent discipline was: "I'll save it for later" → forgets → never recorded.
+
+**Fix — Philosophy shift to inline recording:**
+
+| Step | Before | After |
+|------|--------|-------|
+| 5 `research_save` | "After exploring code" | **"After EVERY read/grep that finds new files/functions"** |
+| 6 `gotcha` | "After discovering bugs" | **"IMMEDIATELY when bug found — record INLINE, don't save for later"** |
+| 7 `arch_flow` | "After tracing flow" | **"IMMEDIATELY after EACH flow hop — record before next task"** |
+| 8 `decision` | "After each research session" | **"IMMEDIATELY when choosing between options — record INLINE"** |
+
+### 🧠 Graph Philosophy Section Added
+
+New section in init.md explaining the core principle:
+
+> **Record findings INLINE as you work, not just at the end. Every time you read a file, grep a pattern, or trace a flow — call `research_save` immediately to persist file/func/import nodes. The knowledge graph accumulates across sessions. The more you use it, the richer it becomes.**
+
+### 📝 Persistent Graph Awareness
+
+All templates now include:
+- `🔄 Record findings INLINE as you work — Every read/grep = mini research_save.`
+- `🧠 Knowledge graph is persistent — nodes/edges accumulate across sessions, getting richer over time.`
+
+### 📄 RECORD INLINE Section in init.md
+
+New bullet list in step 4 with explicit inline triggers:
+- After EVERY `read` that finds new files → call `research_save` mini
+- After EVERY `grep` that discovers new functions → call `research_save`
+- When you discover a bug/quirk → call `gotcha` IMMEDIATELY
+- When you trace a data flow hop → call `arch_flow` IMMEDIATELY
+- When you choose between options → call `decision` IMMEDIATELY
+
+### 🛡️ MCP Tool Description — `kuma_memory` Update
+
+"MANDATORY (call AFTER every research session)" → "RECORD INLINE (call IMMEDIATELY during research)" with explicit inline triggers per step.
+
+### Files Changed
+
+- `src/cli/init.ts` — BOOTSTRAP_LINES, generateInitMdContent(), getCombinedAgentsMd(), handleOpencodeSecondary(), handleQuickrefGeneration() — all updated with inline recording + persistent graph notes
+- `src/utils/skillGenerator.ts` — BOOTSTRAP updated with inline recording + persistent graph
+- `src/manifest.ts` — kuma_memory description: RECORD INLINE section with per-step triggers
+- `package.json` — Version 2.3.16
+- `docs/index.html` — Version v2.3.16
+- `CHANGELOG.md` — This entry
+
 ## [2.3.15] — 2026-07-28
 
 ### 🔧 Workflow Standardization — 10-Step Mandatory Workflow, Research-Only Clause, Quick-Ref
