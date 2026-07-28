@@ -171,7 +171,7 @@ async function main(): Promise<void> {
       cwd: process.cwd(),
     });
 
-    child.on("exit", (code) => process.exit(code ?? 0));
+    child.on("exit", (code) => process.exit(code ?? 1));
     child.on("error", (err) => {
       console.error(`[${SERVER_NAME}] Failed to start Kuma Studio: ${err.message}`);
       process.exit(1);
