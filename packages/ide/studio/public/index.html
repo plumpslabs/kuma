@@ -109,6 +109,12 @@ header .status .dot.off { background: var(--red); }
   transition: background 0.2s;
 }
 #graph-controls button:hover { background: var(--accent); border-color: var(--accent); }
+#graph-controls button.active {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+}
 #loading {
   position: fixed; inset: 0; background: var(--bg); display: flex;
   align-items: center; justify-content: center; z-index: 100;
@@ -141,8 +147,8 @@ header .status .dot.off { background: var(--red); }
       <button onclick="resetGraphFocus()">Reset Focus</button>
       <button onclick="if(network)network.fit()">Fit</button>
       <button onclick="exportGraphPNG()">Export PNG</button>
-      <button onclick="restartPhysics()">Unfreeze Physics</button>
-      <button onclick="stopPhysics()">Freeze Physics</button>
+      <button id="btn-unfreeze-physics" class="active" onclick="restartPhysics()">Unfreeze Physics</button>
+      <button id="btn-freeze-physics" onclick="stopPhysics()">Freeze Physics</button>
     </div>
     <div id="graph-tooltip"></div>
     <div id="legend"></div>
@@ -216,12 +222,16 @@ function restartPhysics() {
   if (!network) return;
   network.setOptions({ physics: { enabled: true } });
   network.startSimulation();
+  document.getElementById('btn-unfreeze-physics').classList.add('active');
+  document.getElementById('btn-freeze-physics').classList.remove('active');
 }
 
 function stopPhysics() {
   if (!network) return;
   network.stopSimulation();
   network.setOptions({ physics: { enabled: false } });
+  document.getElementById('btn-freeze-physics').classList.add('active');
+  document.getElementById('btn-unfreeze-physics').classList.remove('active');
 }
 
 async function init() {
