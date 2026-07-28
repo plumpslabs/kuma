@@ -70,10 +70,10 @@ const AGENT_DETECTORS: AgentDetector[] = [
   },
   {
     type: "windsurf",
-    checkFiles: [".windsurfrules"],
-    checkDirs: [],
+    checkFiles: [],
+    checkDirs: [".windsurf"],
     priority: 70,
-    label: "Windsurf (.windsurfrules)",
+    label: "Windsurf (.windsurf/)",
   },
   {
     type: "opencode",
@@ -218,7 +218,7 @@ export function getSkillPath(type: AgentType): string {
     case "aider":
       return "CONVENTIONS.md";
     case "windsurf":
-      return ".windsurfrules";
+      return ".windsurf/rules/kuma.md";
     case "copilot":
       return ".github/skills/kuma/SKILL.md";
     case "qwen":

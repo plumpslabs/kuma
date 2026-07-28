@@ -240,21 +240,19 @@ function generateAiderConfig(): string {
 }
 
 /**
- * Windsurf: `.windsurfrules`
- * Format: Static rules file (no frontmatter)
+ * Windsurf: `.windsurf/rules/kuma.md`
+ * Format: Plain markdown rules file (NO YAML frontmatter — Windsurf rules don't use frontmatter)
  */
 function generateWindsurfSkill(): string {
   return [
-    "# Kuma MCP — Windsurf Rules",
+    "# Kuma MCP — Windsurf",
     "",
-    BOOTSTRAP,
+    "Windsurf Cascade agent: Kuma MCP tools are available.",
+    "All behavioral rules are in `.kuma/init.md`.",
+    "**Before coding, call `kuma_init()` to load project context.**",
+    "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
     "",
-    "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
-    "  • `kuma_verify({action: \"test\"})` — verify after edits",
-    "  • `.kuma/init.md` — full behavioral rules",
-    "  • `.kuma/memories/` — persistent project knowledge",
+    "Also auto-detected via `.windsurf/skills/` and `.agents/skills/`.",
   ].join("\n");
 }
 

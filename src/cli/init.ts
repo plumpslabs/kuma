@@ -40,12 +40,12 @@ export const ALL_CONFIG_TYPES: ConfigType[] = [
 export const CONFIG_LABELS: Record<ConfigType, string> = {
   claude: "Claude Code (CLAUDE.md / plugin)",
   cursor: "Cursor (.cursor/rules/*.mdc)",
-  windsurf: "Windsurf (.windsurfrules)",
+  windsurf: "Windsurf (.windsurf/rules/)",
   copilot: "GitHub Copilot Editor (AGENTS.md + Skill)",
   cline: "Cline (.clinerules/*.md)",
   aider: "Aider (CONVENTIONS.md via .aider.conf.yml)",
   antigravity: "Antigravity CLI (.agents/skills/)",
-  opencode: "OpenCode (opencode.json)",
+  opencode: "OpenCode (opencode.json + skills)",
   codex: "Codex CLI (AGENTS.md + .codex/config.toml)",
   qwen: "Qwen Code (AGENTS.md + settings.json)",
   kiro: "Kiro (.kiro/steering/*.md)",
@@ -57,7 +57,7 @@ function configFilePath(type: ConfigType): string {
   switch (type) {
     case "claude": return "CLAUDE.md";
     case "cursor": return ".cursor/rules/kuma.mdc";
-    case "windsurf": return ".windsurfrules";
+    case "windsurf": return ".windsurf/rules/kuma.md";
     case "copilot": return "AGENTS.md";
     case "cline": return ".clinerules/kuma.md";
     case "aider": return "CONVENTIONS.md";
@@ -109,11 +109,17 @@ function cursorRulesTemplate(): string {
   ].join("\n");
 }
 
+/** Windsurf .windsurf/rules/kuma.md — plain markdown, NO YAML frontmatter */
 function windsurfRulesTemplate(): string {
   return [
     "# Kuma MCP — Windsurf",
     "",
-    KUMA_CORE_INSTRUCTIONS,
+    "Windsurf Cascade agent: Kuma MCP tools are installed.",
+    "All behavioral rules are in `.kuma/init.md`.",
+    "**Before coding, load project context via `kuma_init()`.**",
+    "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+    "",
+    "Also auto-detected as SKILL.md in `.windsurf/skills/` and `.agents/skills/`.",
   ].join("\n");
 }
 
@@ -400,10 +406,46 @@ export interface InitResult {
   error?: string;
 }
 
-/** OpenCode's opencode.json already references .kuma/init.md via instructions field. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function handleOpencodeSecondary(_root: string, _results: InitResult[]): void {
-  // opencode.json already references .kuma/init.md — nothing additional needed
+/** OpenCode secondary: generate `.agents/skills/kuma/SKILL.md` for skill detection */
+function handleOpencodeSecondary(root: string, results: InitResult[]): void {
+  const skillPath = path.resolve(root, ".agents", "skills", "kuma", "SKILL.md");
+  if (results.some(r => r.filePath === ".agents/skills/kuma/SKILL.md")) return;
+
+  try {
+    const dir = path.dirname(skillPath);
+    const content = [
+      "---",
+      "name: kuma-mcp",
+      "description: Kuma MCP — safety toolkit for AI coding agents. Research, memory, and safety guard.",
+      "---",
+      "",
+      "Kuma MCP tools are installed. All behavioral rules are in `.kuma/init.md`.",
+      "**Before coding, call `kuma_init()` to load project context and session memory.**",
+      "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+      "",
+      "MCP server configured in `opencode.json`.",
+    ].join("\n");
+
+    if (fs.existsSync(skillPath)) {
+      const existing = fs.readFileSync(skillPath, "utf-8");
+      if (existing.includes("kuma-mcp")) {
+        results.push({ type: "opencode", filePath: ".agents/skills/kuma/SKILL.md", action: "skipped" });
+        return;
+      }
+      results.push({ type: "opencode", filePath: ".agents/skills/kuma/SKILL.md", action: "skipped" });
+    } else {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(skillPath, content, "utf-8");
+      results.push({ type: "opencode", filePath: ".agents/skills/kuma/SKILL.md", action: "created" });
+    }
+  } catch (err) {
+    results.push({
+      type: "opencode",
+      filePath: ".agents/skills/kuma/SKILL.md",
+      action: "error",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /** Generate Codex CLI .codex/config.toml as secondary file */

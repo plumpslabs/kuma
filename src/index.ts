@@ -39,7 +39,7 @@ Usage:
 Available config files:
   --claude     CLAUDE.md                    (Claude Code)
   --cursor     .cursor/rules/kuma.mdc       (Cursor)
-  --windsurf   .windsurfrules               (Windsurf)
+  --windsurf   .windsurf/rules/kuma.md       (Windsurf)
   --copilot    AGENTS.md + .github/skills/  (GitHub Copilot Editor)
   --cline      .clinerules/kuma.md          (Cline)
   --aider      CONVENTIONS.md + .aider.conf.yml  (Aider)
@@ -277,7 +277,7 @@ async function main(): Promise<void> {
     const matchaAgentsMd = path.resolve(process.cwd(), "AGENTS.md");
     const matchaWindsurfRules = path.resolve(
       process.cwd(),
-      ".windsurfrules",
+      ".windsurf",
     );
 
     if (
@@ -514,7 +514,7 @@ function interactiveSelect(): Promise<ConfigType[]> {
       type: "cursor" as ConfigType,
       label: "2) Cursor (.cursor/rules/kuma.mdc)",
     },
-    { type: "windsurf" as ConfigType, label: "3) Windsurf (.windsurfrules)" },
+    { type: "windsurf" as ConfigType, label: "3) Windsurf (.windsurf/rules/kuma.md)" },
     {
       type: "copilot" as ConfigType,
       label: "4) GitHub Copilot Editor (AGENTS.md + Skill)",
