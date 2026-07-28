@@ -265,17 +265,20 @@ function renderGraph(data) {
     displayNodes = allNodes.slice(0, maxNodes);
   }
 
+  var lightTypes = ["module", "file", "class", "cross_service_link", "component", "test", "variable", "route"];
+
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
     var label = truncateLabel(n.name, 28);
     var size = calcNodeSize(n.name, n.type);
     var color = colors[n.type] || '#888';
+    var textColor = lightTypes.indexOf(n.type) !== -1 ? '#0f172a' : '#ffffff';
     return {
       id: n.id,
       label: label,
       title: '<b>' + n.name + '</b> <span style="color:#888">' + n.type + '</span>' + (n.file_path ? '<br><span style="color:#06b6d4;font-size:11px">' + n.file_path + '</span>' : ''),
       color: { background: color, border: color, highlight: { background: color, border: '#fff' } },
       shape: shapes[n.type] || 'dot',
-      font: { color: '#e0e0e0', size: Math.min(14, Math.max(10, size * 0.5)), face: 'monospace' },
+      font: { color: textColor, size: Math.min(14, Math.max(11, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
       borderWidth: 0,
       size: size,
       mass: 1 + (size / 40),
@@ -283,7 +286,34 @@ function renderGraph(data) {
   }));
 
   var nodeIds = new Set(displayNodes.map(function(n){return n.id}));
-  var displayEdges = allEdges.filter(function(e){
+  var edgeList = allEdges.slice();
+
+  // Auto-connect floating file nodes to matching cross_service_link flow nodes
+  var nameToLinkIds = {};
+  displayNodes.forEach(function(n) {
+    if (n.type === 'cross_service_link') {
+      var cleanName = n.name.toLowerCase().trim();
+      nameToLinkIds[cleanName] = n.id;
+    }
+  });
+
+  displayNodes.forEach(function(n) {
+    if (n.type === 'file' || n.type === 'component' || n.type === 'function') {
+      var fn = n.name.toLowerCase().trim();
+      Object.keys(nameToLinkIds).forEach(function(linkName) {
+        if (fn.includes(linkName) || linkName.includes(fn)) {
+          var targetLinkId = nameToLinkIds[linkName];
+          edgeList.push({
+            source: n.id,
+            target: targetLinkId,
+            relation: 'contains'
+          });
+        }
+      });
+    }
+  });
+
+  var displayEdges = edgeList.filter(function(e){
     return nodeIds.has(e.source) && nodeIds.has(e.target);
   }).slice(0, 500);
 
@@ -294,7 +324,7 @@ function renderGraph(data) {
     if (e.relation === 'flows_through') { edgeColor = '#3b82f6'; width = 2.5; }
     if (e.relation === 'triggers') { edgeColor = '#ef4444'; width = 2; dashes = true; }
     if (e.relation === 'syncs_with') { edgeColor = '#10b981'; width = 2; }
-    if (e.relation === 'contains') { edgeColor = '#475569'; width = 1; }
+    if (e.relation === 'contains') { edgeColor = '#64748b'; width = 1.5; dashes = true; }
 
     return {
       from: e.source, to: e.target,
