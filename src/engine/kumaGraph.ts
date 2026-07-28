@@ -366,6 +366,25 @@ export async function recordDomainFlow(params: {
 }
 
 /**
+ * Wipe all nodes, edges, gotchas, and trajectories from the graph.
+ */
+export async function clearGraph(): Promise<number> {
+  try {
+    const db = await getDb();
+    db.run("DELETE FROM nodes;");
+    db.run("DELETE FROM edges;");
+    db.run("DELETE FROM known_gotchas;");
+    db.run("DELETE FROM trajectories;");
+    db.run("DELETE FROM health_snapshots;");
+    flushDb(db);
+    return 0;
+  } catch (err) {
+    console.error(`[KumaGraph] Failed to clear graph: ${err}`);
+    return -1;
+  }
+}
+
+/**
  * Query the knowledge graph.
  */
 export async function queryGraph(params: GraphQuery): Promise<string> {

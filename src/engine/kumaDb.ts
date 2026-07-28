@@ -24,6 +24,15 @@ export function resetDbInstance(): void {
 }
 
 export async function getDb(): Promise<SqlJsDatabase> {
+  const kumaDir = getKumaDir();
+  const dbPath = path.join(kumaDir, DB_FILENAME);
+
+  // 🔴 SAFETY: If disk DB was deleted externally, reset RAM instance automatically
+  if (!fs.existsSync(dbPath) && dbInstance) {
+    dbInstance = null;
+    initPromise = null;
+  }
+
   if (dbInstance) return dbInstance;
   if (initPromise) return initPromise;
   initPromise = initDb();

@@ -182,6 +182,11 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "trajectory": return handleTrajectoryList(params);
     case "skills": return handleSkillsList(params);
     case "add_node": return handleAddNode(params);
+    case "clear": {
+      const { clearGraph } = await import("../engine/kumaGraph.js");
+      await clearGraph();
+      return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, gotchas, and trajectories have been wiped from disk and memory.";
+    }
     default: return `Unknown action "${action}".`;
   }
 }
