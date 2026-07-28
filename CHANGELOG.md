@@ -1,6 +1,73 @@
 # Changelog
 
+## [2.3.15] — 2026-07-28
+
+### 🔧 Workflow Standardization — 10-Step Mandatory Workflow, Research-Only Clause, Quick-Ref
+
+**Problem:** Agent workflow had 3 major gaps:
+1. **Inconsistent step count** — AGENTS.md (7-step) vs init.md (8-step) vs actual need
+2. **"Research-only" bias** — workflow skipped entirely for read-only sessions
+3. **"MANUAL" category permission to skip** — `gotcha`, `arch_flow`, `decision` labeled "When needed" → agent interpreted as optional
+
+**Fix — All templates standardized to 10-step mandatory workflow:**
+
+| Step | Action | Description |
+|------|--------|-------------|
+| 1 | `context` → `init` | Load project context |
+| 2 | `safety` → `guard` | Safety check before work |
+| 3 | `context` → `research` | Research target area |
+| 4 | *(edit/read using native tools)* | |
+| 5 | `memory` → `research_save` | Save ALL findings (IMMEDIATELY) |
+| 6 | `memory` → `gotcha` | Record bugs/quirks found (IMMEDIATELY) |
+| 7 | `memory` → `arch_flow` | Record data flow if mapped (IMMEDIATELY) |
+| 8 | `memory` → `decision` | Record key findings/decisions (IMMEDIATELY) |
+| 9 | `safety` → `verify` | Run tests / confirm nothing broken |
+| 10 | `context` → `changes` | Review session activity |
+
+### 📝 Research-Only Clause Added Everywhere
+
+Every template now states: **"(including research-only)"** — closing the loophole where agents skip workflow for non-editing sessions.
+
+### 🗑️ "MANUAL" Category Removed
+
+`gotcha`, `arch_flow`, and `decision` are now mandatory steps 6-8 instead of "Manual — When needed". Each has explicit **IMMEDIATELY** trigger language:
+- `gotcha` → "IMMEDIATELY after finding bugs/quirks. Every bug = a gotcha!"
+- `arch_flow` → "IMMEDIATELY after tracing data flow. Record before next task."
+- `decision` → "IMMEDIATELY after each research session. Bukan cuma code changes — temuan juga."
+
+### 📄 New: `.kuma/quickref.md`
+
+Simplified cheat sheet with:
+- 10-step workflow + platform-specific tool name notes
+- `kuma_kuma_*` (OpenCode) vs `kuma_*` (others)
+- Generated automatically during `kuma init`
+
+### 🛡️ MCP Tool Descriptions — Stronger Triggers
+
+- **`kuma_memory`**: "MANDATORY (call AFTER every research session)" with explicit IMMEDIATELY triggers for steps 5-8
+- **`kuma_safety`**: verify step number updated to 9
+- **`kuma_context`**: (unchanged — already correct in v2.3.12)
+
+### ⚠️ AGENTS.md Warning Banner
+
+Added at top of generated AGENTS.md:
+```
+> ⚠️ WARNING: Agent often skip steps due to "research-only" bias. Do NOT skip.
+> Follow the full 10-step workflow even for read-only investigations.
+```
+
+### Files Changed
+
+- `src/cli/init.ts` — BOOTSTRAP_LINES, generateInitMdContent(), getCombinedAgentsMd(), handleOpencodeSecondary() → 10-step + research-only + quickref generation
+- `src/utils/skillGenerator.ts` — BOOTSTRAP → 10-step + research-only
+- `src/manifest.ts` — kuma_memory description with IMMEDIATELY triggers; kuma_safety verify step→9
+- `package.json` — Version 2.3.15
+- `docs/index.html` — Version v2.3.15
+- `CHANGELOG.md` — This entry
+
 ## [2.3.14] — 2026-07-28
+
+### 🔧 AGENTS.md Restructured — No More Header Duplication
 
 ### 🔧 AGENTS.md Restructured — No More Header Duplication
 
