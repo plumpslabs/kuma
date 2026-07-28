@@ -126,7 +126,11 @@ header .status .dot.off { background: var(--red); }
 <header>
   <h1>&#9826; Kuma Studio</h1>
   <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">connecting...</span></div>
-  <button onclick="refetch()" id="refetch-btn" style="margin-left:auto;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s;-webkit-app-region:no-drag" onmouseover="this.style.background='rgba(124,58,237,0.3)'" onmouseout="this.style.background='rgba(124,58,237,0.15)'">&#8635; Refetch</button>
+  <div style="margin-left:auto;display:flex;gap:8px;-webkit-app-region:no-drag">
+    <button onclick="refetch()" id="refetch-btn" style="background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s">&#8635; Refetch</button>
+    <button onclick="resetKumaDb()" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:var(--red);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s">&#128465; Reset DB</button>
+    <button onclick="stopKumaStudio()" style="background:rgba(148,163,184,0.15);border:1px solid rgba(148,163,184,0.3);border-radius:6px;color:#94a3b8;padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s">&#9632; Stop Server</button>
+  </div>
 </header>
 <div class="stats-bar" id="stats-bar"></div>
 <div id="main">
@@ -155,7 +159,29 @@ header .status .dot.off { background: var(--red); }
 
 <script>
 const API = "/api";
-let network = null, nodesData = null, allNodes = null, allEdges = null;
+let network = null, nodesData = null, allNodes = null, allEdges = null, currentDbSize = "0 KB";
+
+async function resetKumaDb() {
+  if (!confirm("Are you sure you want to reset Kuma DB (.kuma/kuma.db)? All recorded nodes will be cleared.")) return;
+  try {
+    var res = await fetch(API + "/reset-db", { method: "POST" }).then(function(r){return r.json()});
+    if (res.ok) {
+      refetch();
+    }
+  } catch (e) {
+    alert("Reset failed: " + e.message);
+  }
+}
+
+async function stopKumaStudio() {
+  if (!confirm("Stop Kuma Studio background server? You can restart it anytime with 'agy kuma studio'.")) return;
+  try {
+    await fetch(API + "/stop-server", { method: "POST" });
+    document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#94a3b8;font-size:16px;">Kuma Studio Server Stopped. You can close this tab.</div>';
+  } catch (e) {
+    alert("Stop failed: " + e.message);
+  }
+}
 
 function resetGraphFocus() {
   if (!network) return;
@@ -188,6 +214,7 @@ async function init() {
   if (status.ok) {
     dot.className = "dot on";
     txt.textContent = status.project || "connected";
+    currentDbSize = status.dbSize || "0 KB";
   } else {
     dot.className = "dot off";
     txt.textContent = "no kuma.db found";
@@ -218,6 +245,7 @@ function renderStats(data) {
     '<div class="stat"><span class="num">'+(s.edge_count||0)+'</span><span class="lbl">edges</span></div>'+
     '<div class="stat"><span class="num">'+(s.gotcha_count||0)+'</span><span class="lbl">gotchas</span></div>'+
     '<div class="stat"><span class="num">'+(s.trajectory_count||0)+'</span><span class="lbl">trajectories</span></div>'+
+    '<div class="stat"><span class="num" style="color:var(--accent)">'+currentDbSize+'</span><span class="lbl">kuma.db</span></div>'+
     '<div class="stat"><span class="num" style="color:'+hcColor+'">'+(hc||0)+'</span><span class="lbl">health</span></div>';
 }
 
