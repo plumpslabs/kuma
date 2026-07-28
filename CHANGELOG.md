@@ -1,8 +1,10 @@
 # Changelog
 
-## [2.3.11] — 2026-07-28
+## [2.3.12] — 2026-07-28
 
 ### 🔧 Init System — English Instruction-Style Workflow
+
+> **Note:** v2.3.11 was skipped due to a CI tag alignment issue.
 
 `.kuma/init.md` rewritten from documentation to **instruction-style** with:
 - 8-step mandatory workflow (STEP 1-8) with clear **When/Why** explanations
@@ -39,7 +41,7 @@ All 3 tool descriptions updated to include workflow step context:
 - `src/utils/agentDetector.ts` — OpenCode detection: `.agents/skills/kuma/SKILL.md` + `.agents` dir
 - `src/index.ts` — Help text updated for OpenCode (AGENTS.md + skills)
 - `package.json` — Version bump to 2.3.11
-- `docs/index.html` — Version bump to v2.3.11
+- `docs/index.html` — Version bump to v2.3.12
 - `CHANGELOG.md` — This entry
 
 ## [2.3.10] — 2026-07-28
