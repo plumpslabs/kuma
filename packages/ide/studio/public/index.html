@@ -226,19 +226,18 @@ function truncateLabel(name, maxLen) {
 
 /** Calculate node size based on label length and type */
 function calcNodeSize(name, type) {
-  var base = 14;
-  if (type === "feature_domain") base = 24;
-  if (type === "workflow") base = 18;
-  if (type === "cross_service_link") base = 16;
-  if (type === "function") base = 16;
-  if (type === "class") base = 18;
-  if (type === "module") base = 12;
-  if (type === "component") base = 16;
-  if (type === "route") base = 14;
-  if (type === "test") base = 13;
-  // Gentle scaling for long labels
-  var len = name ? Math.min(name.length, 20) : 4;
-  return Math.min(32, Math.max(base, base + len * 0.4));
+  var base = 18;
+  if (type === "feature_domain") base = 32;
+  if (type === "workflow") base = 24;
+  if (type === "cross_service_link") base = 20;
+  if (type === "function") base = 18;
+  if (type === "class") base = 22;
+  if (type === "module") base = 20;
+  if (type === "component") base = 22;
+  if (type === "route") base = 18;
+  if (type === "test") base = 20;
+  var len = name ? Math.min(name.length, 30) : 4;
+  return Math.min(42, Math.max(base, base + len * 0.5));
 }
 
 
@@ -266,16 +265,16 @@ function renderGraph(data) {
   };
   var shapes = {
     feature_domain: 'star',
-    workflow: 'box',
+    workflow: 'ellipse',
     cross_service_link: 'box',
     function: 'box',
-    class: 'box',
-    module: 'box',
-    component: 'box',
+    class: 'hexagon',
+    module: 'ellipse',
+    component: 'diamond',
     file: 'box',
-    route: 'box',
+    route: 'triangleDown',
     test: 'star',
-    variable: 'box'
+    variable: 'ellipse'
   };
 
   // Limit nodes for performance if > 200
