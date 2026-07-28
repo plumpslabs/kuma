@@ -73,6 +73,21 @@ let _pendingDb: SqlJsDatabase | null = null;
 const SAVE_DEBOUNCE_MS = 100; // Debounce rapid writes within 100ms
 
 export function flushDb(db?: SqlJsDatabase): void {
+  const kumaDir = getKumaDir();
+  const dbPath = path.join(kumaDir, DB_FILENAME);
+
+  // 🔴 SAFETY: If disk DB file was deleted externally, cancel save & reset RAM cache
+  if (!fs.existsSync(dbPath) && dbInstance) {
+    dbInstance = null;
+    initPromise = null;
+    _pendingDb = null;
+    if (_saveTimeout) {
+      clearTimeout(_saveTimeout);
+      _saveTimeout = null;
+    }
+    return;
+  }
+
   const d = db ?? dbInstance ?? _pendingDb;
   if (!d) return;
   if (_saveTimeout) {
@@ -81,8 +96,6 @@ export function flushDb(db?: SqlJsDatabase): void {
   }
   _pendingDb = null;
   try {
-    const kumaDir = getKumaDir();
-    const dbPath = path.join(kumaDir, DB_FILENAME);
     const data = d.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
@@ -92,6 +105,21 @@ export function flushDb(db?: SqlJsDatabase): void {
 }
 
 export function saveDb(db?: SqlJsDatabase): void {
+  const kumaDir = getKumaDir();
+  const dbPath = path.join(kumaDir, DB_FILENAME);
+
+  // 🔴 SAFETY: If disk DB file was deleted externally, cancel save & reset RAM cache
+  if (!fs.existsSync(dbPath) && dbInstance) {
+    dbInstance = null;
+    initPromise = null;
+    _pendingDb = null;
+    if (_saveTimeout) {
+      clearTimeout(_saveTimeout);
+      _saveTimeout = null;
+    }
+    return;
+  }
+
   const d = db ?? dbInstance;
   if (!d) return;
   
