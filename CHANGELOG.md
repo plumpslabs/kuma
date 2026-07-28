@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.3.13] — 2026-07-28
+
+### 🔧 All SKILL.md Generators — Real MCP Tool Names Only
+
+**Problem:** SKILL.md files were the first thing agents read (`kuma init` output), but they still referenced wrong tool names (`kuma_init()`, `kuma_guard()`). Agent reads SKILL.md → tries `kuma_init()` → error → skips Kuma entirely.
+
+**Fix — All SKILL.md generators now use only real MCP tool names:**
+
+| Old (broken) | New (correct) |
+|---|---|
+| `kuma_init()` | `kuma_context({ action: "init" })` |
+| `kuma_guard()` | `kuma_safety({ action: "guard" })` |
+| `kuma_verify()` | `kuma_safety({ action: "verify", scope: "<area>" })` |
+
+### What Changed
+
+- **`generateOpencodeSkill()`** — Was weak inline content with `kuma_init()`, now uses `BOOTSTRAP` constant (enforce workflow + real tool names)
+- **`generateWindsurfSkill()`** — Same fix: now uses `BOOTSTRAP` instead of weak inline
+- **12 out of 12** SKILL.md generators (`claude`, `cursor`, `cline`, `antigravity`, `codex`, `opencode`, `aider`, `windsurf`, `copilot`, `qwen`, `kiro`, `openclaw`, `codewhale`)** all usage sections updated to real MCP tool names**
+
+### Files Changed
+
+- `src/utils/skillGenerator.ts` — All SKILL.md generators use `BOOTSTRAP` + real tool names
+- `src/cli/init.ts` — `KUMA_CORE_INSTRUCTIONS` uses real tool names in enforce workflow
+- `package.json` — Version bump to 2.3.13
+- `docs/index.html` — Version bump to v2.3.13
+- `CHANGELOG.md` — This entry
+
 ## [2.3.12] — 2026-07-28
 
 ### 🔧 Init System — English Instruction-Style Workflow

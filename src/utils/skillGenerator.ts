@@ -9,9 +9,23 @@ import type { AgentType } from "./agentDetector.js";
 
 // Shared bootstrap message — points to .kuma/init.md as single source of truth
 const BOOTSTRAP = [
-  "Kuma MCP tools are available (kuma_context, kuma_memory, kuma_safety). All behavioral rules are in `.kuma/init.md`.",
+  "Kuma MCP tools are available (kuma_context, kuma_memory, kuma_safety).",
   "**Before coding, call `kuma_context({ action: \"init\" })`** to load project context and session memory.",
   "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+  "",
+  "⚠️ **MANDATORY WORKFLOW** — Follow in order every session:",
+  "",
+  "  1. `kuma_context({ action: \"init\" })` — Load context (START HERE)",
+  "  2. `kuma_safety({ action: \"guard\" })` — Safety check before work",
+  "  3. `kuma_context({ action: \"research\", scope: \"<area>\" })` — Research before editing",
+  "  4. *(edit using native tools)*",
+  "  5. `kuma_memory({ action: \"research_save\", scope: \"<area>\" })` — Save findings",
+  "  6. `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — Verify changes",
+  "  7. `kuma_context({ action: \"changes\" })` — Review changes",
+  "",
+  "⛔ Skipping workflow = stale context, missed decisions, unverified code.",
+  "📖 Full rules: `.kuma/init.md`",
+  "🧠 Tools: `kuma_context` | `kuma_memory` | `kuma_safety`",
 ].join("\n");
 
 /**
@@ -82,8 +96,9 @@ function generateClaudeSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check before risky ops",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check before risky ops",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
     "  • `.kuma/memories/` — persistent project knowledge",
   ].join("\n");
@@ -103,9 +118,9 @@ function generateCursorSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check before risky ops",
-    "  • `kuma_verify({action: \"test\"})` — verify after edits",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check before risky ops",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
     "  • `.kuma/memories/` — persistent project knowledge",
   ].join("\n");
@@ -126,8 +141,9 @@ function generateClineSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check before risky ops",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check before risky ops",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }
@@ -146,9 +162,9 @@ function generateAntigravitySkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
-    "  • `kuma_verify({action: \"test\"})` — verify after edits",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }
@@ -202,9 +218,7 @@ function generateOpencodeSkill(): string {
     "description: Kuma MCP — safety toolkit for AI coding agents. Research, memory, and safety guard.",
     "---",
     "",
-    "Kuma MCP tools are installed. All behavioral rules are in `.kuma/init.md`.",
-    "**Before coding, call `kuma_init()` to load project context and session memory.**",
-    "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+    BOOTSTRAP,
     "",
     "📖 Read `.kuma/init.md` for detailed rules.",
   ].join("\n");
@@ -221,8 +235,9 @@ function generateAiderSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }
@@ -248,10 +263,7 @@ function generateWindsurfSkill(): string {
   return [
     "# Kuma MCP — Windsurf",
     "",
-    "Windsurf Cascade agent: Kuma MCP tools are available.",
-    "All behavioral rules are in `.kuma/init.md`.",
-    "**Before coding, call `kuma_init()` to load project context.**",
-    "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+    BOOTSTRAP,
     "",
     "Also auto-detected via `.windsurf/skills/` and `.agents/skills/`.",
   ].join("\n");
@@ -271,8 +283,9 @@ function generateCopilotSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }
@@ -288,8 +301,9 @@ function generateQwenSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }
@@ -324,9 +338,9 @@ function generateKiroSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
-    "  • `kuma_verify({action: \"test\"})` — verify after edits",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }
@@ -345,8 +359,9 @@ function generateOpenclawSkill(): string {
     BOOTSTRAP,
     "",
     "📖 **Usage:**",
-    "  • `kuma_init()` — load project context (call first)",
-    "  • `kuma_guard({check: \"all\"})` — safety check",
+    "  • `kuma_context({ action: \"init\" })` — load project context (call first)",
+    "  • `kuma_safety({ action: \"guard\" })` — safety check",
+    "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
   ].join("\n");
 }

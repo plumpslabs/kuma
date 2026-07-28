@@ -77,9 +77,23 @@ function configFilePath(type: ConfigType): string {
 
 /** Thin bootstrap snippet — shared across all config files */
 const BOOTSTRAP_LINES = [
-  "Kuma MCP tools are installed (kuma_context, kuma_memory, kuma_safety). All behavioral rules are in `.kuma/init.md`.",
+  "Kuma MCP tools are installed (kuma_context, kuma_memory, kuma_safety).",
   "**Before coding, call `kuma_context({ action: \"init\" })`** to load project context and session memory.",
   "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
+  "",
+  "⚠️ **MANDATORY WORKFLOW** — Follow in order every session:",
+  "",
+  "  1. `kuma_context({ action: \"init\" })` — Load context (START HERE)",
+  "  2. `kuma_safety({ action: \"guard\" })` — Safety check before work",
+  "  3. `kuma_context({ action: \"research\", scope: \"<area>\" })` — Research before editing",
+  "  4. *(edit using native tools)*",
+  "  5. `kuma_memory({ action: \"research_save\", scope: \"<area>\" })` — Save findings",
+  "  6. `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — Verify changes",
+  "  7. `kuma_context({ action: \"changes\" })` — Review changes",
+  "",
+  "⛔ Skipping workflow = stale context, missed decisions, unverified code.",
+  "📖 Full rules: `.kuma/init.md`",
+  "🧠 Tools: `kuma_context` | `kuma_memory` | `kuma_safety`",
 ].join("\n");
 
 const KUMA_CORE_INSTRUCTIONS = BOOTSTRAP_LINES;
@@ -546,11 +560,21 @@ function handleOpencodeSecondary(root: string, results: InitResult[]): void {
       "description: Kuma MCP — safety toolkit for AI coding agents. Research, memory, and safety guard.",
       "---",
       "",
-      "Kuma MCP tools are installed. All behavioral rules are in `.kuma/init.md`.",
-      "**Before coding, call `kuma_init()` to load project context and session memory.**",
+      "Kuma MCP tools are installed (kuma_context, kuma_memory, kuma_safety).",
+      "**Before coding, call `kuma_context({ action: \"init\" })`** to load project context and session memory.",
       "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
       "",
-      "📖 Read `.kuma/init.md` for detailed rules.",
+      "⚠️ **MANDATORY WORKFLOW** — Follow in order every session:",
+      "",
+      "  1. `kuma_context({ action: \"init\" })` — Load context (START HERE)",
+      "  2. `kuma_safety({ action: \"guard\" })` — Safety check before work",
+      "  3. `kuma_context({ action: \"research\", scope: \"<area>\" })` — Research before editing",
+      "  4. *(edit using native tools)*",
+      "  5. `kuma_memory({ action: \"research_save\", scope: \"<area>\" })` — Save findings",
+      "  6. `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — Verify changes",
+      "  7. `kuma_context({ action: \"changes\" })` — Review changes",
+      "",
+      "📖 Full rules: `.kuma/init.md`",
     ].join("\n");
 
     if (fs.existsSync(skillPath)) {
