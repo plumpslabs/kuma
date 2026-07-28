@@ -141,8 +141,8 @@ header .status .dot.off { background: var(--red); }
       <button onclick="resetGraphFocus()">Reset Focus</button>
       <button onclick="if(network)network.fit()">Fit</button>
       <button onclick="exportGraphPNG()">Export PNG</button>
-      <button onclick="if(network)network.startSimulation()">Restart</button>
-      <button onclick="if(network)network.stopSimulation()">Stop</button>
+      <button onclick="restartPhysics()">Unfreeze Physics</button>
+      <button onclick="stopPhysics()">Freeze Physics</button>
     </div>
     <div id="graph-tooltip"></div>
     <div id="legend"></div>
@@ -210,6 +210,18 @@ function exportGraphPNG() {
   link.download = "kuma-knowledge-graph.png";
   link.href = canvas.toDataURL("image/png");
   link.click();
+}
+
+function restartPhysics() {
+  if (!network) return;
+  network.setOptions({ physics: { enabled: true } });
+  network.startSimulation();
+}
+
+function stopPhysics() {
+  if (!network) return;
+  network.stopSimulation();
+  network.setOptions({ physics: { enabled: false } });
 }
 
 async function init() {
