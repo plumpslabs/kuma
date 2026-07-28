@@ -133,7 +133,9 @@ header .status .dot.off { background: var(--red); }
     <div id="graph-container"></div>
     <div id="search-box"><input id="node-search" type="text" placeholder="Search nodes..." /></div>
     <div id="graph-controls">
+      <button onclick="resetGraphFocus()">Reset Focus</button>
       <button onclick="if(network)network.fit()">Fit</button>
+      <button onclick="exportGraphPNG()">Export PNG</button>
       <button onclick="if(network)network.startSimulation()">Restart</button>
       <button onclick="if(network)network.stopSimulation()">Stop</button>
     </div>
@@ -153,6 +155,26 @@ header .status .dot.off { background: var(--red); }
 <script>
 const API = "/api";
 let network = null, nodesData = null, allNodes = null, allEdges = null;
+
+function resetGraphFocus() {
+  if (!network) return;
+  network.body.data.nodes.forEach(function(n) {
+    network.body.data.nodes.update({ id: n.id, opacity: 1.0 });
+  });
+  document.getElementById("graph-tooltip").style.display = 'none';
+  var searchInput = document.getElementById("node-search");
+  if (searchInput) searchInput.value = "";
+}
+
+function exportGraphPNG() {
+  if (!network) return;
+  var canvas = document.querySelector("#graph-container canvas");
+  if (!canvas) return;
+  var link = document.createElement("a");
+  link.download = "kuma-knowledge-graph.png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
 
 async function init() {
   var status = await fetch(API+"/status").then(function(r){return r.json()});
@@ -204,6 +226,9 @@ function truncateLabel(name, maxLen) {
 /** Calculate node size based on label length and type */
 function calcNodeSize(name, type) {
   var base = 14;
+  if (type === "feature_domain") base = 24;
+  if (type === "workflow") base = 18;
+  if (type === "cross_service_link") base = 16;
   if (type === "function") base = 16;
   if (type === "class") base = 18;
   if (type === "module") base = 12;
@@ -212,7 +237,7 @@ function calcNodeSize(name, type) {
   if (type === "test") base = 13;
   // Gentle scaling for long labels
   var len = name ? Math.min(name.length, 20) : 4;
-  return Math.min(28, Math.max(base, base + len * 0.4));
+  return Math.min(32, Math.max(base, base + len * 0.4));
 }
 
 
@@ -225,9 +250,11 @@ function renderGraph(data) {
   }
 
   var types = [...new Set(allNodes.map(function(n){return n.type||'unknown'}))];
-  var colors = {function:'#7c3aed',class:'#06b6d4',module:'#22c55e',
+  var colors = {feature_domain:'#ef4444',workflow:'#3b82f6',cross_service_link:'#10b981',
+    function:'#7c3aed',class:'#06b6d4',module:'#22c55e',
     component:'#f97316',file:'#eab308',route:'#ec4899',test:'#14b8a6'};
-  var shapes = {function:'box',class:'hexagon',module:'ellipse',
+  var shapes = {feature_domain:'star',workflow:'ellipse',cross_service_link:'box',
+    function:'box',class:'hexagon',module:'ellipse',
     component:'diamond',file:'square',route:'triangle',test:'star'};
 
   // Limit nodes for performance if > 200
@@ -261,16 +288,25 @@ function renderGraph(data) {
   }).slice(0, 500);
 
   var visEdges = new vis.DataSet(displayEdges.map(function(e){
+    var edgeColor = '#64748b';
+    var width = 1.5;
+    var dashes = false;
+    if (e.relation === 'flows_through') { edgeColor = '#3b82f6'; width = 2.5; }
+    if (e.relation === 'triggers') { edgeColor = '#ef4444'; width = 2; dashes = true; }
+    if (e.relation === 'syncs_with') { edgeColor = '#10b981'; width = 2; }
+    if (e.relation === 'contains') { edgeColor = '#475569'; width = 1; }
+
     return {
       from: e.source, to: e.target,
       label: e.relation || '',
-      arrows: { to: { enabled: true, scaleFactor: 0.6, type: 'arrow' } },
-      color: { color: '#4a4a6a', highlight: '#7c3aed', hover: '#7c3aed', opacity: 0.5 },
-      font: { size: 10, color: '#666', strokeWidth: 0, background: 'transparent' },
+      arrows: { to: { enabled: true, scaleFactor: 0.7, type: 'arrow' } },
+      color: { color: edgeColor, highlight: '#a855f7', hover: '#38bdf8', opacity: 0.85 },
+      font: { size: 10, color: '#94a3b8', strokeWidth: 0, background: 'transparent' },
+      dashes: dashes,
       smooth: { type: 'continuous', roundness: 0.3 },
-      width: 1.5,
-      hoverWidth: 2.5,
-      selectionWidth: 2.5,
+      width: width,
+      hoverWidth: 3,
+      selectionWidth: 3,
     };
   }));
 
@@ -315,11 +351,22 @@ function renderGraph(data) {
     configure: { enabled: false },
   });
 
-  // Click node → show tooltip with file path
+  // Click node → show tooltip with file path + highlight connected neighborhood
   network.on('click', function(params) {
     var tip = document.getElementById("graph-tooltip");
     if (params.nodes.length) {
-      var n = allNodes.find(function(x){return x.id===params.nodes[0]});
+      var selectedId = params.nodes[0];
+      var connectedNodeIds = new Set(network.getConnectedNodes(selectedId));
+      connectedNodeIds.add(selectedId);
+
+      network.body.data.nodes.forEach(function(n) {
+        network.body.data.nodes.update({
+          id: n.id,
+          opacity: connectedNodeIds.has(n.id) ? 1.0 : 0.15
+        });
+      });
+
+      var n = allNodes.find(function(x){return x.id===selectedId});
       if (n) {
         tip.style.display = 'block';
         tip.innerHTML = '<b>' + n.name + '</b> <span style="color:var(--muted)">' + n.type + '</span>' +
@@ -337,6 +384,9 @@ function renderGraph(data) {
       }
     } else {
       tip.style.display = 'none';
+      network.body.data.nodes.forEach(function(n) {
+        network.body.data.nodes.update({ id: n.id, opacity: 1.0 });
+      });
     }
   });
 

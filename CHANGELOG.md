@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.3.20] — 2026-07-28
+
+### 🏛️ Domain Flow Knowledge Graph (V4) & Kuma Studio UI/UX Overhaul
+
+**Major upgrade to Kuma Knowledge Graph topology and visual tracking UI:**
+
+### 🎯 What Changed
+
+- **V4 Domain Flow Knowledge Graph (`src/engine/kumaGraph.ts`)**:
+  - Added `recordDomainFlow()` for creating interconnected Domain Anchor Nodes (`feature_domain`, `workflow`, `cross_service_link`) and multi-hop edges (`flows_through`, `triggers`, `syncs_with`).
+  - Connects `gotchas`, `decisions`, and `filePaths` to feature domain anchors.
+- **Structured `arch_flow` Parsing (`src/tools/kumaMemoryTool.ts`)**:
+  - `kuma_memory({ action: "arch_flow" })` now automatically parses structured domain flow strings (`domain: ... | hops: A → B | gotchas: G1 | files: F1`).
+- **SQLite CHECK Constraint & Migration Fix (`src/engine/kumaDb.ts`)**:
+  - Added V4 edge types (`flows_through`, `triggers`, `syncs_with`) to SQLite `edges` table schema and auto-migration script.
+- **Kuma Studio UI/UX Overhaul (`packages/ide/studio/public/index.html`)**:
+  - **Node Styling**: Star node for `feature_domain`, Ellipse for `workflow`, Box for `cross_service_link`.
+  - **Edge Styling**: Color-coded edges with directional arrows (`flows_through` = 2.5px bright blue, `triggers` = 2px red dashed, `syncs_with` = 2px green).
+  - **Focus Neighborhood Mode**: Clicking a node highlights connected neighbor nodes/edges and dims unselected elements for visual tracking.
+  - **Graph Controls**: Added `Reset Focus` and `Export PNG` buttons.
+- **Code Scanner Deprecation (`src/engine/kumaCodeScanner.ts`)**:
+  - Deprecated legacy regex AST scanner for structural code parsing, recommending Domain Flow Graphing + Native LSP/Grep.
+
+---
+
 ## [2.3.19] — 2026-07-28
 
 ### 🐛 Tool Name Consistency Fixes
