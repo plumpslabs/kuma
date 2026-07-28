@@ -27,12 +27,6 @@ export async function getDb(): Promise<SqlJsDatabase> {
   const kumaDir = getKumaDir();
   const dbPath = path.join(kumaDir, DB_FILENAME);
 
-  // 🔴 SAFETY: If disk DB was deleted externally, reset RAM instance automatically
-  if (!fs.existsSync(dbPath) && dbInstance) {
-    dbInstance = null;
-    initPromise = null;
-  }
-
   if (dbInstance) return dbInstance;
   if (initPromise) return initPromise;
   initPromise = initDb();
@@ -76,18 +70,6 @@ export function flushDb(db?: SqlJsDatabase): void {
   const kumaDir = getKumaDir();
   const dbPath = path.join(kumaDir, DB_FILENAME);
 
-  // 🔴 SAFETY: If disk DB file was deleted externally, cancel save & reset RAM cache
-  if (!fs.existsSync(dbPath) && dbInstance) {
-    dbInstance = null;
-    initPromise = null;
-    _pendingDb = null;
-    if (_saveTimeout) {
-      clearTimeout(_saveTimeout);
-      _saveTimeout = null;
-    }
-    return;
-  }
-
   const d = db ?? dbInstance ?? _pendingDb;
   if (!d) return;
   if (_saveTimeout) {
@@ -96,6 +78,9 @@ export function flushDb(db?: SqlJsDatabase): void {
   }
   _pendingDb = null;
   try {
+    if (!fs.existsSync(kumaDir)) {
+      fs.mkdirSync(kumaDir, { recursive: true });
+    }
     const data = d.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
@@ -105,27 +90,11 @@ export function flushDb(db?: SqlJsDatabase): void {
 }
 
 export function saveDb(db?: SqlJsDatabase): void {
-  const kumaDir = getKumaDir();
-  const dbPath = path.join(kumaDir, DB_FILENAME);
-
-  // 🔴 SAFETY: If disk DB file was deleted externally, cancel save & reset RAM cache
-  if (!fs.existsSync(dbPath) && dbInstance) {
-    dbInstance = null;
-    initPromise = null;
-    _pendingDb = null;
-    if (_saveTimeout) {
-      clearTimeout(_saveTimeout);
-      _saveTimeout = null;
-    }
-    return;
-  }
-
   const d = db ?? dbInstance;
   if (!d) return;
   
-  // 🔴 SAFETY: Debounce concurrent saves — only the last DB state matters
   _pendingDb = d;
-  if (_saveTimeout) return; // Already queued
+  if (_saveTimeout) return;
   
   _saveTimeout = setTimeout(() => {
     flushDb(d);
