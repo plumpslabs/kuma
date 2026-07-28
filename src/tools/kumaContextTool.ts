@@ -7,7 +7,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches";
+type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   // Research synonyms
@@ -47,6 +47,12 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "researches": "researches",
   "research-list": "researches",
   "list-research": "researches",
+  // Sync/Batch synonyms (Issue #12)
+  "sync": "sync",
+  "batch": "sync",
+  "kuma_sync": "sync",
+  "unified": "sync",
+  "state": "sync",
 };
 
 interface ContextParams {
@@ -73,7 +79,8 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "rollback": return handleRollback(params);
     case "researches": return handleResearches(params);
     case "health": return handleHealth(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health`;
+    case "sync": return handleSync(params);
+    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync`;
   }
 }
 
@@ -394,6 +401,70 @@ async function handleHealth(_params: ContextParams): Promise<string> {
 // ============================================================
 // HELPERS
 // ============================================================
+
+// ============================================================
+// SYNC — Unified Batch API (Issue #12)
+// Combines init + health + memory state in single roundtrip
+// ============================================================
+
+async function handleSync(params: ContextParams): Promise<string> {
+  sessionMemory.setGoal(params.goal || "Sync session");
+  sessionMemory.recordToolCall("kuma_context_sync", { goal: params.goal });
+
+  const lines: string[] = [
+    "🔄 **Kuma Sync — Unified State**",
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    "",
+    `📁 Project: ${getProjectRoot().split("/").pop() || "unknown"}`,
+    `🕐 Session: ${new Date().toISOString()}`,
+    "",
+  ];
+
+  // 1. Session state
+  const summary = sessionMemory.getSummary();
+  lines.push("**Session State**");
+  lines.push(`  🎯 Goal: ${(summary.currentGoal as string) || "not set"}`);
+  lines.push(`  📝 Modified: ${(summary.modifiedFiles as Array<unknown>)?.length || 0} file(s)`);
+  lines.push(`  🛠️ Tool calls: ${summary.toolCallCount}`);
+  lines.push("");
+
+  // 2. Health score (auto-computed inline)
+  try {
+    const { computeSafetyScore, formatSafetyScore } = await import("../engine/safetyScore.js");
+    const { saveHealthSnapshot } = await import("../engine/kumaDb.js");
+    const score = await computeSafetyScore(params.goal);
+    const checksStr = JSON.stringify(score.checks);
+    await saveHealthSnapshot(score.score, score.risk, checksStr, score.summary);
+    lines.push("**Health Score**");
+    lines.push(formatSafetyScore(score));
+  } catch {
+    lines.push("**Health Score**: ⚠️ Could not compute");
+  }
+  lines.push("");
+
+  // 3. Graph stats
+  try {
+    const { getGraphStats } = await import("../engine/kumaGraph.js");
+    lines.push("**Knowledge Graph**");
+    lines.push(await getGraphStats());
+  } catch {}
+  lines.push("");
+
+  // 4. Proactive memories
+  try {
+    const { getProactiveMemories } = await import("../engine/kumaMemory.js");
+    const memories = getProactiveMemories();
+    if (memories) {
+      lines.push("**Relevant Memories**");
+      lines.push(memories);
+      lines.push("");
+    }
+  } catch {}
+
+  lines.push("💡 Sync complete — all state captured in a single roundtrip.");
+
+  return lines.join("\n");
+}
 
 function computeProjectHash(scope: string): string {
   try {

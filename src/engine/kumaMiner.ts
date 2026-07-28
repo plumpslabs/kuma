@@ -35,24 +35,61 @@ export async function mineHistoricalDecisions(options: MineOptions = {}): Promis
   // 1. Scan Git Log
   try {
     const sinceFlag = options.since ? `--since="${options.since}"` : `--since="1 year"`;
+    // 🔴 SAFETY: 15s timeout to prevent hanging on large repos
     const gitCmd = `git log ${sinceFlag} -n 100 --pretty=format:"%h|%an|%ad|%s" --date=short`;
-    const gitOutput = execSync(gitCmd, { cwd: root, encoding: "utf-8" });
+    const gitOutput = execSync(gitCmd, { cwd: root, encoding: "utf-8", timeout: 15000 });
 
     const keywords = ["fix", "revert", "hack", "workaround", "urgent", "hotfix", "don't touch", "temporary", "deprecated", "workaround"];
     const lines = gitOutput.split("\n").filter(Boolean);
 
+    // 🔴 OPTIMIZATION: Batch all matching commit hashes first, then run single git diff
+    const matchingHashes: Array<{ hash: string; author: string; date: string; subject: string; keyword: string }> = [];
     for (const line of lines) {
       const parts = line.split("|");
       if (parts.length < 4) continue;
       const [hash, author, date, subject] = parts;
       const lowerSubj = subject.toLowerCase();
-
       const matchedKeyword = keywords.find((kw) => lowerSubj.includes(kw));
       if (matchedKeyword) {
-        // Find files changed in commit
-        let changedFiles = "";
+        matchingHashes.push({ hash, author, date, subject, keyword: matchedKeyword });
+        if (matchingHashes.length >= limit) break;
+      }
+    }
+
+    // 🔴 OPTIMIZATION: Single git command for all matching commits instead of N+1
+    let changedFilesMap = new Map<string, string>();
+    if (matchingHashes.length > 0) {
+      try {
+        const hashesStr = matchingHashes.map(h => h.hash).join(" ");
+        const batchOutput = execSync(
+          `git show --name-only --oneline ${hashesStr} 2>/dev/null | head -200`,
+          { cwd: root, encoding: "utf-8", timeout: 10000, maxBuffer: 256 * 1024 }
+        );
+        let currentHash = "";
+        const files: string[] = [];
+        for (const line of batchOutput.split("\n")) {
+          if (matchingHashes.find(h => line.startsWith(h.hash))) {
+            if (currentHash && files.length > 0) {
+              changedFilesMap.set(currentHash, files.slice(0, 3).join(", "));
+            }
+            currentHash = line.split(" ")[0];
+            files.length = 0;
+          } else if (line.trim() && !line.startsWith("diff")) {
+            files.push(line.trim());
+          }
+        }
+        if (currentHash && files.length > 0) {
+          changedFilesMap.set(currentHash, files.slice(0, 3).join(", "));
+        }
+      } catch { /* batch failed — fallback to per-commit (rare) */ }
+    }
+
+    for (const { hash, author, date, subject, keyword: matchedKeyword } of matchingHashes) {
+      let changedFiles = changedFilesMap.get(hash) || "";
+      // Fallback: single execSync if batch failed
+      if (!changedFiles) {
         try {
-          changedFiles = execSync(`git show --name-only --oneline ${hash}`, { cwd: root, encoding: "utf-8" })
+          changedFiles = execSync(`git show --name-only --oneline ${hash}`, { cwd: root, encoding: "utf-8", timeout: 5000 })
             .split("\n")
             .slice(1)
             .filter(Boolean)

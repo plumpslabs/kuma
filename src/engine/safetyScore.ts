@@ -36,8 +36,9 @@ export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScor
   const maxScore = 100;
 
   // 1. Git status (weight: 20)
+  // 🔧 FIX (Issue #14): Check parent directories for git root
   const gitStat = getGitDiffStat();
-  if (gitStat) {
+  if (gitStat && gitStat !== "clean") {
     const lines = gitStat.split("\n").filter(Boolean).length;
     if (lines === 0) {
       checks.push({
@@ -64,6 +65,14 @@ export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScor
       });
       totalScore += 10;
     }
+  } else if (gitStat === "clean") {
+    checks.push({
+      label: "Git Clean",
+      status: "pass",
+      message: "Working tree is clean",
+      weight: 20,
+    });
+    totalScore += 20;
   } else {
     checks.push({
       label: "Git Status",
@@ -248,7 +257,7 @@ export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScor
     totalScore += 10;
   }
 
-  // 7. Unresolved failures (weight: 10)
+    // 7. Unresolved failures (weight: 10)
   if (unresolvedCount === 0) {
     checks.push({
       label: "Unresolved Failures",

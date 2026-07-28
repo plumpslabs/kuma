@@ -578,18 +578,18 @@ class SessionMemory {
       }
     }
 
-    // 6. Search memory files (.kuma/memories/*.md)
+    // 6. Search memory files (.kuma/memories/*.md) — 🟠 OPTIMIZED: limit reads to 3 files
     const memoriesDir = this.memoriesDir();
     if (fs.existsSync(memoriesDir)) {
       try {
-        const files = fs.readdirSync(memoriesDir);
+        const files = fs.readdirSync(memoriesDir).filter(f => f.endsWith(".md")).slice(0, 3);
         for (const file of files) {
-          if (!file.endsWith(".md")) continue;
           const filePath = path.join(memoriesDir, file);
           try {
             const content = fs.readFileSync(filePath, "utf-8");
             const lines = content.split("\n");
-            for (let i = 0; i < lines.length; i++) {
+            const maxLinesPerFile = 500; // 🟠 SAFETY: prevent OOM on large markdown files
+            for (let i = 0; i < Math.min(lines.length, maxLinesPerFile); i++) {
               if (lines[i].toLowerCase().includes(q)) {
                 const topicName = file.replace(/\.md$/, "");
                 results.push({
@@ -701,13 +701,23 @@ class SessionMemory {
     if (recentCalls.length < 6) return { isLooping: false };
 
     // Check: same tool called >3 times
-    const toolCounts = new Map<string, number>();
+    // 🔧 FIX (Issue #14): Exclude kuma_memory from loop detection when arguments differ
+    const toolCounts = new Map<string, { count: number; actions: Set<string> }>();
     for (const call of recentCalls) {
-      toolCounts.set(call.toolName, (toolCounts.get(call.toolName) ?? 0) + 1);
+      const existing = toolCounts.get(call.toolName);
+      const action = (call.params.action as string) || "";
+      if (existing) {
+        existing.count++;
+        existing.actions.add(action);
+      } else {
+        toolCounts.set(call.toolName, { count: 1, actions: new Set([action]) });
+      }
     }
 
-    for (const [toolName, count] of toolCounts) {
+    for (const [toolName, { count, actions }] of toolCounts) {
       if (count >= 4) {
+        // 🧹 Suppress false-positive: if tool is called with different actions, it's not a loop
+        if (actions.size >= 3) continue;
         return {
           isLooping: true,
           toolName,

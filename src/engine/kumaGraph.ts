@@ -504,8 +504,9 @@ async function codebaseSearchFallback(query: string, limit: number = 20): Promis
       const root = process.cwd();
 
       const results: string[] = [];
-      function walk(dir: string) {
-        if (results.length >= limit) return;
+      const MAX_WALK_DEPTH = 8; // 🔴 SAFETY: Prevent stack overflow on deep dir trees
+      function walk(dir: string, depth: number = 0) {
+        if (results.length >= limit || depth > MAX_WALK_DEPTH) return;
         let entries: string[] = [];
         try { entries = fs.readdirSync(dir); } catch { return; }
         for (const entry of entries) {
@@ -514,14 +515,14 @@ async function codebaseSearchFallback(query: string, limit: number = 20): Promis
           try {
             const stat = fs.statSync(full);
             if (stat.isDirectory()) {
-              walk(full);
+              walk(full, depth + 1);
             } else if (entry.toLowerCase().includes(query.toLowerCase())) {
               results.push(path.relative(root, full));
             }
           } catch {}
         }
       }
-      walk(root);
+      walk(root, 0);
 
       if (results.length === 0) {
         return `🔍 **Codebase Search** — No results for "${query}". Try a different search term.`;
@@ -707,9 +708,10 @@ async function codebaseImpactFallback(target: string): Promise<ImpactResult> {
     const root = process.cwd();
 
     // Use grep to find references to the target symbol in source files
+    // 🔴 SAFETY: 5s timeout + 256KB maxBuffer to prevent resource exhaustion
     const grepResult = execSync(
       `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.json" -l "${target.replace(/"/g, '\\"')}" . 2>/dev/null | grep -v node_modules | grep -v .git | grep -v dist | grep -v .kuma | head -50`,
-      { cwd: root, encoding: "utf-8", timeout: 5000, maxBuffer: 1024 * 1024 },
+      { cwd: root, encoding: "utf-8", timeout: 5000, maxBuffer: 256 * 1024 },
     ).trim();
 
     const files = grepResult ? grepResult.split("\n").filter(Boolean).filter(f => !f.startsWith("./")) : [];

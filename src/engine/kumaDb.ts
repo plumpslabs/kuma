@@ -46,18 +46,37 @@ async function initDb(): Promise<SqlJsDatabase> {
   return db;
 }
 
+// ============================================================
+// Write queue — debounce concurrent saveDb() calls to prevent
+// sql.js WASM race conditions (Issue #15 / CRITICAL-001 prevention)
+// ============================================================
+let _saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let _pendingDb: SqlJsDatabase | null = null;
+const SAVE_DEBOUNCE_MS = 100; // Debounce rapid writes within 100ms
+
 export function saveDb(db?: SqlJsDatabase): void {
   const d = db ?? dbInstance;
   if (!d) return;
-  try {
-    const kumaDir = getKumaDir();
-    const dbPath = path.join(kumaDir, DB_FILENAME);
-    const data = d.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
-  } catch (err) {
-    console.error(`[KumaDB] Failed to save database: ${err}`);
-  }
+  
+  // 🔴 SAFETY: Debounce concurrent saves — only the last DB state matters
+  _pendingDb = d;
+  if (_saveTimeout) return; // Already queued
+  
+  _saveTimeout = setTimeout(() => {
+    _saveTimeout = null;
+    const targetDb = _pendingDb;
+    _pendingDb = null;
+    if (!targetDb) return;
+    try {
+      const kumaDir = getKumaDir();
+      const dbPath = path.join(kumaDir, DB_FILENAME);
+      const data = targetDb.export();
+      const buffer = Buffer.from(data);
+      fs.writeFileSync(dbPath, buffer);
+    } catch (err) {
+      console.error(`[KumaDB] Failed to save database: ${err}`);
+    }
+  }, SAVE_DEBOUNCE_MS);
 }
 
 function createSchema(db: SqlJsDatabase): void {
