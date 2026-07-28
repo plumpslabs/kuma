@@ -228,15 +228,16 @@ function truncateLabel(name, maxLen) {
 function calcNodeSize(name, type) {
   var base = 18;
   if (type === "feature_domain") base = 32;
-  if (type === "workflow") base = 24;
+  if (type === "workflow") base = 28;
   if (type === "cross_service_link") base = 20;
   if (type === "function") base = 18;
   if (type === "class") base = 22;
-  if (type === "module") base = 20;
+  if (type === "module") base = 26;
   if (type === "component") base = 22;
   if (type === "route") base = 18;
   if (type === "test") base = 20;
-  var len = name ? Math.min(name.length, 30) : 4;
+  if (type === "variable") base = 20;
+  var len = name ? Math.min(name.length, 25) : 4;
   return Math.min(42, Math.max(base, base + len * 0.5));
 }
 
@@ -261,7 +262,7 @@ function renderGraph(data) {
     file: '#d97706',
     route: '#db2777',
     test: '#0d9488',
-    variable: '#4f46e5'
+    variable: '#6366f1'
   };
   var shapes = {
     feature_domain: 'star',
@@ -274,7 +275,7 @@ function renderGraph(data) {
     file: 'box',
     route: 'triangleDown',
     test: 'star',
-    variable: 'ellipse'
+    variable: 'database'
   };
 
   // Limit nodes for performance if > 200
@@ -286,7 +287,9 @@ function renderGraph(data) {
   }
 
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
-    var label = truncateLabel(n.name, 36);
+    var shape = shapes[n.type] || 'dot';
+    var maxLen = (shape === 'ellipse') ? 18 : 34;
+    var label = truncateLabel(n.name, maxLen);
     var size = calcNodeSize(n.name, n.type);
     var color = colors[n.type] || '#64748b';
     return {
