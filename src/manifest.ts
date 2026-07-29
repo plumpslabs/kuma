@@ -44,8 +44,8 @@ export function registerAllTools(server: McpServer): void {
     "kuma_memory",
     "**Call after research/editing** (including research-only). Record what matters, skip what doesn't.\n\n🔴 MUST RECORD — High Impact (saves agent time next session):\n• STEP 5: `research_save` — after exploring area (creates search cache).\n• STEP 6: `gotcha` — IMMEDIATELY when you discover bugs/quirks. No re-research.\n• STEP 7: `arch_flow` — IMMEDIATELY after EACH flow hop. Saves reading 5-10 files.\n• STEP 8: `decision` — IMMEDIATELY when choosing between options. Preserves rationale.\n\n🟢 SKIP using MCP (agent native tools are faster):\n• Function/class nodes → grep\n• Component/route nodes → glob or check directly\n• Import edges → read imports directly\n• Visual graph → for humans, not AI agents\n\nOther actions: session, heal, search, changes, benchmark, layers.",
     {
-      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers", "federated", "gen_test", "trajectory", "skills", "add_node", "delete_node", "clear"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save (creates file + graph node), session=summary, heal=repair, search=search, changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules (Issue #17), arch_flow=Layer 2 architecture flow (Issue #17), gotcha=Layer 3 known gotchas (Issue #17/#21), layers=all 3 layers summary, federated=resolve federated kuma:// URI (Issue #27), gen_test=generate test from trajectory (Issue #28), trajectory=list trajectories, skills=list distilled skills, add_node=manually create function/class/component structural nodes, delete_node=delete a specific node/gotcha/todo/decision by ID or scope+target, clear=wipe all nodes/edges/gotchas/trajectories"),
-      scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine/federated"),
+      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers", "add_node", "delete_node", "clear", "feature"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save (creates file + graph node), session=summary, heal=repair, search=search (now with task retrieval + impact analysis), changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules, arch_flow=Layer 2 architecture flow (now auto-creates affects edges), gotcha=Layer 3 known gotchas, layers=all 3 layers summary, add_node=manually create function/class/component structural nodes, delete_node=delete a specific node/gotcha/todo/decision by ID or scope+target, clear=wipe all nodes/edges/gotchas, feature=record high-level feature with owns edges to files"),
+      scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / context"),
       record: z.string().optional().describe("JSON record string for research_save"),
@@ -61,7 +61,7 @@ export function registerAllTools(server: McpServer): void {
       healAction: z.enum(["check", "heal"]).optional().describe("Heal sub-action"),
       topic: z.string().optional().describe("Memory topic for session"),
       limit: z.number().min(1).max(100).optional().describe("Result limit"),
-      target: z.string().optional().describe("File path for changes / decision_log ID / trajectory ID"),
+      target: z.string().optional().describe("File path for changes / decision_log ID"),
       since: z.number().optional().describe("Timestamp filter for changes"),
       compact: z.boolean().optional().default(false).describe("Compact output mode"),
       // Todo params
@@ -99,7 +99,6 @@ export function registerAllTools(server: McpServer): void {
           limit: params.limit,
           target: params.target,
           since: params.since,
-          uri: params.uri,
         });
         return { content: [{ type: "text", text }] };
       } catch (err) {

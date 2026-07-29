@@ -120,7 +120,7 @@ function createSchema(db: SqlJsDatabase): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL REFERENCES nodes(id),
     target_id TEXT NOT NULL REFERENCES nodes(id),
-    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with')),
+    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects')),
     weight REAL DEFAULT 1.0,
     metadata TEXT DEFAULT '{}',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -138,7 +138,7 @@ function createSchema(db: SqlJsDatabase): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_id TEXT NOT NULL REFERENCES nodes(id),
         target_id TEXT NOT NULL REFERENCES nodes(id),
-        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with')),
+        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects')),
         weight REAL DEFAULT 1.0,
         metadata TEXT DEFAULT '{}',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -625,15 +625,21 @@ export async function recordChange(entry: {
 }): Promise<void> {
   try {
     const db = await getDb();
-    const root = process.cwd();
-    const fullPath = path.resolve(root, entry.filePath);
-    let previousContent: string | null = null;
-    if (entry.changeType === "modified" && fs.existsSync(fullPath)) {
-      try { previousContent = fs.readFileSync(fullPath, "utf-8"); } catch { }
-    } else if (entry.changeType === "created") { previousContent = ""; }
+    // Store minimal info — NOT full file content (prevents MB-sized change_log)
+    // Only store: file path, change type, timestamp, diff summary
     db.run(`INSERT INTO change_log (session_id, file_path, change_type, symbol, diff_summary, git_commit_hash, previous_content) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [entry.sessionId ?? null, entry.filePath, entry.changeType, entry.symbol ?? null, entry.diffSummary ?? null, entry.gitCommitHash ?? null, previousContent]);
+      [entry.sessionId ?? null, entry.filePath, entry.changeType, entry.symbol ?? null, entry.diffSummary ?? null, entry.gitCommitHash ?? null, null]);
     saveDb();
+
+    // Periodic cleanup — keep only last 500 change_log entries
+    try {
+      const countResult = db.exec("SELECT COUNT(*) FROM change_log");
+      const count = (countResult[0]?.values?.[0] as unknown as number) || 0;
+      if (count > 600) {
+        db.exec("DELETE FROM change_log WHERE id IN (SELECT id FROM change_log ORDER BY created_at ASC LIMIT 200)");
+        saveDb();
+      }
+    } catch {}
   } catch (err) { console.error(`[KumaDB] Failed to record change: ${err}`); }
 }
 
@@ -941,17 +947,102 @@ export async function runGarbageCollection(): Promise<string> {
   try {
     const db = await getDb();
     let removed = 0;
-    // Remove orphan nodes (no edges, no file_path, older than 30 days)
+
+    // Helper to safely get count from exec result
+    const getCount = (sql: string): number => {
+      try {
+        const result = db.exec(sql);
+        return (result[0]?.values?.[0] as unknown as number) || 0;
+      } catch { return 0; }
+    };
+
+    // 1. Orphan nodes (no edges, no file_path, older than 30 days)
     const orphanResult = db.exec(`DELETE FROM nodes WHERE id NOT IN (SELECT source_id FROM edges UNION SELECT target_id FROM edges) AND file_path IS NULL AND updated_at < strftime('%s','now','-30 days')`);
     removed += orphanResult[0]?.values?.length || 0;
-    // Stale tool_calls > 90 days
+
+    // 2. Stale edges (weight < 0.1, older than 30 days)
+    const staleEdges = db.exec(`DELETE FROM edges WHERE weight < 0.1 AND updated_at < strftime('%s','now','-30 days')`);
+    removed += staleEdges[0]?.values?.length || 0;
+
+    // 3. Tool calls > 90 days
     db.exec(`DELETE FROM tool_calls WHERE created_at < strftime('%s','now','-90 days')`);
-    // Stale experiences > 90 days
+
+    // 4. Experiences > 90 days
     db.exec(`DELETE FROM experiences WHERE created_at < strftime('%s','now','-90 days')`);
-    // VACUUM to reclaim space (Part 5 #2)
+
+    // 5. Change log — keep only last 500 entries (prevents MB-sized growth)
+    const changeCount = getCount("SELECT COUNT(*) FROM change_log");
+    if (changeCount > 500) {
+      db.exec(`DELETE FROM change_log WHERE id IN (SELECT id FROM change_log ORDER BY created_at ASC LIMIT ${changeCount - 500})`);
+    }
+
+    // 6. Verifications — keep only last 100 entries
+    const verifCount = getCount("SELECT COUNT(*) FROM verifications");
+    if (verifCount > 100) {
+      db.exec(`DELETE FROM verifications WHERE id IN (SELECT id FROM verifications ORDER BY created_at ASC LIMIT ${verifCount - 100})`);
+    }
+
+    // 7. Health snapshots — keep only last 50
+    const healthCount = getCount("SELECT COUNT(*) FROM health_snapshots");
+    if (healthCount > 50) {
+      db.exec(`DELETE FROM health_snapshots WHERE id IN (SELECT id FROM health_snapshots ORDER BY created_at ASC LIMIT ${healthCount - 50})`);
+    }
+
+    // 8. Safety audit — keep only last 200
+    const auditCount = getCount("SELECT COUNT(*) FROM safety_audit");
+    if (auditCount > 200) {
+      db.exec(`DELETE FROM safety_audit WHERE id IN (SELECT id FROM safety_audit ORDER BY created_at ASC LIMIT ${auditCount - 200})`);
+    }
+
+    // 9. Research cache — remove entries older than 60 days
+    db.exec(`DELETE FROM research_cache WHERE updated_at < strftime('%s','now','-60 days')`);
+
+    // 10. Security findings — keep only last 100
+    const secCount = getCount("SELECT COUNT(*) FROM security_findings");
+    if (secCount > 100) {
+      db.exec(`DELETE FROM security_findings WHERE id IN (SELECT id FROM security_findings ORDER BY created_at ASC LIMIT ${secCount - 100})`);
+    }
+
+    // 11. Context notes — keep only last 200
+    const ctxCount = getCount("SELECT COUNT(*) FROM context_notes");
+    if (ctxCount > 200) {
+      db.exec(`DELETE FROM context_notes WHERE id IN (SELECT id FROM context_notes ORDER BY created_at ASC LIMIT ${ctxCount - 200})`);
+    }
+
+    // 12. Benchmarks — keep only last 100
+    const benchCount = getCount("SELECT COUNT(*) FROM benchmarks");
+    if (benchCount > 100) {
+      db.exec(`DELETE FROM benchmarks WHERE id IN (SELECT id FROM benchmarks ORDER BY created_at ASC LIMIT ${benchCount - 100})`);
+    }
+
+    // 13. Decision log — keep only last 200
+    const decCount = getCount("SELECT COUNT(*) FROM decision_log");
+    if (decCount > 200) {
+      db.exec(`DELETE FROM decision_log WHERE id IN (SELECT id FROM decision_log ORDER BY created_at ASC LIMIT ${decCount - 200})`);
+    }
+
+    // 14. Known gotchas — remove stale entries for deleted files
+    db.exec(`DELETE FROM known_gotchas WHERE file_path NOT IN (SELECT DISTINCT file_path FROM nodes WHERE file_path IS NOT NULL) AND file_path NOT LIKE '%::%'`);
+
+    // 15. Scratch entries — remove older than 7 days
+    db.exec(`DELETE FROM scratch_entries WHERE created_at < strftime('%s','now','-7 days')`);
+
+    // 16. Cost tracking — keep only last 500
+    const costCount = getCount("SELECT COUNT(*) FROM cost_tracking");
+    if (costCount > 500) {
+      db.exec(`DELETE FROM cost_tracking WHERE id IN (SELECT id FROM cost_tracking ORDER BY created_at ASC LIMIT ${costCount - 500})`);
+    }
+
+    // 17. Sessions — keep only last 50
+    const sessCount = getCount("SELECT COUNT(*) FROM sessions");
+    if (sessCount > 50) {
+      db.exec(`DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY started_at ASC LIMIT ${sessCount - 50})`);
+    }
+
+    // VACUUM to reclaim space
     try { db.exec("VACUUM"); } catch {}
     saveDb();
-    return `🧹 GC complete. Removed orphaned data. Database vacuumed.`;
+    return `🧹 GC complete — cleaned 17 tables. Database vacuumed.`;
   } catch (err) { return `❌ GC failed: ${err}`; }
 }
 

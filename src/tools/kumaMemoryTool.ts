@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "federated" | "gen_test" | "trajectory" | "skills" | "add_node" | "delete_node" | "clear";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -88,29 +88,14 @@ const MEMORY_ALIASES: Record<string, string> = {
   "layers": "layers",
   "3-layer": "layers",
   "memory-layers": "layers",
-  // Federated synonyms (Issue #27)
-  "federated": "federated",
-  "federated-graph": "federated",
-  "kuma-uri": "federated",
-  "remote-graph": "federated",
-  // Test generation synonyms (Issue #28)
-  "gen_test": "gen_test",
-  "gen-test": "gen_test",
-  "generate-test": "gen_test",
-  "gentest": "gen_test",
-  // Trajectory synonyms
-  "trajectory": "trajectory",
-  "trajectories": "trajectory",
-  "traj": "trajectory",
-  // Skills synonyms
-  "skills": "skills",
-  "distilled-skills": "skills",
-  "skill-list": "skills",
   // Add node synonyms
-  "add_node": "add_node",
   "add-node": "add_node",
-  "node": "add_node",
   "create-node": "add_node",
+  // Feature synonyms
+  "feature": "feature",
+  "features": "feature",
+  "record-feature": "feature",
+  "define-feature": "feature",
   "record-node": "add_node",
   // Delete node synonyms
   "delete_node": "delete_node",
@@ -155,6 +140,9 @@ interface MemoryParams {
   status?: string;
   todoId?: number;
 
+  // Feature params
+  tags?: string;
+
   // Context params
   source?: string;
 
@@ -162,9 +150,6 @@ interface MemoryParams {
   label?: string;
   metrics?: string;
   labelB?: string;
-
-  // Federated params (#27)
-  uri?: string;
 }
 
 export async function handleMemory(params: MemoryParams): Promise<string> {
@@ -190,16 +175,13 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "arch_flow": return handleLayerAction("arch_flow", params);
     case "gotcha": return handleGotchaAction(params);
     case "layers": return handleLayersSummary(params);
-    case "federated": return handleFederated(params);
-    case "gen_test": return handleGenTest(params);
-    case "trajectory": return handleTrajectoryList(params);
-    case "skills": return handleSkillsList(params);
     case "add_node": return handleAddNode(params);
+    case "feature": return handleFeature(params);
     case "delete_node": return handleDeleteNode(params);
     case "clear": {
       const { clearGraph } = await import("../engine/kumaGraph.js");
       await clearGraph();
-      return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, gotchas, and trajectories have been wiped from disk and memory.";
+      return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, and gotchas have been wiped from disk and memory.";
     }
     default: return `Unknown action "${action}".`;
   }
@@ -221,8 +203,9 @@ async function handleDecision(params: MemoryParams): Promise<string> {
         : "✅ No decision needed at this time.";
     }
     case "record":
-      if (!params.title || !params.rationale) return "⚠️ title and rationale are required.";
-      return recordDecision({
+      if (!params.title) return `❌ **decision format error:** title is required.\n\n✅ Correct: kuma_memory({ action: "decision", decisionAction: "record", title: "Use bcrypt vs argon2", rationale: "bcrypt is battle-tested, argon2 is newer but less adoption", context: "Login system security", outcome: "Chose bcrypt" })`;
+      if (!params.rationale) return `❌ **decision format error:** rationale is required.\n\n✅ Correct: kuma_memory({ action: "decision", decisionAction: "record", title: "${params.title}", rationale: "WHY you chose this option", context: "optional context", outcome: "optional outcome" })`;
+      const decisionResult = await recordDecision({
         title: params.title,
         context: params.context || "",
         options: [],
@@ -230,6 +213,9 @@ async function handleDecision(params: MemoryParams): Promise<string> {
         outcome: params.outcome || "implemented",
         timestamp: new Date().toISOString(),
       });
+      // Track in session memory
+      sessionMemory.recordMemoryAction("decision");
+      return decisionResult;
     default: return formatDecisionTemplate();
   }
 }
@@ -265,6 +251,10 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
     if (!fs.existsSync(researchDir)) fs.mkdirSync(researchDir, { recursive: true });
     fs.writeFileSync(path.join(researchDir, `${scope}.json`), JSON.stringify(JSON.parse(record), null, 2), "utf-8");
   } catch {}
+
+  // Track in session memory
+  sessionMemory.recordMemoryAction("research_save");
+
   return `✅ Research "${scope}" saved.`;
 }
 
@@ -279,12 +269,25 @@ async function handleSession(params: MemoryParams): Promise<string> {
 
   const modifiedFiles = (summary.modifiedFiles as Array<{ filePath: string; status: string }>) || [];
   const failures = (summary.unresolvedFailures as Array<{ task: string; error: string }>) || [];
+  const recordingSummary = sessionMemory.getRecordingSummary();
+  const metricsSummary = sessionMemory.getMetricsSummary();
   const lines: string[] = [
     "📋 **Session Summary**\n━━━━━━━━━━━━━━━━━━━━━━━━━\n",
     `🎯 Goal: ${(summary.currentGoal as string) || "not set"}`,
     `🕐 Duration: ${summary.sessionDuration}`,
     `🛠️ Tool calls: ${summary.toolCallCount}\n`,
+    `🧠 **Recordings:** ${recordingSummary.total} total — ` +
+      `${recordingSummary.archFlows} arch_flow, ` +
+      `${recordingSummary.gotchas} gotcha, ` +
+      `${recordingSummary.decisions} decision, ` +
+      `${recordingSummary.researchSaves} research_save`,
+    `📊 **Metrics:** ${metricsSummary.filesRead} files read, ${metricsSummary.filesEdited} files edited`,
+    `⏱️ **Time saved:** ~${metricsSummary.researchTimeSavedFormatted} (from research cache)`,
   ];
+  if (recordingSummary.missingRecordings.length > 0 && recordingSummary.total === 0) {
+    lines.push(`\n⚠️ **No recordings yet!** Missing: ${recordingSummary.missingRecordings.join(", ")}`);
+    lines.push(`💡 Tip: Record findings after reading files. arch_flow + gotcha are exponential value.`);
+  }
   if (modifiedFiles.length > 0) {
     lines.push(`**Modified Files** (${modifiedFiles.length}):`);
     for (const f of modifiedFiles.slice(0, 10)) {
@@ -327,7 +330,35 @@ async function handleSearch(params: MemoryParams): Promise<string> {
   const memResults = sessionMemory.searchMemory(query, limit);
   const { searchGraph } = await import("../engine/kumaGraph.js");
   const graphResults = await searchGraph(query, Math.min(limit, 10));
-  
+
+  // Graph-as-retrieval: focused context for task
+  let taskContext = "";
+  try {
+    const { retrieveForTask } = await import("../engine/kumaGraph.js");
+    taskContext = await retrieveForTask(query, 10);
+  } catch {}
+
+  // Impact analysis: if query matches a node, show what it affects
+  let impactAnalysis = "";
+  try {
+    const { propagateImpact, searchGraph: sg } = await import("../engine/kumaGraph.js");
+    const searchRes = await sg(query, 1);
+    // Extract node ID from search results if available
+    const nodeIdMatch = searchRes.match(/\*\*([^*]+)\*\* \(([^)]+)\)/);
+    if (nodeIdMatch) {
+      const nodeType = nodeIdMatch[2];
+      const nodeName = nodeIdMatch[1];
+      const nid = `${nodeType}::${nodeName}`;
+      const impacts = await propagateImpact(nid, 3, 0.2);
+      if (impacts.length > 0) {
+        const impactLines = impacts.slice(0, 5).map(i =>
+          `  • ${i.name} (${i.type}) — depth ${i.depth}, weight ${i.weight}`
+        );
+        impactAnalysis = `\n💥 **Impact Analysis** — ${impacts.length} node(s) affected by "${nodeName}":\n${impactLines.join("\n")}`;
+      }
+    }
+  } catch {}
+
   // Hybrid semantic search
   let hybridResults = "";
   try {
@@ -337,14 +368,21 @@ async function handleSearch(params: MemoryParams): Promise<string> {
       hybridResults = "\n" + formatHybridResults(query, semanticResults);
     }
   } catch {}
-  
+
   const lines: string[] = [`🔍 **Search Results** — "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`];
   if (memResults.length > 0) {
     lines.push(`**Session Memory** (${memResults.length}):`);
     for (const r of memResults.slice(0, 5)) lines.push(`  • ${r.content.substring(0, 120)}`);
     lines.push("");
   }
+  if (taskContext) {
+    lines.push(taskContext);
+    lines.push("");
+  }
   lines.push("**Knowledge Graph:\n" + graphResults);
+  if (impactAnalysis) {
+    lines.push(impactAnalysis);
+  }
   if (hybridResults) {
     lines.push("");
     lines.push(hybridResults);
@@ -487,12 +525,21 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
       const decisionsStr = decisionsMatch ? decisionsMatch[1].trim() : "";
       const filesStr = filesMatch ? filesMatch[1].trim() : "";
 
+      // VALIDATE: hops must use → separator, not newlines or commas
+      if (hopsStr && !content.includes("→")) {
+        return `❌ **arch_flow format error:** hops must use → separator.\n\n❌ Wrong: hops: file1.js, file2.js\n❌ Wrong: hops: file1.js\\nfile2.js\n✅ Correct: domain: <name> | hops: file1.js → file2.js → file3.js`;
+      }
+
       const hops = hopsStr ? hopsStr.split("→").map(h => h.trim()).filter(Boolean).map((h, i, arr) => ({
         from: i === 0 ? domain : arr[i - 1],
         to: h,
         relation: "flows",
         description: h,
       })) : [];
+
+      if (hops.length === 0) {
+        return `❌ **arch_flow format error:** no hops found after → separator.\n\n✅ Correct: domain: <name> | hops: file1.js → file2.js`;
+      }
 
       const gotchas = gotchasStr ? gotchasStr.split(",").map(g => g.trim()).filter(Boolean) : [];
       const decisions = decisionsStr ? decisionsStr.split(",").map(d => d.trim()).filter(Boolean) : [];
@@ -505,6 +552,9 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
         // Also save to text-based layer for backward compat
         await writeLayer("arch_flow", content);
 
+        // Track in session memory
+        sessionMemory.recordMemoryAction("arch_flow");
+
         return `✅ Domain flow "${domain}" recorded — ${flow.nodeCount} nodes, ${flow.edgeCount} edges created.\n🏛️ **Domain Anchor:** ${domain}\n🔄 **Hops:** ${hops.length}\n⚠️ **Gotchas:** ${gotchas.length}\n📁 **Files:** ${filePaths.length}`;
       } catch (err) {
         // Fallback to text-only if graph recording fails
@@ -513,8 +563,8 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
       }
     }
 
-    // Plain text — backward compat
-    return writeLayer("arch_flow", content);
+    // No structured format detected — return error with format guide
+    return `❌ **arch_flow format not recognized.** Use this format:\n\ndomain: <DomainName> | hops: <file1.tsx> → <file2.js> → <file3.ts>\n\nFields:\n- domain: short name (e.g. InviteUserFlow)\n- hops: file names separated by → (NOT commas, NOT newlines)\n- gotchas: optional, comma-separated\n- decisions: optional, comma-separated`;
   }
 
   // domain_rules or reading arch_flow
@@ -531,13 +581,26 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
 async function handleGotchaAction(params: MemoryParams): Promise<string> {
   // If adding a new gotcha
   if (params.content && params.scope) {
+    // VALIDATE: scope must be a file path, content must be non-empty
+    if (!params.scope.trim()) {
+      return `❌ **gotcha format error:** scope (file path) is required.\n\n✅ Correct: kuma_memory({ action: "gotcha", scope: "path/to/file.ts", content: "bug description", status: "high" })`;
+    }
+    if (!params.content.trim()) {
+      return `❌ **gotcha format error:** content (description) is required.\n\n✅ Correct: kuma_memory({ action: "gotcha", scope: "path/to/file.ts", content: "bug description", status: "high" })`;
+    }
+
     const { addGotcha } = await import("../engine/kumaGotchas.js");
-    return await addGotcha({
+    const result = await addGotcha({
       filePath: params.scope,
       description: params.content,
       severity: (params.status as "low" | "medium" | "high" | "critical") || "medium",
       workaround: params.description,
     });
+
+    // Track in session memory
+    sessionMemory.recordMemoryAction("gotcha");
+
+    return result;
   }
 
   // If listing gotchas (optionally filtered by filePath)
@@ -584,19 +647,13 @@ async function handleDeleteNode(params: MemoryParams): Promise<string> {
         saveDb(db);
         return `🗑️ **Decision #${id} deleted.**`;
       }
-      case "trajectory":
-      case "trajectories": {
-        db.run("DELETE FROM trajectories WHERE id = ?", [id]);
-        saveDb(db);
-        return `🗑️ **Trajectory #${id} deleted.**`;
-      }
       case "checkpoint": {
         db.run("DELETE FROM health_snapshots WHERE id = ?", [id]);
         saveDb(db);
         return `🗑️ **Checkpoint #${id} deleted.**`;
       }
       default:
-        return `⚠️ Unknown scope "${params.scope}". Supported: gotcha, todo, decision, trajectory, checkpoint`;
+        return `⚠️ Unknown scope "${params.scope}". Supported: gotcha, todo, decision, checkpoint`;
     }
   }
 
@@ -638,66 +695,7 @@ async function handleDeleteNode(params: MemoryParams): Promise<string> {
     }
   }
 
-  return "⚠️ Provide `target` (node ID) to delete, or `scope` + `target` (numeric ID) for gotcha/todo/decision/trajectory/checkpoint.\n\nExamples:\n- `delete_node`, target: 'function::sendMessage'\n- `delete_node`, scope: 'gotcha', target: '42'\n- `delete_node`, scope: 'todo', target: '7'\n- `delete_node`, scope: 'decision', target: '3'\n- `delete_node`, scope: 'trajectory', target: '5'\n- `delete_node`, scope: 'checkpoint', target: '1'";
-}
-
-// ============================================================
-// FEDERATED — Federated Knowledge Graph (Issue #27)
-// ============================================================
-
-async function handleFederated(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_federated", { scope: params.scope, uri: params.uri });
-
-  // If URI provided, resolve it
-  if (params.uri) {
-    const { resolveFederatedNode } = await import("../engine/kumaGraph.js");
-    return await resolveFederatedNode(params.uri);
-  }
-
-  // List federated references
-  const { listFederatedReferences } = await import("../engine/kumaGraph.js");
-  return await listFederatedReferences();
-}
-
-// ============================================================
-// GEN_TEST — Trajectory-to-Test Generator (Issue #28)
-// ============================================================
-
-async function handleGenTest(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_gen_test", { target: params.target });
-
-  // If target is a trajectory ID, generate test from it
-  if (params.target) {
-    const id = parseInt(params.target, 10);
-    if (!isNaN(id)) {
-      const { generateTestFromTrajectoryId } = await import("../engine/kumaTrajectory.js");
-      return await generateTestFromTrajectoryId(id);
-    }
-  }
-
-  // List generated tests
-  const { listGeneratedTests } = await import("../engine/kumaTrajectory.js");
-  return await listGeneratedTests();
-}
-
-// ============================================================
-// TRAJECTORY — List trajectories
-// ============================================================
-
-async function handleTrajectoryList(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_trajectory", {});
-  const { listTrajectories } = await import("../engine/kumaTrajectory.js");
-  return await listTrajectories(params.limit || 10);
-}
-
-// ============================================================
-// SKILLS — List distilled skills
-// ============================================================
-
-async function handleSkillsList(_params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_skills", {});
-  const { listDistilledSkills } = await import("../engine/kumaTrajectory.js");
-  return await listDistilledSkills();
+  return "⚠️ Provide `target` (node ID) to delete, or `scope` + `target` (numeric ID) for gotcha/todo/decision/checkpoint.\n\nExamples:\n- `delete_node`, target: 'function::sendMessage'\n- `delete_node`, scope: 'gotcha', target: '42'\n- `delete_node`, scope: 'todo', target: '7'\n- `delete_node`, scope: 'decision', target: '3'\n- `delete_node`, scope: 'checkpoint', target: '1'";
 }
 
 // ============================================================
@@ -740,6 +738,35 @@ async function handleAddNode(params: MemoryParams): Promise<string> {
   } catch (err) {
     return `❌ Failed to create node: ${err}`;
   }
+}
+
+// ============================================================
+// FEATURE — Record high-level feature with owns edges
+// ============================================================
+
+async function handleFeature(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_feature", { title: params.title, scope: params.scope });
+
+  if (!params.title) {
+    return "⚠️ `title` (feature name) required.\n\n✅ Correct: kuma_memory({ action: 'feature', title: 'Authentication', content: 'description', scope: 'src/auth/login.ts,src/auth/session.ts' })\n\n• title = feature name (e.g. 'Authentication', 'Billing')\n• content = description (optional)\n• scope = comma-separated file paths (optional)\n• tags = comma-separated tags (optional)\n• status = risk level: low/medium/high/critical (optional)";
+  }
+
+  const { recordFeature } = await import("../engine/kumaGraph.js");
+  const files = params.scope ? params.scope.split(",").map(f => f.trim()).filter(Boolean) : [];
+  const tags = params.tags ? params.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : [];
+  const risk = (params.status as "low" | "medium" | "high" | "critical") || "medium";
+
+  const result = await recordFeature({
+    name: params.title,
+    description: params.content,
+    files,
+    tags,
+    risk,
+  });
+
+  sessionMemory.recordMemoryAction("research_save");
+
+  return `✅ **Feature "${params.title}" recorded** — ${result.nodeCount} node(s), ${result.edgeCount} edge(s)\n⭐ Level: feature\n📁 Files: ${files.length}\n🏷️ Tags: ${tags.length}\n⚠️ Risk: ${risk}`;
 }
 
 // ============================================================

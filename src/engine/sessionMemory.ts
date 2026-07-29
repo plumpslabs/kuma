@@ -42,6 +42,20 @@ interface SessionState {
   dependencyGraph: Map<string, string[]>; // file -> depends on
   toolCalls: ToolCallRecord[];
   conventions?: Record<string, unknown>;
+  // Recording counters for enforcement
+  recordings: {
+    archFlows: number;
+    gotchas: number;
+    decisions: number;
+    researchSaves: number;
+    total: number;
+  };
+  // Session metrics
+  metrics: {
+    filesRead: number;
+    filesEdited: number;
+    researchTimeSaved: number; // estimated ms saved from cache
+  };
 }
 
 /** @internal exported for testing */
@@ -86,6 +100,8 @@ class SessionMemory {
           dependencyGraph: new Map(parsed.dependencyGraph || []),
           toolCalls: parsed.toolCalls || [],
           conventions: parsed.conventions,
+          recordings: parsed.recordings || { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, total: 0 },
+          metrics: parsed.metrics || { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 },
         };
         this.initialized = true;
         console.error(`[SessionMemory] Loaded persistent session memory.json`);
@@ -105,6 +121,8 @@ class SessionMemory {
       searchResults: new Map(),
       dependencyGraph: new Map(),
       toolCalls: [],
+      recordings: { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, total: 0 },
+      metrics: { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 },
     };
     this.initialized = true;
     this.save();
@@ -257,6 +275,8 @@ class SessionMemory {
         dependencyGraph: Array.from(this.state.dependencyGraph.entries()),
         toolCalls: this.state.toolCalls,
         conventions: this.state.conventions,
+        recordings: this.state.recordings,
+        metrics: this.state.metrics,
       };
       fs.writeFileSync(path.join(kumaDir, "memory.json"), JSON.stringify(serialized, null, 2), "utf-8");
     } catch (err) {
@@ -285,6 +305,11 @@ class SessionMemory {
       existing.modifiedAt = Date.now();
       existing.status = "modified";
     } else {
+      // Cap: keep only last 200 modified files
+      if (this.state.modifiedFiles.size >= 200) {
+        const oldest = this.state.modifiedFiles.keys().next().value;
+        if (oldest) this.state.modifiedFiles.delete(oldest);
+      }
       this.state.modifiedFiles.set(filePath, {
         filePath,
         modifiedAt: Date.now(),
@@ -321,7 +346,20 @@ class SessionMemory {
       timestamp: Date.now(),
       resolved: false,
     });
+
+    // Cap: keep only last 10 failures per task
+    if (failures.length > 10) {
+      failures.splice(0, failures.length - 10);
+    }
+
     this.state.failedFiles.set(task, failures);
+
+    // Cap: keep only last 100 tasks total
+    if (this.state.failedFiles.size > 100) {
+      const oldest = this.state.failedFiles.keys().next().value;
+      if (oldest) this.state.failedFiles.delete(oldest);
+    }
+
     this.save();
     this.ensureMemoriesDir();
     this.writeMemoryFile("known-issues", this.generateKnownIssuesMd());
@@ -348,6 +386,11 @@ class SessionMemory {
 
   addSearchResult(query: string, files: string[]): void {
     this.ensureInit();
+    // Cap: keep only last 50 search results
+    if (this.state.searchResults.size >= 50) {
+      const oldest = this.state.searchResults.keys().next().value;
+      if (oldest) this.state.searchResults.delete(oldest);
+    }
     this.state.searchResults.set(query, files);
     this.save();
   }
@@ -357,6 +400,10 @@ class SessionMemory {
     const deps = this.state.dependencyGraph.get(file) ?? [];
     if (!deps.includes(dependsOn)) {
       deps.push(dependsOn);
+      // Cap: max 20 dependencies per file
+      if (deps.length > 20) {
+        deps.splice(0, deps.length - 20);
+      }
       this.state.dependencyGraph.set(file, deps);
       this.save();
     }
@@ -727,6 +774,111 @@ class SessionMemory {
     }
 
     return { isLooping: false };
+  }
+
+  // ============================================================
+  // RECORDING TRACKING — Enforcement & Feedback
+  // ============================================================
+
+  /**
+   * Increment recording counter for a specific type.
+   * Called by kumaMemoryTool after successful record operations.
+   */
+  recordMemoryAction(type: "arch_flow" | "gotcha" | "decision" | "research_save"): void {
+    this.ensureInit();
+    switch (type) {
+      case "arch_flow": this.state.recordings.archFlows++; break;
+      case "gotcha": this.state.recordings.gotchas++; break;
+      case "decision": this.state.recordings.decisions++; break;
+      case "research_save": this.state.recordings.researchSaves++; break;
+    }
+    this.state.recordings.total++;
+    this.save();
+  }
+
+  /**
+   * Get recording summary for this session.
+   * Used by guard to detect if agent hasn't recorded anything.
+   */
+  getRecordingSummary(): {
+    archFlows: number;
+    gotchas: number;
+    decisions: number;
+    researchSaves: number;
+    total: number;
+    hasAnyRecordings: boolean;
+    missingRecordings: string[];
+  } {
+    this.ensureInit();
+    const r = this.state.recordings;
+    const missing: string[] = [];
+    if (r.archFlows === 0) missing.push("arch_flow");
+    if (r.gotchas === 0) missing.push("gotcha");
+    if (r.decisions === 0) missing.push("decision");
+    if (r.researchSaves === 0) missing.push("research_save");
+    return {
+      ...r,
+      hasAnyRecordings: r.total > 0,
+      missingRecordings: missing,
+    };
+  }
+
+  // ============================================================
+  // SESSION METRICS — Time saved tracking
+  // ============================================================
+
+  /**
+   * Track a file read operation.
+   * Estimates time saved if research_cache exists for this file.
+   */
+  trackFileRead(filePath: string): void {
+    this.ensureInit();
+    this.state.metrics.filesRead++;
+
+    // Check if we have cached research for this file
+    try {
+      const researchDir = path.join(this.state.projectRoot, ".kuma", "research");
+      const cacheFile = path.join(researchDir, `${filePath}.json`);
+      if (fs.existsSync(cacheFile)) {
+        // Estimated 3-5 seconds saved by not re-reading from scratch
+        this.state.metrics.researchTimeSaved += 4000;
+      }
+    } catch {}
+
+    this.save();
+  }
+
+  /**
+   * Track a file edit operation.
+   */
+  trackFileEdit(_filePath: string): void {
+    this.ensureInit();
+    this.state.metrics.filesEdited++;
+    this.save();
+  }
+
+  /**
+   * Get metrics summary for session.
+   */
+  getMetricsSummary(): {
+    filesRead: number;
+    filesEdited: number;
+    researchTimeSaved: number;
+    researchTimeSavedFormatted: string;
+    sessionDuration: string;
+  } {
+    this.ensureInit();
+    const m = this.state.metrics;
+    const durationMs = Date.now() - this.state.startTime;
+    const durationMin = Math.round(durationMs / 60000);
+    const savedSec = Math.round(m.researchTimeSaved / 1000);
+    return {
+      filesRead: m.filesRead,
+      filesEdited: m.filesEdited,
+      researchTimeSaved: m.researchTimeSaved,
+      researchTimeSavedFormatted: savedSec > 60 ? `${Math.round(savedSec / 60)}m ${savedSec % 60}s` : `${savedSec}s`,
+      sessionDuration: durationMin > 60 ? `${Math.round(durationMin / 60)}h ${durationMin % 60}m` : `${durationMin}m`,
+    };
   }
 
   // ============================================================

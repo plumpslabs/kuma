@@ -127,7 +127,7 @@ export async function detectStaleNodes(): Promise<StaleEntry[]> {
       SELECT id, type, name, file_path FROM nodes
       WHERE file_path IS NOT NULL
         AND length(file_path) > 0
-      ORDER BY updated_at DESC LIMIT 500
+      ORDER BY updated_at DESC LIMIT 2000
     `);
 
     while (stmt.step()) {

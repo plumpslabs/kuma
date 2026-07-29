@@ -34,7 +34,6 @@ export function queryJson<T = any>(sql: string): T {
     return JSON.parse(raw);
   } catch {
     try {
-      // Fix unescaped newlines in JSON strings from sqlite3 CLI
       const sanitized = raw.replace(/[\r\n]+/g, " ");
       return JSON.parse(sanitized);
     } catch (e) {
@@ -52,25 +51,54 @@ export function getDashboardData() {
         'node_count', (SELECT COUNT(*) FROM nodes),
         'edge_count', (SELECT COUNT(*) FROM edges),
         'gotcha_count', (SELECT COUNT(*) FROM known_gotchas),
-        'trajectory_count', (SELECT COUNT(*) FROM trajectories),
-        'skill_count', (SELECT COUNT(*) FROM distilled_skills),
+        'feature_count', (SELECT COUNT(*) FROM nodes WHERE type = 'feature'),
         'health_score', COALESCE((SELECT score FROM health_snapshots ORDER BY created_at DESC LIMIT 1), 0)
       )
     `),
     nodes: queryJson(
-      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path)) FROM nodes ORDER BY updated_at DESC`
+      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path,'metadata',COALESCE(metadata,'{}'))) FROM nodes ORDER BY updated_at DESC`
     ),
     edges: queryJson(
-      `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type)) FROM edges`
+      `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type,'weight',weight)) FROM edges`
     ),
     gotchas: queryJson(
       `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''))) FROM known_gotchas ORDER BY severity DESC`
     ),
-    trajectories: queryJson(
-      `SELECT json_group_array(json_object('id',id,'goal',REPLACE(REPLACE(goal,char(10),' '),char(13),''),'total_duration_ms',total_duration_ms,'success_rate',success_rate,'created_at',created_at)) FROM trajectories ORDER BY created_at DESC LIMIT 20`
+    features: queryJson(
+      `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'))) FROM nodes WHERE type = 'feature' ORDER BY name`
     ),
     health: queryJson(
       `SELECT json_group_array(json_object('score',score,'summary',REPLACE(REPLACE(COALESCE(summary,''),char(10),' '),char(13),''),'risk_level',risk_level,'created_at',created_at)) FROM health_snapshots ORDER BY created_at DESC LIMIT 10`
     ),
   };
+}
+
+/** Get full details for a single node (for modal) */
+export function getNodeDetail(nodeId: string) {
+  const escaped = nodeId.replace(/'/g, "''");
+  const shortName = nodeId.split('::').pop()?.replace(/'/g, "''") || '';
+
+  const node = queryJson<any>(
+    `SELECT json_object('id',id,'name',name,'type',type,'file_path',file_path,'metadata',COALESCE(metadata,'{}'),'updated_at',updated_at) FROM nodes WHERE id = '${escaped}'`
+  );
+
+  const nodeObj = Array.isArray(node) ? node[0] : node;
+  if (!nodeObj) return null;
+
+  const rawOut = query(
+    `SELECT json_object('target',e.target_id,'relation',e.type,'weight',e.weight,'target_name',n.name,'target_type',n.type) FROM edges e LEFT JOIN nodes n ON n.id = e.target_id WHERE e.source_id = '${escaped}'`
+  );
+  const outgoing = rawOut ? rawOut.split('\n').filter(Boolean).map(r => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean) : [];
+
+  const rawIn = query(
+    `SELECT json_object('source',e.source_id,'relation',e.type,'weight',e.weight,'source_name',n.name,'source_type',n.type) FROM edges e LEFT JOIN nodes n ON n.id = e.source_id WHERE e.target_id = '${escaped}'`
+  );
+  const incoming = rawIn ? rawIn.split('\n').filter(Boolean).map(r => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean) : [];
+
+  const rawGotcha = query(
+    `SELECT json_object('id',id,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity) FROM known_gotchas WHERE file_path = '${escaped}' OR file_path LIKE '%${shortName}%'`
+  );
+  const gotchas = rawGotcha ? rawGotcha.split('\n').filter(Boolean).map(r => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean) : [];
+
+  return { node: nodeObj, outgoing, incoming, gotchas };
 }

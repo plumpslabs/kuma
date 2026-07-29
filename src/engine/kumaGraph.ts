@@ -10,9 +10,11 @@ import { healOnQuery } from "./kumaSelfHeal.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
   | "feature_domain" | "workflow" | "cross_service_link"
-  | "gotcha" | "decision" | "research";
+  | "gotcha" | "decision" | "research"
+  | "feature";
 export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes"
-  | "flows_through" | "triggers" | "syncs_with";
+  | "flows_through" | "triggers" | "syncs_with"
+  | "affects";
 
 interface GraphNode {
   id: string;
@@ -43,6 +45,85 @@ export function nodeId(type: NodeType, name: string): string {
   return `${type}::${name}`;
 }
 
+// ============================================================
+// GRAPH LIMITS — Prevent unbounded growth
+// ============================================================
+
+const GRAPH_LIMITS = {
+  maxNodes: 5000,       // Max nodes before pruning
+  maxEdges: 10000,      // Max edges before pruning
+  pruneBatch: 500,      // Remove this many old nodes when limit hit
+  minWeight: 0.1,       // Minimum edge weight before deletion
+};
+
+/**
+ * Check if graph is over limits and prune if needed.
+ * Removes oldest, lowest-weight nodes first.
+ */
+async function pruneGraphIfNeeded(): Promise<{ pruned: boolean; removedNodes: number; removedEdges: number }> {
+  try {
+    const db = await getDb();
+    const getCount = (sql: string): number => {
+      try {
+        const result = db.exec(sql);
+        return (result[0]?.values?.[0] as unknown as number) || 0;
+      } catch { return 0; }
+    };
+
+    const nodeCount = getCount("SELECT COUNT(*) FROM nodes");
+    const edgeCount = getCount("SELECT COUNT(*) FROM edges");
+
+    if (nodeCount <= GRAPH_LIMITS.maxNodes && edgeCount <= GRAPH_LIMITS.maxEdges) {
+      return { pruned: false, removedNodes: 0, removedEdges: 0 };
+    }
+
+    let removedNodes = 0;
+    let removedEdges = 0;
+
+    // Prune edges with very low weight first (stale/weak connections)
+    if (edgeCount > GRAPH_LIMITS.maxEdges) {
+      const result = db.exec(`DELETE FROM edges WHERE weight < ${GRAPH_LIMITS.minWeight} AND metadata NOT LIKE '%stale:0%'`);
+      removedEdges = (result[0]?.values?.length as unknown as number) || 0;
+    }
+
+    // If still over limit, prune oldest orphan nodes (no edges)
+    const currentNodes = getCount("SELECT COUNT(*) FROM nodes");
+    if (currentNodes > GRAPH_LIMITS.maxNodes) {
+      const result = db.exec(`
+        DELETE FROM nodes WHERE id IN (
+          SELECT id FROM nodes 
+          WHERE id NOT IN (SELECT source_id FROM edges UNION SELECT target_id FROM edges)
+          ORDER BY updated_at ASC 
+          LIMIT ${GRAPH_LIMITS.pruneBatch}
+        )
+      `);
+      removedNodes = (result[0]?.values?.length as unknown as number) || 0;
+    }
+
+    // If still over limit, prune oldest nodes by updated_at
+    const finalNodes = getCount("SELECT COUNT(*) FROM nodes");
+    if (finalNodes > GRAPH_LIMITS.maxNodes) {
+      const excess = finalNodes - GRAPH_LIMITS.maxNodes + 100; // extra buffer
+      const result = db.exec(`
+        DELETE FROM nodes WHERE id IN (
+          SELECT id FROM nodes ORDER BY updated_at ASC LIMIT ${excess}
+        )
+      `);
+      removedNodes += (result[0]?.values?.length as unknown as number) || 0;
+    }
+
+    if (removedNodes > 0 || removedEdges > 0) {
+      saveDb(db);
+      return { pruned: true, removedNodes, removedEdges };
+    }
+
+    return { pruned: false, removedNodes: 0, removedEdges: 0 };
+  } catch (err) {
+    console.error(`[KumaGraph] Prune failed: ${err}`);
+    return { pruned: false, removedNodes: 0, removedEdges: 0 };
+  }
+}
+
 /**
  * Add or update a node in the graph.
  */
@@ -71,6 +152,15 @@ export async function upsertNode(node: GraphNode): Promise<void> {
     }
 
     saveDb(db);
+
+    // Periodic pruning check (every 50 new nodes)
+    try {
+      const countResult = db.exec("SELECT COUNT(*) FROM nodes");
+      const nodeCount = (countResult[0]?.values?.[0] as unknown as number) || 0;
+      if (nodeCount % 50 === 0 && nodeCount > GRAPH_LIMITS.maxNodes * 0.8) {
+        await pruneGraphIfNeeded();
+      }
+    } catch {}
   } catch (err) {
     console.error(`[KumaGraph] Failed to upsert node: ${err}`);
   }
@@ -271,6 +361,16 @@ export async function recordDomainFlow(params: {
       });
       edgeCount++;
 
+      // Edge: from → affects → to (impact propagation)
+      await addEdge({
+        sourceId: fromId,
+        targetId: toId,
+        type: "affects",
+        weight: 0.8,
+        metadata: { reason: "arch_flow", domain: params.domain },
+      });
+      edgeCount++;
+
       // Edge: Domain → contains → from
       await addEdge({
         sourceId: domainId,
@@ -354,6 +454,15 @@ export async function recordDomainFlow(params: {
             metadata: { domain: params.domain },
           });
           edgeCount++;
+          // Domain affects file (impact chain)
+          await addEdge({
+            sourceId: domainId,
+            targetId: fileId,
+            type: "affects",
+            weight: 0.7,
+            metadata: { reason: "arch_flow" },
+          });
+          edgeCount++;
         } catch { /* skip duplicates */ }
       }
     }
@@ -383,6 +492,346 @@ export async function clearGraph(): Promise<number> {
   } catch (err) {
     console.error(`[KumaGraph] Failed to clear graph: ${err}`);
     return -1;
+  }
+}
+
+// ============================================================
+// FEATURE NODES — High-level feature tracking
+// ============================================================
+
+/**
+ * Record a feature node and link it to its files via `owns` edges.
+ *
+ * Features are the highest-level abstraction — AI thinks in features, not files.
+ * Example: "Authentication", "Billing", "Chat"
+ *
+ * Usage:
+ *   await recordFeature({
+ *     name: "Authentication",
+ *     description: "User login, logout, session management",
+ *     files: ["src/auth/login.ts", "src/auth/session.ts"],
+ *     tags: ["security", "core"],
+ *   });
+ */
+export async function recordFeature(params: {
+  name: string;
+  description?: string;
+  files?: string[];
+  tags?: string[];
+  risk?: "low" | "medium" | "high" | "critical";
+}): Promise<{ nodeCount: number; edgeCount: number }> {
+  let nodeCount = 0;
+  let edgeCount = 0;
+
+  try {
+    // 1. Create/update the feature node
+    const featureId = nodeId("feature", params.name);
+    await upsertNode({
+      id: featureId,
+      type: "feature",
+      name: params.name,
+      metadata: {
+        description: params.description || "",
+        tags: params.tags || [],
+        risk: params.risk || "medium",
+      },
+    });
+    nodeCount++;
+
+    // 2. Link to files via owns edges
+    if (params.files) {
+      for (const fp of params.files) {
+        const fileId = nodeId("file", fp);
+        await upsertNode({ id: fileId, type: "file", name: fp });
+        await addEdge({
+          sourceId: featureId,
+          targetId: fileId,
+          type: "owns",
+          weight: 1.0,
+          metadata: { feature: params.name },
+        });
+        nodeCount++;
+        edgeCount++;
+      }
+    }
+
+    flushDb();
+    return { nodeCount, edgeCount };
+  } catch (err) {
+    console.error(`[KumaGraph] Failed to record feature: ${err}`);
+    return { nodeCount, edgeCount };
+  }
+}
+
+// ============================================================
+// AFFECTS EDGE — Impact propagation
+// ============================================================
+
+/**
+ * Record an `affects` relationship: source impacts target.
+ *
+ * Usage:
+ *   await recordAffects("file::src/auth/login.ts", "feature::Authentication", 0.9);
+ *   await recordAffects("feature::Authentication", "feature::Billing", 0.7);
+ */
+export async function recordAffects(
+  sourceId: string,
+  targetId: string,
+  weight: number = 0.8,
+  reason?: string,
+): Promise<void> {
+  await addEdge({
+    sourceId,
+    targetId,
+    type: "affects",
+    weight,
+    metadata: { reason: reason || "manual" },
+  });
+}
+
+/**
+ * Propagate impact through `affects` edges (BFS traversal).
+ *
+ * Given a changed node, returns ALL nodes impacted by the change
+ * (transitive closure of affects edges).
+ *
+ * Example:
+ *   Changed: file::src/auth/login.ts
+ *   Returns: [
+ *     { id: "feature::Authentication", depth: 1, weight: 0.9 },
+ *     { id: "feature::Billing", depth: 2, weight: 0.7 },
+ *     { id: "file::src/billing/charge.ts", depth: 3, weight: 0.6 },
+ *   ]
+ */
+export async function propagateImpact(
+  startNodeId: string,
+  maxDepth: number = 5,
+  minWeight: number = 0.1,
+): Promise<Array<{ id: string; type: string; name: string; depth: number; weight: number; filePath?: string }>> {
+  try {
+    const db = await getDb();
+    const visited = new Set<string>();
+    const results: Array<{ id: string; type: string; name: string; depth: number; weight: number; filePath?: string }> = [];
+
+    // BFS queue: [nodeId, depth, accumulatedWeight]
+    const queue: Array<[string, number, number]> = [[startNodeId, 0, 1.0]];
+
+    while (queue.length > 0) {
+      const [currentId, depth, accWeight] = queue.shift()!;
+
+      if (visited.has(currentId) || depth > maxDepth) continue;
+      visited.add(currentId);
+
+      // Find all nodes affected by currentId
+      const stmt = db.prepare(`
+        SELECT e.target_id, e.weight, n.type, n.name, n.file_path
+        FROM edges e
+        LEFT JOIN nodes n ON n.id = e.target_id
+        WHERE e.source_id = ? AND e.type = 'affects' AND e.weight >= ?
+      `);
+      stmt.bind([currentId, minWeight]);
+
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        const targetId = row.target_id as string;
+        const edgeWeight = (row.weight as number) || 0.8;
+        const propagatedWeight = accWeight * edgeWeight;
+
+        if (!visited.has(targetId) && propagatedWeight >= minWeight) {
+          results.push({
+            id: targetId,
+            type: row.type as string,
+            name: row.name as string,
+            depth: depth + 1,
+            weight: Math.round(propagatedWeight * 100) / 100,
+            filePath: (row.file_path as string) || undefined,
+          });
+
+          queue.push([targetId, depth + 1, propagatedWeight]);
+        }
+      }
+      stmt.free();
+    }
+
+    return results.sort((a, b) => b.weight - a.weight);
+  } catch (err) {
+    console.error(`[KumaGraph] Failed to propagate impact: ${err}`);
+    return [];
+  }
+}
+
+// ============================================================
+// RETRIEVE FOR TASK — Graph-as-retrieval pattern
+// ============================================================
+
+/**
+ * Retrieve relevant context from the graph for a specific task.
+ *
+ * Instead of dumping the entire graph to the LLM, this queries for
+ * the most relevant nodes and their connections, returning a focused
+ * context that fits within token budgets.
+ *
+ * Flow: Task → Query Graph → Top N relevant nodes → Connected nodes → Summarized context
+ *
+ * Usage:
+ *   const context = await retrieveForTask("fix login bug", 10);
+ *   // Returns focused context with feature nodes, files, services, etc.
+ */
+export async function retrieveForTask(
+  taskDescription: string,
+  maxNodes: number = 10,
+): Promise<string> {
+  try {
+    const db = await getDb();
+
+    // 1. Extract keywords from task description
+    const keywords = taskDescription
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2);
+
+    if (keywords.length === 0) {
+      return `🔍 **Task Retrieval** — No meaningful keywords in "${taskDescription}".`;
+    }
+
+    // 2. Find relevant nodes via FTS or LIKE search
+    const allNodes: Array<{ id: string; type: string; name: string; filePath?: string; relevance: number }> = [];
+
+    // Try FTS search
+    try {
+      const ftsQuery = keywords.join(" OR ");
+      const stmt = db.prepare(`
+        SELECT n.id, n.type, n.name, n.file_path
+        FROM nodes_fts f
+        JOIN nodes n ON n.rowid = f.rowid
+        WHERE nodes_fts MATCH ?
+        LIMIT ?
+      `);
+      stmt.bind([ftsQuery, maxNodes * 2]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        allNodes.push({
+          id: row.id as string,
+          type: row.type as string,
+          name: row.name as string,
+          filePath: (row.file_path as string) || undefined,
+          relevance: 0.8,
+        });
+      }
+      stmt.free();
+    } catch {
+      // FTS not available, fall through to LIKE
+    }
+
+    // Fallback: LIKE search
+    if (allNodes.length === 0) {
+      for (const kw of keywords) {
+        const stmt = db.prepare(`
+          SELECT id, type, name, file_path FROM nodes
+          WHERE name LIKE ? OR file_path LIKE ?
+          LIMIT ?
+        `);
+        stmt.bind([`%${kw}%`, `%${kw}%`, maxNodes]);
+        while (stmt.step()) {
+          const row = stmt.getAsObject();
+          allNodes.push({
+            id: row.id as string,
+            type: row.type as string,
+            name: row.name as string,
+            filePath: (row.file_path as string) || undefined,
+            relevance: 0.6,
+          });
+        }
+        stmt.free();
+      }
+    }
+
+    // 3. Deduplicate and prioritize by node type
+    const seen = new Set<string>();
+    const prioritized: typeof allNodes = [];
+
+    // Priority order: feature > class > api_route > file > function
+    const typePriority: Record<string, number> = {
+      feature: 10,
+      feature_domain: 9,
+      class: 8,
+      api_route: 7,
+      db_table: 6,
+      file: 5,
+      function: 4,
+      component: 3,
+      gotcha: 2,
+      decision: 1,
+    };
+
+    for (const node of allNodes) {
+      if (!seen.has(node.id)) {
+        seen.add(node.id);
+        node.relevance += typePriority[node.type] || 0;
+        prioritized.push(node);
+      }
+    }
+
+    prioritized.sort((a, b) => b.relevance - a.relevance);
+    const topNodes = prioritized.slice(0, maxNodes);
+
+    if (topNodes.length === 0) {
+      return `🔍 **Task Retrieval** — No relevant nodes found for "${taskDescription}".\n\n💡 Try recording features, arch_flows, or gotchas first.`;
+    }
+
+    // 4. Get connected nodes for top results
+    const lines: string[] = [
+      `🔍 **Task Context** — "${taskDescription}"`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📊 ${topNodes.length} relevant node(s) found\n`,
+    ];
+
+    for (const node of topNodes) {
+      const emoji =
+        node.type === "feature" ? "⭐" :
+        node.type === "feature_domain" ? "🏛️" :
+        node.type === "class" ? "🏗️" :
+        node.type === "api_route" ? "🌐" :
+        node.type === "db_table" ? "🗄️" :
+        node.type === "file" ? "📄" :
+        node.type === "function" ? "🔧" :
+        node.type === "component" ? "◇" :
+        node.type === "gotcha" ? "⚠️" :
+        "📌";
+
+      lines.push(`${emoji} **${node.name}** (${node.type})`);
+      if (node.filePath) lines.push(`   📍 ${node.filePath}`);
+
+      // Get top 3 connected nodes
+      try {
+        const stmt = db.prepare(`
+          SELECT e.type AS edgeType, n.type AS nodeType, n.name AS nodeName
+          FROM edges e
+          LEFT JOIN nodes n ON n.id = (CASE WHEN e.source_id = ? THEN e.target_id ELSE e.source_id END)
+          WHERE (e.source_id = ? OR e.target_id = ?) AND n.id IS NOT NULL
+          ORDER BY e.weight DESC
+          LIMIT 3
+        `);
+        stmt.bind([node.id, node.id, node.id]);
+        const connections: string[] = [];
+        while (stmt.step()) {
+          const row = stmt.getAsObject();
+          connections.push(`${row.edgeType}→${row.nodeName}`);
+        }
+        stmt.free();
+        if (connections.length > 0) {
+          lines.push(`   🔗 ${connections.join(", ")}`);
+        }
+      } catch { /* skip */ }
+
+      lines.push("");
+    }
+
+    lines.push("💡 Use this context instead of scanning the full codebase.");
+    return lines.join("\n");
+  } catch (err) {
+    return `Error retrieving task context: ${err}`;
   }
 }
 
@@ -763,147 +1212,6 @@ async function codebaseSearchFallback(query: string, limit: number = 20): Promis
     }
   }
 }
-// ============================================================
-// #27: FEDERATED KNOWLEDGE GRAPH — URI Resolution
-// ============================================================
-
-/**
- * Resolve a federated URI reference (kuma:// scheme) to fetch
- * nodes from another Kuma instance's graph.
- *
- * Format: kuma://<project-name>/<type>::<name>
- * Example: kuma://service-backend/function::validateToken
- *
- * Currently resolves local references as a proof-of-concept.
- * Full remote resolution would use HTTP/SSH in production.
- */
-export async function resolveFederatedNode(uri: string): Promise<string> {
-  try {
-    if (!uri.startsWith("kuma://")) {
-      return `⚠️ Invalid URI scheme: "${uri.substring(0, 20)}...". Use kuma://project/node-id`;
-    }
-
-    const pathPart = uri.replace("kuma://", "");
-    const firstSlash = pathPart.indexOf("/");
-
-    if (firstSlash === -1) {
-      return `⚠️ Invalid federated URI: "${uri}". Format: kuma://<project>/<node-id>`;
-    }
-
-    const projectName = pathPart.substring(0, firstSlash);
-    const nodeRef = pathPart.substring(firstSlash + 1);
-
-    // Try to resolve locally first
-    const db = await getDb();
-    const stmt = db.prepare(`
-      SELECT id, type, name, file_path, metadata FROM nodes
-      WHERE id = ? OR name LIKE ?
-      LIMIT 5
-    `);
-    stmt.bind([nodeRef, `%${nodeRef}%`]);
-    const results: Array<Record<string, unknown>> = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
-    stmt.free();
-
-    if (results.length > 0) {
-      const lines: string[] = [
-        `🔗 **Federated Node Resolved** (local)`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📁 Project: ${projectName}`,
-        `🔗 URI: ${uri}`,
-        "",
-      ];
-      for (const r of results) {
-        lines.push(`  • **${r.name}** (${r.type}) — ${r.file_path || "no path"}`);
-      }
-      lines.push("", "💡 Federated cross-repo resolution is active. Remote resolution via HTTP coming soon.");
-      return lines.join("\n");
-    }
-
-    // If not found locally, show federated reference info
-    const federatedNodes = await registerFederatedReference(uri, projectName, nodeRef);
-    return [
-      `🔗 **Federated Reference**`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📁 Remote project: ${projectName}`,
-      `🔗 URI: ${uri}`,
-      `📌 Node ref: ${nodeRef}`,
-      "",
-      `📝 Registered as federated reference for future resolution.`,
-      `💡 Remote graph resolution will be available when the target project is reachable.`,
-      federatedNodes > 0 ? `✅ Created ${federatedNodes} federated node(s) in local graph.` : "",
-    ].filter(Boolean).join("\n");
-  } catch (err) {
-    return `❌ Federated resolution failed: ${err}`;
-  }
-}
-
-/**
- * Register a federated reference node in the local graph.
- */
-async function registerFederatedReference(
-  uri: string,
-  projectName: string,
-  nodeRef: string,
-): Promise<number> {
-  try {
-    await upsertNode({
-      id: `federated::${uri}`,
-      type: "module",
-      name: `[${projectName}] ${nodeRef}`,
-      metadata: {
-        federated: true,
-        uri,
-        project: projectName,
-        ref: nodeRef,
-        resolved: false,
-      },
-    });
-    return 1;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * List all federated references in the local graph.
- */
-export async function listFederatedReferences(): Promise<string> {
-  try {
-    const db = await getDb();
-    const stmt = db.prepare(`
-      SELECT id, name, metadata FROM nodes
-      WHERE metadata LIKE '%"federated":true%'
-      ORDER BY updated_at DESC
-      LIMIT 20
-    `);
-    const results: Array<Record<string, unknown>> = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
-    stmt.free();
-
-    if (results.length === 0) {
-      return "🔗 **No federated references.** Use kuma_memory({ action: 'federated', uri: 'kuma://project/node-id' }) to add one.";
-    }
-
-    const lines: string[] = [
-      "🔗 **Federated References**",
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-      "",
-    ];
-
-    for (const r of results) {
-      const meta = JSON.parse((r.metadata as string) || "{}");
-      lines.push(`  🔗 **${r.name}**`);
-      lines.push(`     URI: ${meta.uri || "unknown"}`);
-      lines.push(`     Resolved: ${meta.resolved ? "✅" : "⏳"}`);
-      lines.push("");
-    }
-
-    return lines.join("\n");
-  } catch (err) {
-    return `Error: ${err}`;
-  }
-}
 
 /**
  * Get graph statistics.
@@ -912,8 +1220,15 @@ export async function getGraphStats(): Promise<string> {
   try {
     const db = await getDb();
 
-    const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes"))[0]?.values[0][0] ?? 0;
-    const edgeCount = (db.exec("SELECT COUNT(*) as c FROM edges"))[0]?.values[0][0] ?? 0;
+    const getCount = (sql: string): number => {
+      try {
+        const result = db.exec(sql);
+        return (result[0]?.values?.[0] as unknown as number) || 0;
+      } catch { return 0; }
+    };
+
+    const nodeCount = getCount("SELECT COUNT(*) as c FROM nodes");
+    const edgeCount = getCount("SELECT COUNT(*) as c FROM edges");
     const typeCounts: Array<Record<string, unknown>> = [];
     try {
       const stmt = db.prepare("SELECT type, COUNT(*) as cnt FROM nodes GROUP BY type ORDER BY cnt DESC");
@@ -928,6 +1243,7 @@ export async function getGraphStats(): Promise<string> {
       `━━━━━━━━━━━━━━━━━━━━━━━━`,
       "",
       `📊 **${nodeCount} nodes** | **${edgeCount} edges**`,
+      `📏 **Limits:** ${nodeCount}/${GRAPH_LIMITS.maxNodes} nodes (${Math.round((nodeCount/GRAPH_LIMITS.maxNodes)*100)}%) | ${edgeCount}/${GRAPH_LIMITS.maxEdges} edges (${Math.round((edgeCount/GRAPH_LIMITS.maxEdges)*100)}%)`,
       "",
     ];
 

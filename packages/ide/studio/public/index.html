@@ -6,6 +6,7 @@
 <title>Kuma Studio</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♢</text></svg>">
 <script src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js"></script>
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
 <style>
 :root {
   --bg: #1a1a2e; --surface: #16213e; --border: #2a2a4a;
@@ -13,9 +14,15 @@
   --green: #22c55e; --yellow: #eab308; --orange: #f97316; --red: #ef4444;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body {
+html, body {
   font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+}
+header {
+  display: flex; align-items: center; gap: 16px; padding: 12px 24px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
 }
 header {
   display: flex; align-items: center; gap: 16px; padding: 12px 24px;
@@ -38,7 +45,7 @@ header .status .dot.off { background: var(--red); }
 #main { display: flex; height: calc(100vh - 100px); }
 #graph-panel { flex: 1; position: relative; min-width: 0; overflow: hidden; }
 #graph-container { width: 100%; height: 100%; background: radial-gradient(ellipse at center, #1e1e3a 0%, var(--bg) 70%); }
-#sidebar { width: 340px; min-width: 340px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+#sidebar { width: 360px; min-width: 360px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
 .tabs { display: flex; border-bottom: 1px solid var(--border); }
 .tab {
   flex: 1; padding: 10px; text-align: center; cursor: pointer; font-size: 12px;
@@ -49,29 +56,47 @@ header .status .dot.off { background: var(--red); }
 .tab-content { flex: 1; overflow-y: auto; padding: 12px; }
 .panel { display: none; }
 .panel.active { display: block; }
+
+/* Gotcha items */
 .gotcha-item {
   padding: 10px 12px; margin-bottom: 8px; border-radius: 8px;
-  background: var(--bg); border-left: 3px solid var(--muted);
+  background: var(--bg); border-left: 3px solid var(--muted); cursor: pointer;
+  transition: background 0.15s;
 }
+.gotcha-item:hover { background: #1e293b; }
 .gotcha-item .file { font-size: 11px; color: var(--accent2); margin-bottom: 4px; word-break: break-all; }
-.gotcha-item .desc { font-size: 13px; margin-bottom: 4px; }
+.gotcha-item .desc { font-size: 12px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .gotcha-item .sev-tag { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
 .sev-critical { background: #ef444420; color: var(--red); border-color: var(--red); }
 .sev-high { background: #f9731620; color: var(--orange); border-color: var(--orange); }
 .sev-medium { background: #eab30820; color: var(--yellow); border-color: var(--yellow); }
 .sev-low { background: #22c55e20; color: var(--green); border-color: var(--green); }
-.traj-item { padding: 8px 12px; margin-bottom: 6px; background: var(--bg); border-radius: 6px; }
-.traj-item .goal { font-size: 13px; font-weight: 600; word-break: break-all; }
-.traj-item .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* Feature items */
+.feature-item {
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 8px;
+  background: var(--bg); border-left: 3px solid var(--accent); cursor: pointer;
+  transition: background 0.15s;
+}
+.feature-item:hover { background: #1e293b; }
+.feature-item .name { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+.feature-item .meta { font-size: 11px; color: var(--muted); }
+.feature-item .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.feature-item .tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: rgba(124,58,237,0.15); color: var(--accent); }
+
+/* Health items */
 .health-item { padding: 8px 12px; margin-bottom: 6px; background: var(--bg); border-radius: 6px; }
 .health-item .score { font-size: 20px; font-weight: 700; }
 .health-item .score.good { color: var(--green); }
 .health-item .score.ok { color: var(--yellow); }
 .health-item .score.bad { color: var(--red); }
 .health-item .meta { font-size: 11px; color: var(--muted); }
+
 .empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+
+/* Legend */
 #legend {
-  position: absolute; bottom: 16px; left: 16px; background: rgba(22,33,62,0.95);
+  position: fixed; bottom: 16px; left: 16px; background: rgba(22,33,62,0.95);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
   font-size: 11px; z-index: 10; max-height: 200px; overflow-y: auto;
   backdrop-filter: blur(8px); color: #f8fafc;
@@ -79,6 +104,8 @@ header .status .dot.off { background: var(--red); }
 #legend .title { font-weight: 600; margin-bottom: 6px; color: #94a3b8; }
 .legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; color: #f1f5f9; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* Tooltip */
 #graph-tooltip {
   position: absolute; display: none; background: rgba(15, 23, 42, 0.96);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
@@ -87,9 +114,25 @@ header .status .dot.off { background: var(--red); }
   box-shadow: 0 8px 32px rgba(0,0,0,0.6); backdrop-filter: blur(12px);
   pointer-events: none;
 }
-#search-box {
-  position: absolute; top: 16px; right: 16px; z-index: 10;
+
+/* Search */
+#search-box { position: absolute; top: 16px; right: 16px; z-index: 10; }
+
+/* Context Menu */
+#ctx-menu {
+  position: fixed; display: none; z-index: 60; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5); min-width: 160px;
+  backdrop-filter: blur(12px);
 }
+#ctx-menu .ctx-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+  border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text);
+  transition: background 0.1s;
+}
+#ctx-menu .ctx-item:hover { background: rgba(124,58,237,0.15); color: var(--accent); }
+#ctx-menu .ctx-item i { width: 14px; height: 14px; flex-shrink: 0; }
+#ctx-menu .ctx-sep { height: 1px; background: var(--border); margin: 4px 8px; }
 #search-box input {
   background: rgba(22,33,62,0.92); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 12px;
@@ -98,8 +141,10 @@ header .status .dot.off { background: var(--red); }
 }
 #search-box input:focus { border-color: var(--accent); }
 #search-box input::placeholder { color: var(--muted); }
+
+/* Graph controls */
 #graph-controls {
-  position: absolute; bottom: 16px; right: 16px; z-index: 10;
+  position: fixed; bottom: 16px; right: 376px; z-index: 10;
   display: flex; gap: 6px;
 }
 #graph-controls button {
@@ -110,11 +155,14 @@ header .status .dot.off { background: var(--red); }
 }
 #graph-controls button:hover { background: var(--accent); border-color: var(--accent); }
 #graph-controls button.active {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+  background: var(--accent) !important; border-color: var(--accent) !important;
+  color: #ffffff !important; box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
 }
+#graph-controls .ctrl-sep { width: 1px; background: var(--border); margin: 0 2px; }
+.depth-btn { min-width: 28px !important; padding: 4px 6px !important; font-size: 11px !important; font-weight: 600; }
+.depth-btn.active { background: rgba(124,58,237,0.3) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
+
+/* Loading */
 #loading {
   position: fixed; inset: 0; background: var(--bg); display: flex;
   align-items: center; justify-content: center; z-index: 100;
@@ -122,6 +170,48 @@ header .status .dot.off { background: var(--red); }
 }
 #loading .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Node Detail Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px); animation: fadeIn 0.15s;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: 560px; max-width: 90vw; max-height: 85vh; overflow: hidden; box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column; animation: slideUp 0.2s;
+}
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.modal-header h2 { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.modal-header .close {
+  background: none; border: none; color: var(--muted); font-size: 18px;
+  cursor: pointer; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; transition: all 0.15s; flex-shrink: 0;
+}
+.modal-header .close:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+.modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.modal-section { margin-bottom: 14px; }
+.modal-section h3 { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.modal-kv { display: flex; gap: 8px; margin-bottom: 5px; font-size: 12px; line-height: 1.4; }
+.modal-kv .key { color: var(--muted); min-width: 72px; flex-shrink: 0; }
+.modal-kv .val { color: var(--text); word-break: break-word; overflow-wrap: anywhere; min-width: 0; }
+.relation-item {
+  display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+  margin-bottom: 3px; border-radius: 6px; background: var(--bg);
+  font-size: 11px; cursor: pointer; transition: background 0.15s;
+}
+.relation-item:hover { background: #1e293b; }
+.relation-item .arrow { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+.relation-item .name { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.relation-item .type { color: var(--muted); font-size: 10px; flex-shrink: 0; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relation-item .weight { color: var(--accent2); font-size: 10px; flex-shrink: 0; }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -130,12 +220,12 @@ header .status .dot.off { background: var(--red); }
 <body>
 <div id="loading"><div class="spinner"></div>Connecting to Kuma...</div>
 <header>
-  <h1>&#9826; Kuma Studio</h1>
+  <h1><i data-lucide="brain" style="width:20px;height:20px;vertical-align:middle;margin-right:6px"></i> Kuma Studio</h1>
   <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">connecting...</span></div>
   <div style="margin-left:auto;display:flex;gap:8px;-webkit-app-region:no-drag">
-    <button onclick="refetch()" id="refetch-btn" style="background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s">&#8635; Refetch</button>
-    <button onclick="resetKumaDb()" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:var(--red);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s">&#128465; Reset DB</button>
-    <button onclick="stopKumaStudio()" style="background:rgba(148,163,184,0.15);border:1px solid rgba(148,163,184,0.3);border-radius:6px;color:#94a3b8;padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s">&#9632; Stop Server</button>
+    <button onclick="refetch()" id="refetch-btn" style="background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s"><i data-lucide="refresh-cw" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Refetch</button>
+    <button onclick="resetKumaDb()" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:var(--red);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s"><i data-lucide="trash-2" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Reset DB</button>
+    <button onclick="stopKumaStudio()" style="background:rgba(148,163,184,0.15);border:1px solid rgba(148,163,184,0.3);border-radius:6px;color:#94a3b8;padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s"><i data-lucide="square" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Stop</button>
   </div>
 </header>
 <div class="stats-bar" id="stats-bar"></div>
@@ -144,68 +234,66 @@ header .status .dot.off { background: var(--red); }
     <div id="graph-container"></div>
     <div id="search-box"><input id="node-search" type="text" placeholder="Search nodes..." /></div>
     <div id="graph-controls">
-      <button onclick="resetGraphFocus()" title="Reset node opacity and search">Reset Focus</button>
-      <button onclick="if(network)network.fit()" title="Fit graph to viewport">Fit</button>
-      <button onclick="exportGraphPNG()" title="Export graph as PNG image">Export PNG</button>
-      <button id="btn-unfreeze-physics" class="active" onclick="restartPhysics()" title="Enable physics simulation (nodes will move freely)">Unfreeze Physics</button>
-      <button id="btn-freeze-physics" onclick="stopPhysics()" title="Freeze physics simulation (lock nodes in place)">Freeze Physics</button>
+      <button onclick="resetGraphFocus()" title="Reset focus"><i data-lucide="x" style="width:12px;height:12px"></i></button>
+      <button onclick="if(network)network.fit()" title="Fit to viewport"><i data-lucide="maximize-2" style="width:12px;height:12px"></i></button>
+      <div class="ctrl-sep"></div>
+      <button class="depth-btn" data-depth="1" onclick="setDepth(1)">1</button>
+      <button class="depth-btn active" data-depth="2" onclick="setDepth(2)">2</button>
+      <button class="depth-btn" data-depth="3" onclick="setDepth(3)">3</button>
+      <button class="depth-btn" data-depth="99" onclick="setDepth(99)">All</button>
+      <div class="ctrl-sep"></div>
+      <button id="btn-freeze-physics" onclick="stopPhysics()"><i data-lucide="pause" style="width:12px;height:12px"></i></button>
+      <button id="btn-unfreeze-physics" class="active" onclick="restartPhysics()"><i data-lucide="play" style="width:12px;height:12px"></i></button>
     </div>
     <div id="graph-tooltip"></div>
     <div id="legend"></div>
   </div>
   <div id="sidebar">
     <div class="tabs">
-      <div class="tab active" data-tab="gotchas">&#9888; Gotchas</div>
-      <div class="tab" data-tab="trajectories">&#8599; Trajectories</div>
-      <div class="tab" data-tab="health">&#9829; Health</div>
+      <div class="tab active" data-tab="features"><i data-lucide="star" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Features</div>
+      <div class="tab" data-tab="gotchas"><i data-lucide="alert-triangle" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Gotchas</div>
+      <div class="tab" data-tab="health"><i data-lucide="heart-pulse" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Health</div>
     </div>
     <div class="tab-content" id="tab-content"></div>
   </div>
 </div>
+<div id="modal-root"></div>
+<div id="ctx-menu">
+  <div class="ctx-item" onclick="ctxViewDetail()"><i data-lucide="eye"></i> View Details</div>
+  <div class="ctx-item" onclick="ctxCopyId()"><i data-lucide="copy"></i> Copy ID</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="ctxZoomTo()"><i data-lucide="focus"></i> Zoom to Node</div>
+</div>
 
 <script>
-const API = "/api";
-let network = null, nodesData = null, allNodes = null, allEdges = null, currentDbSize = "0 KB";
+var API = "/api";
+var network = null, nodesData = null, allNodes = null, allEdges = null, currentDbSize = "0 KB";
+var edgeDefaults = {};
 
 async function resetKumaDb() {
-  var confirmation = prompt("⚠️ CRITICAL ACTION: TYPE 'DELETE' TO CONFIRM RESETTING KUMA DB\nThis will permanently wipe all recorded knowledge nodes, edges, gotchas, and trajectories in .kuma/kuma.db:");
-  if (confirmation !== "DELETE") {
-    if (confirmation !== null) alert("Reset cancelled. Confirmation text did not match 'DELETE'.");
-    return;
-  }
+  var confirmation = prompt("⚠️ TYPE 'DELETE' TO CONFIRM RESETTING KUMA DB\nThis will permanently wipe all knowledge:");
+  if (confirmation !== "DELETE") { if (confirmation !== null) alert("Reset cancelled."); return; }
   try {
     var res = await fetch(API + "/reset-db", { method: "POST" }).then(function(r){return r.json()});
-    if (res.ok) {
-      alert("Kuma DB reset successfully.");
-      refetch();
-    }
-  } catch (e) {
-    alert("Reset failed: " + e.message);
-  }
+    if (res.ok) { alert("Kuma DB reset."); refetch(); }
+  } catch (e) { alert("Reset failed: " + e.message); }
 }
 
 async function stopKumaStudio() {
-  if (!confirm("Stop Kuma Studio background server? You can restart it anytime with 'agy kuma studio'.")) return;
+  if (!confirm("Stop Kuma Studio?")) return;
   try {
     await fetch(API + "/stop-server", { method: "POST" });
-    document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#94a3b8;font-size:16px;">Kuma Studio Server Stopped. You can close this tab.</div>';
-  } catch (e) {
-    alert("Stop failed: " + e.message);
-  }
+    document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#94a3b8;font-size:16px;">Server stopped. Close this tab.</div>';
+  } catch (e) { alert("Stop failed: " + e.message); }
 }
 
 function resetGraphFocus() {
   if (!network) return;
   network.body.data.nodes.forEach(function(n) {
-    network.body.data.nodes.update({
-      id: n.id,
-      opacity: 1.0,
-      font: { color: '#ffffff', bold: true }
-    });
+    network.body.data.nodes.update({ id: n.id, opacity: 1.0, font: { color: '#ffffff', bold: true } });
   });
   document.getElementById("graph-tooltip").style.display = 'none';
-  var searchInput = document.getElementById("node-search");
-  if (searchInput) searchInput.value = "";
+  var s = document.getElementById("node-search"); if (s) s.value = "";
 }
 
 function exportGraphPNG() {
@@ -238,29 +326,25 @@ async function init() {
   var status = await fetch(API+"/status").then(function(r){return r.json()});
   var dot = document.getElementById("status-dot");
   var txt = document.getElementById("status-text");
-  if (status.ok) {
-    dot.className = "dot on";
-    txt.textContent = status.project || "connected";
-    currentDbSize = status.dbSize || "0 KB";
-  } else {
-    dot.className = "dot off";
-    txt.textContent = "no kuma.db found";
-  }
+  if (status.ok) { dot.className = "dot on"; txt.textContent = status.project || "connected"; currentDbSize = status.dbSize || "0 KB"; }
+  else { dot.className = "dot off"; txt.textContent = "no kuma.db found"; }
   document.getElementById("loading").style.display = "none";
   var data = await fetch(API+"/dashboard").then(function(r){return r.json()});
   if (data.error) return showError(data.error);
   setupTabs();
   renderStats(data);
   renderGraph(data);
+  renderFeatures(data);
   renderGotchas(data);
-  renderTrajectories(data);
   renderHealth(data);
   setupSearch();
+  lucide.createIcons();
 }
 init();
 
 function showError(msg) {
-  document.getElementById("graph-container").innerHTML = '<div class="empty">&#9888; '+msg+'</div>';
+  document.getElementById("graph-container").innerHTML = '<div class="empty"><i data-lucide="alert-circle" style="width:18px;height:18px;vertical-align:middle;margin-right:4px"></i> '+msg+'</div>';
+  lucide.createIcons();
 }
 
 function renderStats(data) {
@@ -270,25 +354,23 @@ function renderStats(data) {
   document.getElementById("stats-bar").innerHTML =
     '<div class="stat"><span class="num">'+(s.node_count||0)+'</span><span class="lbl">nodes</span></div>'+
     '<div class="stat"><span class="num">'+(s.edge_count||0)+'</span><span class="lbl">edges</span></div>'+
+    '<div class="stat"><span class="num" style="color:var(--accent)">'+(s.feature_count||0)+'</span><span class="lbl">features</span></div>'+
     '<div class="stat"><span class="num">'+(s.gotcha_count||0)+'</span><span class="lbl">gotchas</span></div>'+
-    '<div class="stat"><span class="num">'+(s.trajectory_count||0)+'</span><span class="lbl">trajectories</span></div>'+
     '<div class="stat"><span class="num" style="color:var(--accent)">'+currentDbSize+'</span><span class="lbl">kuma.db</span></div>'+
     '<div class="stat"><span class="num" style="color:'+hcColor+'">'+(hc||0)+'</span><span class="lbl">health</span></div>';
 }
 
-/** Truncate long labels for display */
 function truncateLabel(name, maxLen) {
   if (!name) return "";
-  if (name.length <= maxLen) return name;
-  return name.substring(0, maxLen-2) + "..";
+  return name.length <= maxLen ? name : name.substring(0, maxLen-2) + "..";
 }
 
-/** Calculate node size based on label length and type */
 function calcNodeSize(name, type) {
   var isGotcha = name && name.toLowerCase().indexOf("gotcha:") === 0;
   if (isGotcha) return 14;
   if (type === "variable") return 14;
   var base = 18;
+  if (type === "feature") base = 32;
   if (type === "feature_domain") base = 30;
   if (type === "workflow") base = 24;
   if (type === "cross_service_link") base = 20;
@@ -296,12 +378,11 @@ function calcNodeSize(name, type) {
   if (type === "class") base = 20;
   if (type === "module") base = 22;
   if (type === "component") base = 20;
-  if (type === "route") base = 16;
+  if (type === "api_route") base = 18;
   if (type === "test") base = 18;
   var len = name ? Math.min(name.length, 25) : 4;
-  return Math.min(34, Math.max(base, base + len * 0.4));
+  return Math.min(36, Math.max(base, base + len * 0.4));
 }
-
 
 function renderGraph(data) {
   allNodes = data.nodes || [];
@@ -311,8 +392,8 @@ function renderGraph(data) {
     return;
   }
 
-  var types = [...new Set(allNodes.map(function(n){return n.type||'unknown'}))];
   var colors = {
+    feature: '#a855f7',
     feature_domain: '#dc2626',
     workflow: '#2563eb',
     cross_service_link: '#059669',
@@ -321,11 +402,13 @@ function renderGraph(data) {
     module: '#16a34a',
     component: '#ea580c',
     file: '#d97706',
-    route: '#db2777',
+    api_route: '#db2777',
     test: '#0d9488',
-    variable: '#6366f1'
+    variable: '#6366f1',
+    gotcha: '#f97316',
   };
   var shapes = {
+    feature: 'star',
     feature_domain: 'star',
     workflow: 'ellipse',
     cross_service_link: 'box',
@@ -334,309 +417,352 @@ function renderGraph(data) {
     module: 'ellipse',
     component: 'diamond',
     file: 'box',
-    route: 'triangleDown',
+    api_route: 'triangleDown',
     test: 'star',
-    variable: 'box'
+    variable: 'box',
   };
 
-  // Limit nodes for performance if > 200
   var maxNodes = 300;
   var displayNodes = allNodes;
   var truncated = allNodes.length > maxNodes;
-  if (truncated) {
-    displayNodes = allNodes.slice(0, maxNodes);
-  }
+  if (truncated) displayNodes = allNodes.slice(0, maxNodes);
 
   var visNodes = new vis.DataSet(displayNodes.map(function(n){
     var isGotcha = n.name && n.name.toLowerCase().indexOf("gotcha:") === 0;
-    var isVariable = n.type === 'variable' && !isGotcha;
     var shape = isGotcha ? 'triangle' : (shapes[n.type] || 'dot');
-    var maxLen = isGotcha ? 20 : (shape === 'ellipse' ? 18 : (isVariable ? 16 : 32));
+    var maxLen = isGotcha ? 20 : (shape === 'ellipse' ? 18 : 32);
     var label = truncateLabel(n.name, maxLen);
-    var size = isGotcha ? 12 : (isVariable ? 10 : calcNodeSize(n.name, n.type));
+    var size = isGotcha ? 12 : calcNodeSize(n.name, n.type);
     var color = isGotcha ? '#f97316' : (colors[n.type] || '#64748b');
     return {
-      id: n.id,
-      label: label,
-
-      color: {
-        background: color,
-        border: color,
-        highlight: { background: color, border: '#38bdf8' },
-        hover: { background: color, border: '#a855f7' }
-      },
+      id: n.id, label: label,
+      color: { background: color, border: color, highlight: { background: color, border: '#38bdf8' }, hover: { background: color, border: '#a855f7' } },
       shape: shape,
-      font: isVariable
-        ? { color: '#ffffff', size: 10, face: 'sans-serif', multi: false, bold: true }
-        : { color: '#ffffff', size: Math.min(13, Math.max(10, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
-      borderWidth: 0,
-      size: size,
-      mass: 1 + (size / 40),
+      font: { color: '#ffffff', size: Math.min(13, Math.max(10, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
+      borderWidth: 0, size: size, mass: 1 + (size / 40),
     };
   }));
 
   var nodeIds = new Set(displayNodes.map(function(n){return n.id}));
   var edgeList = allEdges.slice();
 
-  // Auto-connect floating file nodes to matching cross_service_link flow nodes
-  var nameToLinkIds = {};
-  displayNodes.forEach(function(n) {
-    if (n.type === 'cross_service_link') {
-      var cleanName = n.name.toLowerCase().trim();
-      if (!nameToLinkIds[cleanName]) nameToLinkIds[cleanName] = [];
-      nameToLinkIds[cleanName].push(n.id);
-    }
-  });
+  var displayEdges = edgeList.filter(function(e){ return nodeIds.has(e.source) && nodeIds.has(e.target); }).slice(0, 500);
 
-  displayNodes.forEach(function(n) {
-    if (n.type === 'file' || n.type === 'component' || n.type === 'function') {
-      var fn = n.name.toLowerCase().trim();
-      Object.keys(nameToLinkIds).forEach(function(linkName) {
-        if (fn.includes(linkName) || linkName.includes(fn)) {
-          var targetLinkIds = nameToLinkIds[linkName];
-          targetLinkIds.forEach(function(linkId) {
-            edgeList.push({
-              source: n.id,
-              target: linkId,
-              relation: 'contains'
-            });
-          });
-        }
-      });
-    }
-  });
-
-  var displayEdges = edgeList.filter(function(e){
-    return nodeIds.has(e.source) && nodeIds.has(e.target);
-  }).slice(0, 500);
-
-  var edgeDefaults = {};
+  edgeDefaults = {};
   var visEdges = new vis.DataSet(displayEdges.map(function(e, idx){
-    var edgeColor = '#64748b';
+    var edgeColor = '#4a4a6a';
     var width = 1.5;
     var dashes = false;
     if (e.relation === 'flows_through') { edgeColor = '#3b82f6'; width = 2.5; }
+    if (e.relation === 'affects') { edgeColor = '#ef4444'; width = 2; dashes = [5, 5]; }
     if (e.relation === 'triggers') { edgeColor = '#ef4444'; width = 2; dashes = true; }
     if (e.relation === 'syncs_with') { edgeColor = '#10b981'; width = 2; }
-    if (e.relation === 'contains') { edgeColor = '#64748b'; width = 1.5; dashes = true; }
+    if (e.relation === 'owns') { edgeColor = '#a855f7'; width = 2; }
+    if (e.relation === 'contains') { edgeColor = '#64748b'; width = 1; dashes = true; }
+    if (e.relation === 'depends_on') { edgeColor = '#eab308'; width = 1.5; }
 
     edgeDefaults['e'+idx] = { color: edgeColor, width: width };
     return {
-      id: 'e'+idx,
-      from: e.source, to: e.target,
+      id: 'e'+idx, from: e.source, to: e.target,
       label: e.relation || '',
       arrows: { to: { enabled: true, scaleFactor: 0.7, type: 'arrow' } },
       color: { color: edgeColor, highlight: '#a855f7', hover: '#38bdf8', opacity: 0.85 },
       font: { size: 10, color: '#94a3b8', strokeWidth: 0, background: 'transparent' },
       dashes: dashes,
       smooth: { type: 'continuous', roundness: 0.3 },
-      width: width,
-      hoverWidth: 3,
-      selectionWidth: 3,
+      width: width, hoverWidth: 3, selectionWidth: 3,
     };
   }));
 
   var container = document.getElementById("graph-container");
   network = new vis.Network(container, {nodes: visNodes, edges: visEdges}, {
     physics: {
-      enabled: true,
-      solver: 'barnesHut',
-      barnesHut: {
-        gravitationalConstant: -2000,
-        centralGravity: 0.3,
-        springLength: 150,
-        springConstant: 0.04,
-        damping: 0.6,
-        avoidOverlap: 0.5,
-      },
-      stabilization: { iterations: 400, updateInterval: 25, onlyDynamicEdges: false },
-      adaptiveTimestep: true,
+      enabled: true, solver: 'barnesHut',
+      barnesHut: { gravitationalConstant: -3000, centralGravity: 0.05, springLength: 150, springConstant: 0.02, damping: 0.4, avoidOverlap: 0.5 },
+      stabilization: { iterations: 120, updateInterval: 50, onlyDynamicEdges: false, fit: false },
     },
-    interaction: {
-      hover: true,
-      tooltipDelay: 300,
-      zoomView: true,
-      dragView: true,
-      dragNodes: true,
-      keyboard: true,
-      multiselect: true,
-      selectable: true,
-      selectConnectedEdges: false,
-    },
-    nodes: {
-      borderWidth: 0,
-      font: { color: '#ffffff', size: 13, face: 'sans-serif', bold: 'true' },
-      margin: { top: 10, bottom: 10, left: 16, right: 16 },
-      shapeProperties: { borderRadius: 8 },
-      shadow: { enabled: true, color: 'rgba(0,0,0,0.4)', size: 8, x: 0, y: 3 },
-    },
-    edges: {
-      smooth: { type: 'continuous', roundness: 0.3 },
-      width: 1.5,
-      color: { color: '#4a4a6a', highlight: '#7c3aed' },
-    },
+    interaction: { hover: true, tooltipDelay: 300, zoomView: true, dragView: true, dragNodes: true, keyboard: true, multiselect: true, selectable: true, selectConnectedEdges: false },
+    nodes: { borderWidth: 0, font: { color: '#ffffff', size: 11, face: 'sans-serif', bold: true }, margin: { top: 6, bottom: 6, left: 10, right: 10 }, shapeProperties: { borderRadius: 6 } },
+    edges: { smooth: { type: 'continuous', roundness: 0.2 }, width: 1, color: { color: '#4a4a6a', highlight: '#7c3aed' } },
     configure: { enabled: false },
   });
 
-  // Click node → highlight connected neighborhood (tooltip via hover only)
+  // Auto-freeze physics after stabilization (saves CPU)
+  network.once('stabilizationIterationsDone', function() {
+    network.setOptions({ physics: { enabled: false } });
+    document.getElementById('btn-freeze-physics').classList.add('active');
+    document.getElementById('btn-unfreeze-physics').classList.remove('active');
+  });
+
+  // Left-click node → focus only (no modal)
+  var lastFocusedNode = null;
+  var currentFocusDepth = 2;
+  window.setDepth = function(d) {
+    currentFocusDepth = d;
+    document.querySelectorAll('.depth-btn').forEach(function(b) { b.classList.toggle('active', parseInt(b.dataset.depth) === d); });
+    if (lastFocusedNode) focusNode(lastFocusedNode);
+  };
+  function focusNode(selectedId) {
+    // BFS with depth limit
+    var connected = new Map();
+    var queue = [[selectedId, 0]];
+    connected.set(selectedId, 0);
+    while (queue.length) {
+      var pair = queue.shift();
+      var cur = pair[0], depth = pair[1];
+      if (depth >= currentFocusDepth) continue;
+      network.getConnectedNodes(cur).forEach(function(nid) {
+        if (!connected.has(nid)) { connected.set(nid, depth + 1); queue.push([nid, depth + 1]); }
+      });
+    }
+    var nodeUpdates = [], edgeUpdates = [];
+    network.body.data.nodes.forEach(function(n) {
+      var hit = connected.has(n.id);
+      nodeUpdates.push({ id: n.id, opacity: hit ? 1.0 : 0.08, font: { color: hit ? '#ffffff' : 'rgba(255,255,255,0.04)', bold: hit } });
+    });
+    network.body.data.nodes.update(nodeUpdates);
+    network.body.data.edges.forEach(function(e) {
+      var hit = connected.has(e.from) && connected.has(e.to);
+      var def = edgeDefaults[e.id] || {};
+      edgeUpdates.push({ id: e.id, color: { color: hit ? (def.color || '#64748b') : 'rgba(100,116,139,0.03)', highlight: '#a855f7', hover: '#38bdf8', opacity: hit ? 0.9 : 0.03 }, width: hit ? (def.width || 1) : 0.15 });
+    });
+    network.body.data.edges.update(edgeUpdates);
+  }
   network.on('click', function(params) {
+    hideCtxMenu();
     if (params.nodes.length) {
       var selectedId = params.nodes[0];
-      var connectedNodeIds = new Set(network.getConnectedNodes(selectedId));
-      connectedNodeIds.add(selectedId);
-
-      network.body.data.nodes.forEach(function(n) {
-        var isConnected = connectedNodeIds.has(n.id);
-        network.body.data.nodes.update({
-          id: n.id,
-          opacity: isConnected ? 1.0 : 0.12,
-          font: {
-            color: isConnected ? '#ffffff' : 'rgba(255,255,255,0.07)',
-            bold: isConnected
-          }
-        });
-      });
-
-      network.body.data.edges.forEach(function(e) {
-        var def = edgeDefaults[e.id];
-        var isConnected = connectedNodeIds.has(e.from) && connectedNodeIds.has(e.to);
-        network.body.data.edges.update({
-          id: e.id,
-          color: {
-            color: isConnected ? (def ? def.color : '#64748b') : 'rgba(100,116,139,0.05)',
-            highlight: '#a855f7',
-            hover: '#38bdf8',
-            opacity: isConnected ? 0.85 : 0.05
-          },
-          width: isConnected ? (def ? def.width : 1.5) : 0.3,
-          font: {
-            color: isConnected ? '#94a3b8' : 'rgba(148,163,184,0.1)',
-            size: 10,
-            strokeWidth: 0,
-            background: 'transparent'
-          }
-        });
-      });
+      if (lastFocusedNode === selectedId) { lastFocusedNode = null; resetHighlight(); return; }
+      lastFocusedNode = selectedId;
+      focusNode(selectedId);
     } else {
-      document.getElementById("graph-tooltip").style.display = 'none';
-      network.body.data.nodes.forEach(function(n) {
-        network.body.data.nodes.update({
-          id: n.id,
-          opacity: 1.0,
-          font: { color: '#ffffff', bold: true }
-        });
-      });
-      network.body.data.edges.forEach(function(e) {
-        var def = edgeDefaults[e.id];
-        network.body.data.edges.update({
-          id: e.id,
-          color: {
-            color: def ? def.color : '#64748b',
-            highlight: '#a855f7',
-            hover: '#38bdf8',
-            opacity: 0.85
-          },
-          width: def ? def.width : 1.5,
-          font: { size: 10, color: '#94a3b8', strokeWidth: 0, background: 'transparent' }
-        });
-      });
+      lastFocusedNode = null;
+      resetHighlight();
     }
   });
 
-  // Hover node → show tooltip + border highlight
-  network.on('hoverNode', function(params) {
-    var nodeId = params.node;
-    network.body.data.nodes.updateOnly({
-      id: nodeId,
-      borderWidth: 2,
-      borderWidthSelected: 2,
-    });
+  // Right-click node → context menu (document level, capture phase)
+  document.addEventListener('contextmenu', function(e) {
+    var containerEl = document.getElementById("graph-container");
+    if (!containerEl || !containerEl.contains(e.target)) return;
+    e.preventDefault();
+    var rect = containerEl.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    var nodeId = network.getNodeAt({ x: x, y: y });
+    if (nodeId && typeof nodeId === 'string') {
+      var menu = document.getElementById('ctx-menu');
+      menu.style.display = 'block';
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = e.clientY + 'px';
+      menu.dataset.nodeId = nodeId;
+      lucide.createIcons();
+    }
+  }, true);
+  // Close context menu on mousedown outside
+  document.addEventListener('mousedown', function(e) {
+    if (!e.target.closest('#ctx-menu')) hideCtxMenu();
+  });
 
-    var n = allNodes.find(function(x){return x.id===nodeId});
+  // Hover → tooltip
+  network.on('hoverNode', function(params) {
+    network.body.data.nodes.updateOnly({ id: params.node, borderWidth: 2, borderWidthSelected: 2 });
+    var n = allNodes.find(function(x){return x.id===params.node});
     if (n) {
       var tip = document.getElementById("graph-tooltip");
       tip.style.display = 'block';
       tip.innerHTML = '<div style="word-break:break-all;overflow-wrap:anywhere;max-width:390px;white-space:normal;line-height:1.4"><b style="color:#f8fafc">' + n.name + '</b> <span style="color:#94a3b8">' + n.type + '</span>' +
-        (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') + '</div>';
+        (n.file_path ? '<br><span style="color:#38bdf8;font-size:11px;word-break:break-all;overflow-wrap:anywhere">' + n.file_path + '</span>' : '') +
+        '<br><span style="font-size:10px;color:#64748b">Right-click for options</span></div>';
       var pos = network.getPositions([n.id]);
       if (pos && pos[n.id]) {
         var canvasPos = network.canvasToDOM(pos[n.id]);
         var panelRect = container.getBoundingClientRect();
-        var tipX = Math.min(canvasPos.x + 12, panelRect.width - 340);
-        var tipY = Math.max(canvasPos.y - 10, 0);
-        tip.style.left = Math.max(tipX, 8) + 'px';
-        tip.style.top = tipY + 'px';
+        tip.style.left = Math.max(Math.min(canvasPos.x + 12, panelRect.width - 340), 8) + 'px';
+        tip.style.top = Math.max(canvasPos.y - 10, 0) + 'px';
       }
     }
   });
   network.on('blurNode', function(params) {
-    network.body.data.nodes.updateOnly({
-      id: params.node,
-      borderWidth: 0,
-      borderWidthSelected: 0,
-    });
+    network.body.data.nodes.updateOnly({ id: params.node, borderWidth: 0, borderWidthSelected: 0 });
     document.getElementById("graph-tooltip").style.display = 'none';
   });
 
+  var types = [...new Set(allNodes.map(function(n){return n.type||'unknown'}))];
   renderLegend(types, colors);
 
-  // Show truncation warning
   if (truncated) {
     var warn = document.createElement('div');
     warn.style.cssText = 'position:absolute;top:16px;left:16px;z-index:10;background:rgba(234,179,8,0.15);color:var(--yellow);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:8px 14px;font-size:12px;backdrop-filter:blur(8px);pointer-events:none';
-    warn.innerHTML = '&#9888; Showing ' + maxNodes + ' / ' + allNodes.length + ' nodes';
+    warn.innerHTML = '<i data-lucide="alert-triangle" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Showing ' + maxNodes + ' / ' + allNodes.length + ' nodes';
     document.getElementById('graph-panel').appendChild(warn);
   }
-
-  // Fit after stabilization
-  network.once('stabilizationIterationsDone', function() {
-    network.fit({ animation: { duration: 500, easingFunction: 'easeOutQuad' } });
-  });
 }
+
+function hideCtxMenu() { document.getElementById('ctx-menu').style.display = 'none'; }
+function resetHighlight() {
+  if (!network) return;
+  var nUp = [], eUp = [];
+  network.body.data.nodes.forEach(function(n) { nUp.push({ id: n.id, opacity: 1.0, font: { color: '#ffffff', bold: true } }); });
+  network.body.data.nodes.update(nUp);
+  network.body.data.edges.forEach(function(e) {
+    var def = edgeDefaults[e.id];
+    eUp.push({ id: e.id, color: { color: def ? def.color : '#64748b', highlight: '#a855f7', hover: '#38bdf8', opacity: 0.85 }, width: def ? def.width : 1 });
+  });
+  network.body.data.edges.update(eUp);
+  document.getElementById("graph-tooltip").style.display = 'none';
+}
+function ctxViewDetail() {
+  var id = document.getElementById('ctx-menu').dataset.nodeId;
+  hideCtxMenu();
+  if (id) openNodeModal(id);
+}
+function ctxCopyId() {
+  var id = document.getElementById('ctx-menu').dataset.nodeId;
+  hideCtxMenu();
+  if (id) navigator.clipboard.writeText(id).catch(function(){});
+}
+function ctxZoomTo() {
+  var id = document.getElementById('ctx-menu').dataset.nodeId;
+  hideCtxMenu();
+  if (id && network) network.focus(id, { scale: 1.5, animation: { duration: 400, easingFunction: 'easeOutQuad' } });
+}
+
+// ============ NODE DETAIL MODAL ============
+
+async function openNodeModal(nodeId) {
+  var node = allNodes.find(function(n){return n.id === nodeId;});
+  if (!node) return;
+
+  var root = document.getElementById("modal-root");
+  root.innerHTML = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-header"><h2>'+escapeHtml(node.name)+'</h2><button class="close" onclick="closeModal()">&times;</button></div><div class="modal-body"><div style="text-align:center;padding:20px;color:var(--muted)">Loading details...</div></div></div></div>';
+
+  try {
+    var detail = await fetch(API+"/node/"+encodeURIComponent(nodeId)).then(function(r){return r.json()});
+    var body = root.querySelector('.modal-body');
+    if (!detail || detail.error) {
+      body.innerHTML = '<div class="empty">Node not found</div>';
+      return;
+    }
+
+    var n = typeof detail.node === 'string' ? JSON.parse(detail.node) : detail.node;
+    var outgoing = typeof detail.outgoing === 'string' ? JSON.parse(detail.outgoing) : (detail.outgoing || []);
+    var incoming = typeof detail.incoming === 'string' ? JSON.parse(detail.incoming) : (detail.incoming || []);
+    var gotchas = typeof detail.gotchas === 'string' ? JSON.parse(detail.gotchas) : (detail.gotchas || []);
+
+    var meta = {};
+    try { meta = typeof n.metadata === 'string' ? JSON.parse(n.metadata) : (n.metadata || {}); } catch(e) {}
+
+    var html = '';
+
+    // Basic info
+    html += '<div class="modal-section">';
+    html += '<h3>Info</h3>';
+    html += '<div class="modal-kv"><span class="key">Type</span><span class="val"><span style="color:var(--accent)">'+escapeHtml(n.type)+'</span></span></div>';
+    if (n.file_path) html += '<div class="modal-kv"><span class="key">Path</span><span class="val" style="color:var(--accent2)">'+escapeHtml(n.file_path)+'</span></div>';
+    if (meta.description) html += '<div class="modal-kv"><span class="key">Description</span><span class="val">'+escapeHtml(meta.description)+'</span></div>';
+    if (meta.tags && meta.tags.length) html += '<div class="modal-kv"><span class="key">Tags</span><span class="val">'+meta.tags.map(function(t){return '<span class="tag">'+escapeHtml(t)+'</span>';}).join(' ')+'</span></div>';
+    if (meta.risk) html += '<div class="modal-kv"><span class="key">Risk</span><span class="val" style="color:'+(meta.risk==='critical'?'var(--red)':meta.risk==='high'?'var(--orange)':meta.risk==='medium'?'var(--yellow)':'var(--green)')+'">'+escapeHtml(meta.risk)+'</span></div>';
+    if (n.updated_at) html += '<div class="modal-kv"><span class="key">Updated</span><span class="val">'+new Date(n.updated_at*1000).toLocaleString()+'</span></div>';
+    html += '</div>';
+
+    // Outgoing relations
+    if (outgoing.length) {
+      html += '<div class="modal-section"><h3>Outgoing ('+outgoing.length+')</h3>';
+      outgoing.forEach(function(r) {
+        var rel = typeof r === 'string' ? JSON.parse(r) : r;
+        html += '<div class="relation-item" onclick="closeModal();setTimeout(function(){openNodeModal(\''+escapeHtml(rel.target)+'\')},200)">';
+        html += '<span class="arrow"><i data-lucide="arrow-right" style="width:12px;height:12px"></i></span>';
+        html += '<span class="name">'+escapeHtml(rel.target_name || rel.target.split('::').pop())+'</span>';
+        html += '<span class="type">'+escapeHtml(rel.target_type||'')+'</span>';
+        html += '<span class="weight">w:'+((rel.weight||1).toFixed(2))+'</span>';
+        html += '<span style="color:var(--accent);font-size:10px;flex-shrink:0">'+escapeHtml(rel.relation)+'</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Incoming relations
+    if (incoming.length) {
+      html += '<div class="modal-section"><h3>Incoming ('+incoming.length+')</h3>';
+      incoming.forEach(function(r) {
+        var rel = typeof r === 'string' ? JSON.parse(r) : r;
+        html += '<div class="relation-item" onclick="closeModal();setTimeout(function(){openNodeModal(\''+escapeHtml(rel.source)+'\')},200)">';
+        html += '<span class="arrow"><i data-lucide="arrow-left" style="width:12px;height:12px"></i></span>';
+        html += '<span class="name">'+escapeHtml(rel.source_name || rel.source.split('::').pop())+'</span>';
+        html += '<span class="type">'+escapeHtml(rel.source_type||'')+'</span>';
+        html += '<span class="weight">w:'+((rel.weight||1).toFixed(2))+'</span>';
+        html += '<span style="color:var(--accent);font-size:10px;flex-shrink:0">'+escapeHtml(rel.relation)+'</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Gotchas
+    if (gotchas.length) {
+      html += '<div class="modal-section"><h3>Gotchas ('+gotchas.length+')</h3>';
+      gotchas.forEach(function(g) {
+        var got = typeof g === 'string' ? JSON.parse(g) : g;
+        html += '<div class="gotcha-item" style="border-color:var(--'+(got.severity==='critical'?'red':got.severity==='high'?'orange':got.severity==='medium'?'yellow':'green')+')">';
+        html += '<div class="desc">'+escapeHtml(got.description)+'</div>';
+        html += '<span class="sev-tag sev-'+got.severity+'">'+got.severity+'</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (!outgoing.length && !incoming.length && !gotchas.length) {
+      html += '<div class="empty" style="padding:20px">No relations recorded yet.</div>';
+    }
+
+    body.innerHTML = html;
+    lucide.createIcons();
+  } catch(e) {
+    root.querySelector('.modal-body').innerHTML = '<div class="empty">Failed to load details: '+escapeHtml(e.message)+'</div>';
+  }
+}
+
+function closeModal() {
+  document.getElementById("modal-root").innerHTML = "";
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ============ SIDEBAR ============
 
 async function refetch() {
   var btn = document.getElementById('refetch-btn');
-  btn.innerHTML = '&#8635; Refetching...';
+  btn.innerHTML = '<i data-lucide="loader" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Loading...';
   btn.style.opacity = '0.6';
+  lucide.createIcons();
   try {
-    // Update status too
     var status = await fetch(API+'/status').then(function(r){return r.json()});
-    var dot = document.getElementById('status-dot');
-    var txt = document.getElementById('status-text');
-    if (status.ok) {
-      dot.className = 'dot on';
-      txt.textContent = status.project || 'connected';
-    } else {
-      dot.className = 'dot off';
-      txt.textContent = 'no kuma.db found';
-    }
-    // Refetch dashboard data
+    var dot = document.getElementById("status-dot");
+    var txt = document.getElementById("status-text");
+    if (status.ok) { dot.className = 'dot on'; txt.textContent = status.project || 'connected'; } else { dot.className = 'dot off'; txt.textContent = 'no kuma.db found'; }
     var data = await fetch(API+'/dashboard').then(function(r){return r.json()});
     if (data.error) { showError(data.error); return; }
-    renderStats(data);
-    renderGraph(data);
-    renderGotchas(data);
-    renderTrajectories(data);
-    renderHealth(data);
-  } catch(e) {
-    showError('Refetch failed: ' + e.message);
-  }
-  btn.innerHTML = '&#8635; Refetch';
+    renderStats(data); renderGraph(data); renderFeatures(data); renderGotchas(data); renderHealth(data);
+    lucide.createIcons();
+  } catch(e) { showError('Refetch failed: ' + e.message); }
+  btn.innerHTML = '<i data-lucide="refresh-cw" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Refetch';
   btn.style.opacity = '1';
+  lucide.createIcons();
 }
 
 function renderLegend(types, colors){
   document.getElementById("legend").innerHTML = '<div class="title">Legend</div>' +
-    types.map(function(t){
-      return '<div class="legend-item"><div class="legend-dot" style="background:'+(colors[t]||'#888')+'"></div>' + t + '</div>';
-    }).join('');
+    types.map(function(t){ return '<div class="legend-item"><div class="legend-dot" style="background:'+(colors[t]||'#888')+'"></div>' + t + '</div>'; }).join('');
 }
 
 function setupTabs(){
   var content = document.getElementById("tab-content");
   content.innerHTML =
-    '<div class="panel active" id="panel-gotchas"><div class="empty">Loading...</div></div>' +
-    '<div class="panel" id="panel-trajectories"><div class="empty">Loading...</div></div>' +
+    '<div class="panel active" id="panel-features"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-gotchas"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-health"><div class="empty">Loading...</div></div>';
   document.querySelectorAll('.tab').forEach(function(tab){
     tab.onclick = function(){
@@ -650,6 +776,28 @@ function setupTabs(){
   document.querySelector('.tab.active').click();
 }
 
+function renderFeatures(data) {
+  var items = data.features || [];
+  var el = document.getElementById("panel-features");
+  if(!el) return;
+  if(!items.length){el.innerHTML='<div class="empty">No features recorded yet.<br><br>Use:<br><code style="color:var(--accent)">kuma_memory({action:\'feature\', title:\'Auth\'})</code></div>';return;}
+  el.innerHTML = items.map(function(f){
+    var feat = typeof f === 'string' ? JSON.parse(f) : f;
+    var meta = {};
+    try { meta = typeof feat.metadata === 'string' ? JSON.parse(feat.metadata) : (feat.metadata || {}); } catch(e) {}
+    var tags = meta.tags || [];
+    var risk = meta.risk || 'medium';
+    var riskColor = risk==='critical'?'var(--red)':risk==='high'?'var(--orange)':risk==='medium'?'var(--yellow)':'var(--green)';
+    return '<div class="feature-item" onclick="openNodeModal(\''+escapeHtml(feat.id)+'\')">' +
+      '<div class="name"><i data-lucide="star" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> '+escapeHtml(feat.name)+'</div>' +
+      (meta.description ? '<div class="meta">'+escapeHtml(meta.description)+'</div>' : '') +
+      '<div class="meta">Risk: <span style="color:'+riskColor+'">'+risk+'</span></div>' +
+      (tags.length ? '<div class="tags">'+tags.map(function(t){return '<span class="tag">'+escapeHtml(t)+'</span>';}).join('')+'</div>' : '') +
+      '</div>';
+  }).join('');
+  lucide.createIcons();
+}
+
 function renderGotchas(data){
   var items = data.gotchas || [];
   var el = document.getElementById("panel-gotchas");
@@ -659,24 +807,12 @@ function renderGotchas(data){
     var color = g.severity==='critical'?'red':g.severity==='high'?'orange':g.severity==='medium'?'yellow':'green';
     return '<div class="gotcha-item" style="border-color:var(--'+color+')">' +
       '<div class="file">'+(g.file_path||'global')+'</div>' +
-      '<div class="desc">'+g.description+'</div>' +
+      '<div class="desc">'+escapeHtml(g.description)+'</div>' +
       '<span class="sev-tag sev-'+g.severity+'">'+g.severity+'</span>' +
-      (g.workaround ? ' <span style="font-size:11px;color:var(--muted)">&#128161; '+g.workaround+'</span>' : '') +
+      (g.workaround ? ' <span style="font-size:11px;color:var(--muted)"><i data-lucide="lightbulb" style="width:11px;height:11px;vertical-align:middle"></i> '+escapeHtml(g.workaround)+'</span>' : '') +
       '</div>';
   }).join('');
-}
-
-function renderTrajectories(data){
-  var items = data.trajectories || [];
-  var el = document.getElementById("panel-trajectories");
-  if(!el) return;
-  if(!items.length){el.innerHTML='<div class="empty">No trajectories yet</div>';return;}
-  el.innerHTML = items.map(function(t){
-    var dur = t.total_duration_ms ? (t.total_duration_ms/1000).toFixed(1)+'s' : '-';
-    var rate = t.success_rate != null ? (t.success_rate*100).toFixed(0)+'%' : '-';
-    var date = t.created_at ? new Date(t.created_at*1000).toLocaleDateString() : '-';
-    return '<div class="traj-item"><div class="goal">'+t.goal+'</div><div class="meta">&#9201; '+dur+' &middot; &#10004; '+rate+' &middot; '+date+'</div></div>';
-  }).join('');
+  lucide.createIcons();
 }
 
 function renderHealth(data){
@@ -688,7 +824,7 @@ function renderHealth(data){
     var cls = h.score>=80?'good':h.score>=50?'ok':'bad';
     var summary = h.summary||h.risk_level||'-';
     var date = h.created_at ? new Date(h.created_at*1000).toLocaleDateString() : '-';
-    return '<div class="health-item"><div class="score '+cls+'">'+h.score+'</div><div class="meta">'+summary+' &middot; '+date+'</div></div>';
+    return '<div class="health-item"><div class="score '+cls+'">'+h.score+'</div><div class="meta">'+escapeHtml(summary)+' &middot; '+date+'</div></div>';
   }).join('');
 }
 
@@ -696,24 +832,12 @@ function setupSearch() {
   document.getElementById("node-search").oninput = function() {
     var query = this.value.toLowerCase().trim();
     if (!network || !allNodes) return;
-    if (!query) {
-      network.body.data.nodes.forEach(function(n){
-        network.body.data.nodes.update({id:n.id,opacity:1.0});
-      });
-      return;
-    }
+    if (!query) { network.body.data.nodes.forEach(function(n){ network.body.data.nodes.update({id:n.id,opacity:1.0}); }); return; }
     var matched = new Set();
     allNodes.forEach(function(n){
-      if (n.name.toLowerCase().includes(query) || (n.file_path && n.file_path.toLowerCase().includes(query))) {
-        matched.add(n.id);
-      }
+      if (n.name.toLowerCase().includes(query) || (n.file_path && n.file_path.toLowerCase().includes(query))) matched.add(n.id);
     });
-    network.body.data.nodes.forEach(function(n){
-      network.body.data.nodes.update({
-        id: n.id,
-        opacity: matched.has(n.id) ? 1.0 : 0.15,
-      });
-    });
+    network.body.data.nodes.forEach(function(n){ network.body.data.nodes.update({ id: n.id, opacity: matched.has(n.id) ? 1.0 : 0.15 }); });
   };
 }
 </script>

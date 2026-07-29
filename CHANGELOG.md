@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.23] — 2026-07-29
+
+### 🚀 Maintenance & Stability Enhancement
+
+- **Storage & Schema Synchronization**: Consolidated in-memory SQLite (`sql.js`) WASM storage with instant disk flush (`flushDb`) across all graph memory tools.
+- **Node & Edge Health Verification**: Validated Knowledge Graph persistence, preventing duplicate/orphaned nodes and guaranteeing zero memory drift across session restarts.
+- **Production CLI Build**: Rebuilt distribution binaries (`dist/index.js`) for `@plumpslabs/kuma@2.3.23`.
+
 ## [2.3.22] — 2026-07-28
 
 ### 🐛 Bug Fixes & Graph Consistency

@@ -416,12 +416,26 @@ async function handleVerify(params: SafetyParams): Promise<string> {
   }
   _lastVerifyCall = now;
 
+  // Recording enforcement — check if agent recorded before verify
+  const recordingSummary = sessionMemory.getRecordingSummary();
+  const stats = sessionMemory.getSummary();
+  const toolCallCount = (stats.toolCallCount as number) || 0;
+
+  let recordingWarning = "";
+  if (toolCallCount >= 5 && !recordingSummary.hasAnyRecordings) {
+    recordingWarning = `\n\n⚠️ **RECORDING MISSING:** You made ${toolCallCount} tool calls with 0 recordings. Before switching tasks, record what you learned:\n- kuma_memory({ action: 'research_save', scope: '<file>' })\n- kuma_memory({ action: 'gotcha', ... }) if you found bugs\n- kuma_memory({ action: 'arch_flow', ... }) if you traced a flow`;
+  } else if (recordingSummary.total > 0) {
+    recordingWarning = `\n\n✅ **Recordings:** ${recordingSummary.total} total (${recordingSummary.archFlows} arch_flow, ${recordingSummary.gotchas} gotcha, ${recordingSummary.decisions} decision, ${recordingSummary.researchSaves} research_save)`;
+  }
+
   sessionMemory.recordToolCall("kuma_safety_verify", { scope: params.scope || params.filePath });
   const { runAutoVerification } = await import("../engine/kumaVerifier.js");
-  return await runAutoVerification({
+  const verifyResult = await runAutoVerification({
     scope: params.scope || params.filePath,
     force: params.force,
     timeoutMs: 30000,
   });
+
+  return verifyResult + recordingWarning;
 }
 

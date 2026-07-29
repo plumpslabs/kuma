@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getDashboardData, findKumaDb } from "./db.js";
+import { getDashboardData, getNodeDetail, findKumaDb } from "./db.js";
 
 import fs from "node:fs";
 
@@ -28,6 +28,18 @@ api.get("/dashboard", (c) => {
   try {
     const data = getDashboardData();
     return c.json(data);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+/** GET /api/node/:id — full node detail (outgoing, incoming, gotchas) */
+api.get("/node/:id", (c) => {
+  try {
+    const nodeId = c.req.param("id");
+    const detail = getNodeDetail(nodeId);
+    if (!detail) return c.json({ error: "Node not found" }, 404);
+    return c.json(detail);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }

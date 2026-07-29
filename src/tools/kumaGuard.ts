@@ -90,7 +90,70 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     }
   }
 
-  // 4. Context snapshot
+  // 4. Recording enforcement — detect if agent hasn't recorded anything
+  const recordingSummary = sessionMemory.getRecordingSummary();
+  if (check === "all" || check === "drift") {
+    const readCalls = stats.toolCalls.filter(
+      (c: any) => c.toolName === "read" || c.toolName === "grep" || c.toolName === "glob" || c.toolName === "smart_file_picker"
+    ).length;
+
+    // CRITICAL: 10+ tool calls with 0 recordings = blocking warning
+    if (stats.toolCallCount >= 10 && !recordingSummary.hasAnyRecordings) {
+      warnings.push({
+        severity: "high",
+        pattern: "no-recordings-critical",
+        message: `🚫 BLOCKING: ${stats.toolCallCount} tool calls with 0 knowledge recordings. You are wasting future sessions by not recording.`,
+        suggestion: "STOP. Record now:\n- kuma_memory({ action: 'research_save', scope: '<file>' }) after reading files\n- kuma_memory({ action: 'gotcha', scope: '<file>', content: '<bug>' }) when finding bugs\n- kuma_memory({ action: 'arch_flow', content: 'domain: <X> | hops: <file1> → <file2>' }) when tracing flows",
+      });
+    }
+    // WARNING: 5+ tool calls with 0 recordings = medium warning
+    else if (stats.toolCallCount >= 5 && !recordingSummary.hasAnyRecordings) {
+      warnings.push({
+        severity: "medium",
+        pattern: "no-recordings",
+        message: `${stats.toolCallCount} tool calls made but 0 knowledge recordings. Agent is not building persistent knowledge.`,
+        suggestion: "Record findings after reading files. arch_flow + gotcha are exponential value.",
+      });
+    }
+    // HINT: Agent read files but didn't record
+    else if (readCalls >= 3 && recordingSummary.researchSaves === 0) {
+      warnings.push({
+        severity: "low",
+        pattern: "read-without-record",
+        message: `${readCalls} file reads but 0 research_save calls. Reading without recording = wasted context.`,
+        suggestion: "After reading unfamiliar files: kuma_memory({ action: 'research_save', scope: '<file>' })",
+      });
+    }
+    // GOOD: Agent is recording
+    if (recordingSummary.total > 0) {
+      // Positive reinforcement
+    }
+
+    // Auto-gotcha reminder — detect error patterns
+    const errorCalls = stats.toolCalls.filter(
+      (c: any) => c.toolName === "execute_safe_command" && JSON.stringify(c.params).includes("error")
+    ).length;
+    if (errorCalls >= 2 && recordingSummary.gotchas === 0) {
+      warnings.push({
+        severity: "medium",
+        pattern: "error-without-gotcha",
+        message: `${errorCalls} error encounters but 0 gotchas recorded. Errors = future gotchas.`,
+        suggestion: "Record gotchas for bugs you encounter:\nkuma_memory({ action: 'gotcha', scope: '<file>', content: '<what went wrong>', status: 'high' })",
+      });
+    }
+
+    // Auto-arch_flow reminder — detect flow tracing (multiple file reads in sequence)
+    if (readCalls >= 4 && recordingSummary.archFlows === 0) {
+      warnings.push({
+        severity: "low",
+        pattern: "trace-without-arch-flow",
+        message: `${readCalls} file reads (possible flow tracing) but 0 arch_flows recorded. Flow knowledge dissipates fast.`,
+        suggestion: "After tracing a flow, record it:\nkuma_memory({ action: 'arch_flow', content: 'domain: <Name> | hops: <file1> → <file2> → <file3>' })",
+      });
+    }
+  }
+
+  // 5. Context snapshot
   if (check === "context") {
     const snapshot = saveSnapshot(stats.goal);
     if (!snapshot) {
@@ -138,5 +201,24 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     },
   };
 
-  return JSON.stringify(report, null, 2);
+  // Add recording summary to output
+  const metricsSummary = sessionMemory.getMetricsSummary();
+  const reportWithRecordings = {
+    ...report,
+    recordings: {
+      archFlows: recordingSummary.archFlows,
+      gotchas: recordingSummary.gotchas,
+      decisions: recordingSummary.decisions,
+      researchSaves: recordingSummary.researchSaves,
+      total: recordingSummary.total,
+    },
+    metrics: {
+      filesRead: metricsSummary.filesRead,
+      filesEdited: metricsSummary.filesEdited,
+      researchTimeSaved: metricsSummary.researchTimeSavedFormatted,
+      sessionDuration: metricsSummary.sessionDuration,
+    },
+  };
+
+  return JSON.stringify(reportWithRecordings, null, 2);
 }
