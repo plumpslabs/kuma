@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.24] — 2026-07-29
+
+### ⚡ Kuma Lean Mode & Studio Visual Overhaul
+
+- **Adaptive Workflow Engine**: Introduced 3-mode adaptive workflow (`Lean`, `Standard`, `Full`) with Lean Mode as default (< 3 files, ~100 token cost).
+- **New Workspace Rules**: Auto-generated `.kuma/MODE.md`, `.kuma/SKIP_RULES.md` (65% token savings by skipping micro-nodes), and `.kuma/STALENESS.md` (auto-cache invalidation).
+- **Kuma Studio UX Overhaul**: 
+  - Shape & color differentiation for `decision` (Gold Star), `gotcha` (Red Triangle), `arch_flow` / `domain_rule` (Cyan/Pink Diamond), `context` / `note` (Lime Box).
+  - High-contrast neon dark mode (`#c084fc`) for enhanced legibility.
+  - Enhanced node detail modal featuring Research Cache, Architecture Rationale, Business Rules, Related Todos, and Change Log history.
+  - ESC key modal closing and precise edge highlight focus/reset logic.
+
 ## [2.3.23] — 2026-07-29
 
 ### 🚀 Maintenance & Stability Enhancement

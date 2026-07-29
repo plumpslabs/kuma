@@ -234,8 +234,7 @@ header .status .dot.off { background: var(--red); }
     <div id="graph-container"></div>
     <div id="search-box"><input id="node-search" type="text" placeholder="Search nodes..." /></div>
     <div id="graph-controls">
-      <button onclick="resetGraphFocus()" title="Reset focus"><i data-lucide="x" style="width:12px;height:12px"></i></button>
-      <button onclick="if(network)network.fit()" title="Fit to viewport"><i data-lucide="maximize-2" style="width:12px;height:12px"></i></button>
+      <button onclick="if(network)network.fit()" title="Fit to viewport"><i data-lucide="maximize-2" style="width:12px;height:12px"></i> Fit</button>
       <div class="ctrl-sep"></div>
       <button class="depth-btn" data-depth="1" onclick="setDepth(1)">1</button>
       <button class="depth-btn active" data-depth="2" onclick="setDepth(2)">2</button>
@@ -482,7 +481,7 @@ function renderGraph(data) {
       stabilization: { iterations: 120, updateInterval: 50, onlyDynamicEdges: false, fit: false },
     },
     interaction: { hover: true, tooltipDelay: 300, zoomView: true, dragView: true, dragNodes: true, keyboard: true, multiselect: true, selectable: true, selectConnectedEdges: false },
-    nodes: { borderWidth: 0, font: { color: '#ffffff', size: 11, face: 'sans-serif', bold: true }, margin: { top: 6, bottom: 6, left: 10, right: 10 }, shapeProperties: { borderRadius: 6 } },
+    nodes: { borderWidth: 0, font: { color: '#ffffff', size: 11, face: 'sans-serif' }, margin: { top: 6, bottom: 6, left: 10, right: 10 }, shapeProperties: { borderRadius: 6 } },
     edges: { smooth: { type: 'continuous', roundness: 0.2 }, width: 1, color: { color: '#4a4a6a', highlight: '#7c3aed' } },
     configure: { enabled: false },
   });
@@ -780,7 +779,7 @@ function renderFeatures(data) {
   var items = data.features || [];
   var el = document.getElementById("panel-features");
   if(!el) return;
-  if(!items.length){el.innerHTML='<div class="empty">No features recorded yet.<br><br>Use:<br><code style="color:var(--accent)">kuma_memory({action:\'feature\', title:\'Auth\'})</code></div>';return;}
+  if(!items.length){el.innerHTML='<div class="empty">No features recorded yet.<br><br>Use:<br><code style="color:var(--accent)">kuma_memory</code></div>';return;}
   el.innerHTML = items.map(function(f){
     var feat = typeof f === 'string' ? JSON.parse(f) : f;
     var meta = {};
