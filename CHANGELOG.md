@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.26] — 2026-07-30
+
+### 📝 Documentation & Template Rule Synchronization
+
+- **Sync `arch_flow` Rule Wording**: Fixed remaining `IMMEDIATELY after each flow hop` references across all template generators (`BOOTSTRAP_LINES`, `opencodeAgentsMdTemplate`, `generateKumaInitMd`) to strictly align with reviewer requirements: `After tracing COMPLETE flow, max 5 core files`.
+
 ## [2.3.25] — 2026-07-30
 
 ### 🚀 Knowledge Graph Optimization & Memory Improvements
