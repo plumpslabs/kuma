@@ -71,6 +71,23 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     // Append to Layer 3 markdown file
     const mdResult = appendToLayer("gotcha", formatted);
 
+    // Save to graph nodes & edges to ensure graph connectedness
+    try {
+      const { upsertNode, addEdge, nodeId } = await import("./kumaGraph.js");
+      const fileNodeId = nodeId("file", entry.filePath);
+      const gotchaNodeId = `gotcha::${entry.filePath}::${entry.description.substring(0, 30)}`;
+
+      await upsertNode({ id: fileNodeId, type: "file", name: entry.filePath });
+      await upsertNode({
+        id: gotchaNodeId,
+        type: "gotcha",
+        name: `gotcha:${entry.description.substring(0, 40)}`,
+        filePath: entry.filePath,
+        metadata: { severity, workaround: entry.workaround },
+      });
+      await addEdge({ sourceId: fileNodeId, targetId: gotchaNodeId, type: "depends_on" });
+    } catch {}
+
     saveDb();
     sessionMemory.recordToolCall("kuma_gotcha_add", {
       filePath: entry.filePath,

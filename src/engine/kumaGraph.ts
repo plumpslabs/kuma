@@ -148,7 +148,25 @@ export async function upsertNode(node: GraphNode): Promise<void> {
     try {
       db.run(`INSERT INTO nodes_fts (rowid, name, metadata) VALUES (last_insert_rowid(), ?, ?)`, [node.name, metadata]);
     } catch {
-      // FTS might already have this rowid - ignore
+      // FTS5 might not be enabled, fallback to LIKE queries
+    }
+
+    // Auto-link to file node if filePath is specified to prevent orphan nodes
+    if (node.filePath && node.type !== "file") {
+      const fileNodeId = nodeId("file", node.filePath);
+      try {
+        db.run(`
+          INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
+          VALUES (?, 'file', ?, ?, '{}', strftime('%s','now'))
+          ON CONFLICT(id) DO NOTHING
+        `, [fileNodeId, node.filePath, node.filePath]);
+
+        db.run(`
+          INSERT INTO edges (source_id, target_id, type, weight, metadata, created_at)
+          VALUES (?, ?, 'contains', 1.0, '{}', strftime('%s','now'))
+          ON CONFLICT DO NOTHING
+        `, [fileNodeId, id]);
+      } catch {}
     }
 
     saveDb(db);

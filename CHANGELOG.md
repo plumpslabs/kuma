@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.27] — 2026-07-30
+
+### 🛡️ Relational Graph Integrity & Idempotency Enforcement
+
+- **Auto-Relational Linking (No Orphan Nodes)**: Updated `upsertNode` in `kumaGraph.ts` and `addGotcha` in `kumaGotchas.ts` so that every non-file node created with a `filePath` or `scope` is automatically connected via `contains` or `depends_on` edges to its parent file node.
+- **Research Node Linking**: Updated `handleResearchSave` in `kumaMemoryTool.ts` to automatically link `research::*` nodes to `file::*` nodes with `contains` edges, guaranteeing 0 orphan research nodes.
+- **Instructional Anti-Duplication Rules**: Added clear guidance to `.kuma/init.md` informing agents about automatic node idempotency (zero duplicate node creation) and relational connectivity guarantees.
+
 ## [2.3.26] — 2026-07-30
 
 ### 📝 Documentation & Template Rule Synchronization

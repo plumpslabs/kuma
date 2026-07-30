@@ -262,6 +262,13 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
         updated_at = excluded.updated_at
     `, [researchId, `research:${scope}`, JSON.stringify({ confidence: params.confidence || 0.8, last_findings: params.content || "" }), now]);
 
+    // Create edge connecting file -> contains -> research node so research nodes are never orphans
+    db.run(`
+      INSERT INTO edges (source_id, target_id, type, weight, metadata, created_at)
+      VALUES (?, ?, 'contains', 1.0, '{}', ?)
+      ON CONFLICT DO NOTHING
+    `, [fileId, researchId, now]);
+
     flushDb(db);
   } catch {}
 
