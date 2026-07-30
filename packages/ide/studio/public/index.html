@@ -828,15 +828,56 @@ function renderHealth(data){
 }
 
 function setupSearch() {
+  var searchTimeout = null;
   document.getElementById("node-search").oninput = function() {
-    var query = this.value.toLowerCase().trim();
-    if (!network || !allNodes) return;
-    if (!query) { network.body.data.nodes.forEach(function(n){ network.body.data.nodes.update({id:n.id,opacity:1.0}); }); return; }
-    var matched = new Set();
-    allNodes.forEach(function(n){
-      if (n.name.toLowerCase().includes(query) || (n.file_path && n.file_path.toLowerCase().includes(query))) matched.add(n.id);
-    });
-    network.body.data.nodes.forEach(function(n){ network.body.data.nodes.update({ id: n.id, opacity: matched.has(n.id) ? 1.0 : 0.15 }); });
+    var self = this;
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(function() {
+      var query = self.value.toLowerCase().trim();
+      if (!network || !allNodes) return;
+
+      if (!query) {
+        resetHighlight();
+        return;
+      }
+
+      var matched = new Set();
+      var firstMatchedId = null;
+      allNodes.forEach(function(n) {
+        if (n.name.toLowerCase().includes(query) || (n.file_path && n.file_path.toLowerCase().includes(query))) {
+          matched.add(n.id);
+          if (!firstMatchedId) firstMatchedId = n.id;
+        }
+      });
+
+      // Update Nodes
+      var nodeBatchUpdates = [];
+      network.body.data.nodes.forEach(function(n) {
+        var hit = matched.has(n.id);
+        nodeBatchUpdates.push({ id: n.id, opacity: hit ? 1.0 : 0.08, font: { color: hit ? '#ffffff' : 'rgba(255,255,255,0.04)', bold: hit } });
+      });
+      network.body.data.nodes.update(nodeBatchUpdates);
+
+      // Update Edges (Dim edges whose endpoints are both not in search results)
+      var edgeBatchUpdates = [];
+      network.body.data.edges.forEach(function(e) {
+        var hit = matched.has(e.from) || matched.has(e.to);
+        var def = edgeDefaults[e.id] || {};
+        var strokeColor = hit ? (def.color || '#64748b') : 'rgba(100,116,139,0.05)';
+        var fontColor = hit ? '#94a3b8' : 'rgba(148,163,184,0.03)';
+        edgeBatchUpdates.push({
+          id: e.id,
+          color: { color: strokeColor, highlight: '#c084fc', hover: '#38bdf8', opacity: hit ? 0.95 : 0.05 },
+          font: { color: fontColor, strokeWidth: 0, background: 'transparent' },
+          width: hit ? (def.width || 1.5) : 0.2
+        });
+      });
+      network.body.data.edges.update(edgeBatchUpdates);
+
+      if (firstMatchedId && matched.size < 10) {
+        network.focus(firstMatchedId, { scale: 1.2, animation: { duration: 300 } });
+      }
+    }, 150);
   };
 }
 </script>

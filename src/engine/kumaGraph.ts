@@ -361,11 +361,11 @@ export async function recordDomainFlow(params: {
       });
       edgeCount++;
 
-      // Edge: from → affects → to (impact propagation)
+      // Edge: from → depends_on → to (impact propagation)
       await addEdge({
         sourceId: fromId,
         targetId: toId,
-        type: "affects",
+        type: "depends_on",
         weight: 0.8,
         metadata: { reason: "arch_flow", domain: params.domain },
       });

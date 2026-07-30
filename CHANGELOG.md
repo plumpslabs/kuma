@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.25] — 2026-07-30
+
+### 🚀 Knowledge Graph Optimization & Memory Improvements
+
+- **Smart `arch_flow` (Domain-Only Core Flows)**: Automatically filters out non-core logic files (`*.tsx`, `*.jsx`, `*Controller.js`, `*Schema.js`) and limits flow recording to max 5 core logic files per flow, preventing node explosion.
+- **Idempotent `research_save`**: Upserts `file::*` and `research::*` nodes in SQLite without generating duplicate nodes or orphan groups.
+- **Instant MCP `delete_node` Disk Persistence**: Directly removes nodes and connected edges from SQLite database with immediate `flushDb`, eliminating in-memory RAM sync lag.
+- **New `kuma_memory graph_health` Action**: Added graph health monitoring tool to inspect total nodes, edges, orphan count, duplicate groups, and actionable recommendations.
+- **Rules & Guide Updates**: Updated `.kuma/init.md` and SKILL templates with complete flow tracing instructions and smart recording decision trees.
+
 ## [2.3.24] — 2026-07-29
 
 ### ⚡ Kuma Lean Mode & Studio Visual Overhaul

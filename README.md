@@ -142,6 +142,8 @@ Kuma consolidates everything into **3 coarse-grained tools**. Each action trigge
 | `arch_flow` | Layer 2 — Architecture flow mapping (Issue #17). |
 | `gotcha` | Layer 3 — Known gotchas & anti-regression shield (Issue #17/#21). |
 | `layers` | Show all 3 memory layers summary. |
+| `delete_node` | Delete specific node or record from disk & RAM immediately. |
+| `graph_health` | Monitor knowledge graph health, orphan nodes, and duplicate groups. |
 
 ### 🛡️ `kuma_safety` — Safety & Policy
 

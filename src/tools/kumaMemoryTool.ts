@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature" | "graph_health";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -17,6 +17,11 @@ const MEMORY_ALIASES: Record<string, string> = {
   "read": "session",
   "fetch": "session",
   "current": "session",
+  // Graph health synonyms
+  "graph_health": "graph_health",
+  "graph-health": "graph_health",
+  "health-check": "graph_health",
+  "graph-status": "graph_health",
   // Decision synonyms
   "decision": "decision",
   "adr": "decision",
@@ -48,7 +53,6 @@ const MEMORY_ALIASES: Record<string, string> = {
   "task": "todo",
   "todos": "todo",
   "tasks": "todo",
-  // Context notes synonyms
   "context": "context",
   "notes": "context",
   "note": "context",
@@ -178,6 +182,7 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "add_node": return handleAddNode(params);
     case "feature": return handleFeature(params);
     case "delete_node": return handleDeleteNode(params);
+    case "graph_health": return handleGraphHealth(params);
     case "clear": {
       const { clearGraph } = await import("../engine/kumaGraph.js");
       await clearGraph();
@@ -231,19 +236,33 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
   });
   await saveResearchCache(scope, record, undefined, params.confidence);
 
-  // 🔧 Also create a file + research node so search can find it
-  // research_save populates both search cache AND knowledge graph nodes.
-  // Agent calls `search` to retrieve — not `visualize`.
+  // Idempotent graph node update: avoid creating duplicate file & research nodes
   try {
-    const { upsertNode, nodeId } = await import("../engine/kumaGraph.js");
-    await upsertNode({ id: nodeId("file", scope), type: "file", name: scope });
-    // Also record a research node for the research scope so it shows in search
-    await upsertNode({
-      id: `research::${scope}`,
-      type: "research",
-      name: `research:${scope}`,
-      metadata: { confidence: params.confidence || 0.8 },
-    });
+    const { getDb, flushDb } = await import("../engine/kumaDb.js");
+    const db = await getDb();
+    const fileId = `file::${scope}`;
+    const researchId = `research::${scope}`;
+    const now = Math.floor(Date.now() / 1000);
+
+    // Upsert file node
+    db.run(`
+      INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
+      VALUES (?, 'file', ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        metadata = json_patch(COALESCE(nodes.metadata, '{}'), excluded.metadata),
+        updated_at = excluded.updated_at
+    `, [fileId, scope, scope, JSON.stringify({ findings: [params.content || ""], confidence: params.confidence || 0.8 }), now]);
+
+    // Upsert research node
+    db.run(`
+      INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
+      VALUES (?, 'research', ?, null, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        metadata = json_patch(COALESCE(nodes.metadata, '{}'), excluded.metadata),
+        updated_at = excluded.updated_at
+    `, [researchId, `research:${scope}`, JSON.stringify({ confidence: params.confidence || 0.8, last_findings: params.content || "" }), now]);
+
+    flushDb(db);
   } catch {}
 
   try {
@@ -530,12 +549,22 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
         return `❌ **arch_flow format error:** hops must use → separator.\n\n❌ Wrong: hops: file1.js, file2.js\n❌ Wrong: hops: file1.js\\nfile2.js\n✅ Correct: domain: <name> | hops: file1.js → file2.js → file3.js`;
       }
 
-      const hops = hopsStr ? hopsStr.split("→").map(h => h.trim()).filter(Boolean).map((h, i, arr) => ({
+      // Filter & limit hops: core logic files only (max 5)
+      const rawHops = hopsStr ? hopsStr.split("→").map(h => h.trim()).filter(Boolean) : [];
+      const coreHops = rawHops.filter(file => {
+        if (file.endsWith(".tsx") || file.endsWith(".jsx")) return false;
+        if (file.includes("Controller")) return false;
+        if (file.includes("Schema") || file.includes("RequestSchema")) return false;
+        return true;
+      });
+      const limitedHopsList = coreHops.slice(0, 5);
+
+      const hops = limitedHopsList.map((h, i, arr) => ({
         from: i === 0 ? domain : arr[i - 1],
         to: h,
         relation: "flows",
         description: h,
-      })) : [];
+      }));
 
       if (hops.length === 0) {
         return `❌ **arch_flow format error:** no hops found after → separator.\n\n✅ Correct: domain: <name> | hops: file1.js → file2.js`;
@@ -658,12 +687,13 @@ async function handleDeleteNode(params: MemoryParams): Promise<string> {
   }
 
   // Pattern 2: target is a graph node ID (e.g. "function::sendMessage" or "feature_domain::omnichannel-conversation-flow")
-  if (params.target) {
+  if (params.target || params.scope) {
     const { flushDb } = await import("../engine/kumaDb.js");
 
-    if (params.target.includes("::") || params.target.includes(":") || params.target.includes("-")) {
+    const targetStr = params.target || "";
+    const targetId = params.scope && !targetStr.includes("::") ? `${targetStr}::${params.scope}` : targetStr;
+    if (targetId && (targetId.includes("::") || targetId.includes(":") || targetId.includes("-") || isNaN(parseInt(targetId, 10)))) {
       try {
-        const targetId = params.target;
         const domainName = targetId.startsWith("feature_domain::") ? targetId.replace("feature_domain::", "") : targetId;
 
         // Cascade delete if deleting a feature_domain
@@ -680,18 +710,20 @@ async function handleDeleteNode(params: MemoryParams): Promise<string> {
         }
 
         flushDb(db);
-        return `🗑️ **Node & relations deleted instantly from RAM and Disk:** ${params.target}`;
+        return `🗑️ **Node & relations deleted instantly from RAM and Disk:** ${targetId}`;
       } catch (err) {
         return `❌ Failed to delete node: ${err}`;
       }
     }
 
     // Try as numeric ID
-    const id = parseInt(params.target, 10);
-    if (!isNaN(id)) {
-      db.run("DELETE FROM nodes WHERE rowid = ?", [id]);
-      flushDb(db);
-      return `🗑️ **Node #${id} deleted.**`;
+    if (targetId) {
+      const id = parseInt(targetId, 10);
+      if (!isNaN(id)) {
+        db.run("DELETE FROM nodes WHERE rowid = ?", [id]);
+        flushDb(db);
+        return `🗑️ **Node #${id} deleted.**`;
+      }
     }
   }
 
@@ -767,6 +799,81 @@ async function handleFeature(params: MemoryParams): Promise<string> {
   sessionMemory.recordMemoryAction("research_save");
 
   return `✅ **Feature "${params.title}" recorded** — ${result.nodeCount} node(s), ${result.edgeCount} edge(s)\n⭐ Level: feature\n📁 Files: ${files.length}\n🏷️ Tags: ${tags.length}\n⚠️ Risk: ${risk}`;
+}
+
+// ============================================================
+// GRAPH HEALTH — Monitor Graph Noise, Orphans & Duplicates
+// ============================================================
+
+async function handleGraphHealth(_params: MemoryParams): Promise<string> {
+  const { getDb } = await import("../engine/kumaDb.js");
+  const db = await getDb();
+
+  const getRows = (sql: string) => {
+    try {
+      const res = db.exec(sql);
+      if (!res.length) return [];
+      const cols = res[0].columns;
+      return res[0].values.map(val => {
+        const obj: Record<string, any> = {};
+        cols.forEach((c, idx) => obj[c] = val[idx]);
+        return obj;
+      });
+    } catch { return []; }
+  };
+
+  const totalNodesRow = getRows("SELECT COUNT(*) as count FROM nodes")[0];
+  const totalNodes = totalNodesRow ? totalNodesRow.count : 0;
+
+  const totalEdgesRow = getRows("SELECT COUNT(*) as count FROM edges")[0];
+  const totalEdges = totalEdgesRow ? totalEdgesRow.count : 0;
+
+  const orphanRows = getRows(`
+    SELECT COUNT(*) as count FROM nodes
+    WHERE id NOT IN (SELECT DISTINCT source_id FROM edges UNION SELECT DISTINCT target_id FROM edges)
+  `);
+  const totalOrphans = orphanRows[0] ? orphanRows[0].count : 0;
+
+  const duplicateGroups = getRows(`
+    SELECT name, COUNT(*) as count FROM nodes GROUP BY name HAVING count > 1
+  `);
+
+  const typeStats = getRows(`
+    SELECT type, COUNT(*) as count FROM nodes GROUP BY type ORDER BY count DESC
+  `);
+
+  const lines = [
+    "📊 **Kuma Knowledge Graph Health Report**",
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    `• **Total Nodes:** ${totalNodes}`,
+    `• **Total Edges:** ${totalEdges}`,
+    `• **Orphan Nodes:** ${totalOrphans}`,
+    `• **Duplicate Groups:** ${duplicateGroups.length}`,
+    "",
+    "**Nodes by Type:**",
+    ...typeStats.map(s => `  - \`${s.type}\`: ${s.count}`),
+    "",
+    "**Recommendations:**"
+  ];
+
+  const recs: string[] = [];
+  const crossLinks = typeStats.find(s => s.type === "cross_service_link");
+  if (crossLinks && crossLinks.count > 50) {
+    recs.push("⚠️ Too many `cross_service_link` nodes. Run cleanup or delete obsolete feature domains.");
+  }
+  if (duplicateGroups.length > 0) {
+    recs.push(`⚠️ ${duplicateGroups.length} duplicate node groups detected. Delete duplicates using \`delete_node\`.`);
+  }
+  if (totalOrphans > 10) {
+    recs.push(`⚠️ ${totalOrphans} orphan nodes found (0 edges). Consider running \`heal\` or \`clear\`.`);
+  }
+
+  if (recs.length === 0) {
+    recs.push("✅ Graph health is optimal! Low noise, good signal-to-noise ratio.");
+  }
+
+  lines.push(...recs.map(r => `  ${r}`));
+  return lines.join("\n");
 }
 
 // ============================================================
