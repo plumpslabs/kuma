@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.28] — 2026-07-30
+
+### 🚀 Overall Maintenance & Synchronization Release
+
+- **Version Bump & Full Sync**: Incremented release version to `2.3.28` with complete verification across typechecks, tests, and client templates.
+- **Enhanced Graph Integrity & Anti-Duplication**: Finalized zero-orphan node auto-relational linking and idempotent node creation for all agent platforms.
+
 ## [2.3.27] — 2026-07-30
 
 ### 🛡️ Relational Graph Integrity & Idempotency Enforcement

@@ -173,12 +173,12 @@ Not all recordings are equal. Kuma categorizes actions by their long-term impact
 
 | Tier | Actions | Impact | Why |
 |------|---------|--------|-----|
-| 🔥 **Exponential** | `arch_flow` + `gotcha` | **Each record saves 5-10 files next session** | Architecture flows multiply: 10 flow hops = agent skips 50-100 files. Gotchas prevent re-discovery of bugs. |
+| 🔥 **Exponential** | `arch_flow` + `gotcha` | **High signal architecture & bug shield** | Complete architecture flows (max 5 core files) save massive file-reading next session. Gotchas prevent bug re-discovery. |
 | 🟡 **Linear** | `decision` + `research_save` | **Useful but not multiplicative** | Decisions preserve rationale context. Research saves create searchable cache. |
 | 🟢 **SKIP** | Function/class/component nodes | **Not worth MCP call — grep is faster** | Use `grep funcName(`, `grep class ClassName`, `glob **/*Component*` instead |
 
 **Rule of thumb:**
-- **ALWAYS record** `arch_flow` + `gotcha` inline — they're the highest-value actions
+- **Record `arch_flow`** after tracing a complete flow (max 5 core files) & **`gotcha`** inline when bugs are found
 - **Record** `decision` + `research_save` when relevant
 - **NEVER record** function/class/component nodes via MCP — native grep is faster
 - Let the auto-scanner handle structural nodes during research step 3
