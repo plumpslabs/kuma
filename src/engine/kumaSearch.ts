@@ -420,6 +420,105 @@ export function formatHybridResults(
   return lines.join("\n");
 }
 
+// ============================================================
+// GRAPH CONNECTIVITY SCORING (Pilar 3)
+// ============================================================
+// Enhances hybrid search by factoring in graph edge weights.
+// Nodes with more inbound/outbound edges get a connectivity boost.
+// ============================================================
+
+interface GraphConnectivity {
+  nodeEdges: Map<string, number>; // node id -> edge count
+  totalEdges: number;
+}
+
+let _connectivityCache: GraphConnectivity | null = null;
+const CONNECTIVITY_CACHE_TTL = 300_000; // 5 minutes
+
+/**
+ * Build graph connectivity index for scoring.
+ */
+export async function buildGraphConnectivity(): Promise<GraphConnectivity> {
+  if (_connectivityCache) return _connectivityCache;
+
+  const nodeEdges = new Map<string, number>();
+  let totalEdges = 0;
+
+  try {
+    const db = await getDb();
+    const stmt = db.prepare("SELECT source_id, target_id FROM edges LIMIT 2000");
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as Record<string, unknown>;
+      const src = (row.source_id as string) || "";
+      const tgt = (row.target_id as string) || "";
+      if (src) nodeEdges.set(src, (nodeEdges.get(src) || 0) + 1);
+      if (tgt) nodeEdges.set(tgt, (nodeEdges.get(tgt) || 0) + 1);
+      totalEdges++;
+    }
+    stmt.free();
+  } catch {}
+
+  _connectivityCache = { nodeEdges, totalEdges };
+  setTimeout(() => { _connectivityCache = null; }, CONNECTIVITY_CACHE_TTL);
+  return _connectivityCache;
+}
+
+/**
+ * Get connectivity score for a node (0-1 normalized).
+ */
+function connectivityScore(nodeId: string, connectivity: GraphConnectivity): number {
+  if (connectivity.totalEdges === 0) return 0;
+  const edges = connectivity.nodeEdges.get(nodeId) || 0;
+  // Logarithmic scaling to prevent highly-connected nodes from dominating
+  return Math.min(1, Math.log(1 + edges) / Math.log(1 + 20));
+}
+
+/**
+ * Clear connectivity cache.
+ */
+export function clearConnectivityCache(): void {
+  _connectivityCache = null;
+}
+
+// ============================================================
+// ENHANCED HYBRID SEARCH with Graph Connectivity (Pilar 3)
+// ============================================================
+
+/**
+ * Enhanced hybrid search that combines:
+ * 1. TF-IDF vector similarity (semantic)
+ * 2. Keyword matching (lexical)
+ * 3. Graph connectivity scoring (structural)
+ */
+export async function enhancedHybridSearch(
+  query: string,
+  limit: number = 10,
+): Promise<HybridSearchResult[]> {
+  const basicResults = await hybridSearch(query, limit * 2);
+  const connectivity = await buildGraphConnectivity();
+
+  // Apply graph connectivity boost
+  for (const result of basicResults) {
+    // Find matching node in graph
+    try {
+      const db = await getDb();
+      const stmt = db.prepare("SELECT id FROM nodes WHERE name LIKE ? LIMIT 1");
+      stmt.bind([`%${result.source}%`]);
+      if (stmt.step()) {
+        const row = stmt.getAsObject() as Record<string, unknown>;
+        const nodeId = (row.id as string) || "";
+        const connScore = connectivityScore(nodeId, connectivity);
+        // Blend: 60% original score + 40% connectivity
+        result.score = Math.min(100, Math.round(result.score * 0.6 + connScore * 40));
+      }
+      stmt.free();
+    } catch {}
+  }
+
+  return basicResults.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
 export function clearSearchCache(): void {
   _vectorCache = null;
+  clearConnectivityCache();
 }

@@ -2,6 +2,37 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { handleContext, handleMemory, handleSafety } from "./engine/kumaRouter.js";
+import { ensureInitialized } from "./engine/kumaAutoInit.js";
+
+// ============================================================
+// NAMESPACE NORMALIZER — Pilar 2
+// ============================================================
+// Resolves tool name aliases so MCP clients that add prefixes
+// (e.g., kuma_kuma_context) still work seamlessly.
+// ============================================================
+
+const TOOL_ALIASES: Record<string, string> = {
+  // Double-prefix aliases (client adds server name prefix)
+  "kuma_kuma_context": "kuma_context",
+  "kuma_kuma_memory": "kuma_memory",
+  "kuma_kuma_safety": "kuma_safety",
+  // Single-prefix variants
+  "kuma_context": "kuma_context",
+  "kuma_memory": "kuma_memory",
+  "kuma_safety": "kuma_safety",
+  // Short aliases (no prefix)
+  "context": "kuma_context",
+  "memory": "kuma_memory",
+  "safety": "kuma_safety",
+};
+
+/**
+ * Resolve a tool name through the alias map.
+ * Returns the canonical tool name, or the original if no alias found.
+ */
+export function resolveToolName(name: string): string {
+  return TOOL_ALIASES[name] || name;
+}
 
 export function registerAllTools(server: McpServer): void {
   // ============================================================
@@ -21,6 +52,9 @@ export function registerAllTools(server: McpServer): void {
     },
     async (params) => {
       try {
+        // Pilar 1: Auto-init on first call
+        await ensureInitialized();
+
         const text = await handleContext({
           action: params.action,
           scope: params.scope,
@@ -81,6 +115,9 @@ export function registerAllTools(server: McpServer): void {
     },
     async (params) => {
       try {
+        // Pilar 1: Auto-init on first call
+        await ensureInitialized();
+
         const text = await handleMemory({
           action: params.action,
           scope: params.scope,
@@ -144,6 +181,9 @@ export function registerAllTools(server: McpServer): void {
     },
     async (params) => {
       try {
+        // Pilar 1: Auto-init on first call
+        await ensureInitialized();
+
         const text = await handleSafety({
           action: params.action,
           guardGoal: params.guardGoal,
@@ -172,4 +212,6 @@ export function registerAllTools(server: McpServer): void {
   );
 
   console.error("[Manifest] Registered 3 V3 coarse-grained tools (kuma_context, kuma_memory, kuma_safety).");
+  console.error("[Manifest] Pilar 1: Auto-init hooks installed on all tools.");
+  console.error("[Manifest] Pilar 2: Namespace aliases active (kuma_kuma_* → kuma_*, context → kuma_context).");
 }

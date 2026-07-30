@@ -2,11 +2,12 @@ import { sessionMemory } from "../engine/sessionMemory.js";
 import { saveResearchCache, getChanges, addTodo, listTodos, updateTodoStatus, addContextNote, listContextNotes, saveBenchmark, getBenchmarkDiff, recordDecisionLog, listDecisionLog, updateDecisionStatus } from "../engine/kumaDb.js";
 import { autoHeal, detectStaleNodes, formatHealReport } from "../engine/kumaSelfHeal.js";
 import { recordDecision, formatDecisionTemplate } from "../engine/kumaMemory.js";
+import { isNodeTypeAllowed, getNoiseFilterPolicy } from "../engine/kumaNoiseFilter.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature" | "graph_health";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature" | "graph_health" | "harvest" | "noise_policy";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -114,6 +115,17 @@ const MEMORY_ALIASES: Record<string, string> = {
   "wipe": "clear",
   "reset": "clear",
   "purge-all": "clear",
+  // Harvest synonyms (Pilar 5)
+  "harvest": "harvest",
+  "git-harvest": "harvest",
+  "auto-harvest": "harvest",
+  "git": "harvest",
+  // Noise policy synonyms (Pilar 4)
+  "noise_policy": "noise_policy",
+  "noise-policy": "noise_policy",
+  "noise": "noise_policy",
+  "anti-ast": "noise_policy",
+  "filter": "noise_policy",
 };
 
 interface MemoryParams {
@@ -188,6 +200,8 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
       await clearGraph();
       return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, and gotchas have been wiped from disk and memory.";
     }
+    case "harvest": return handleHarvest(params);
+    case "noise_policy": return getNoiseFilterPolicy();
     default: return `Unknown action "${action}".`;
   }
 }
@@ -385,11 +399,11 @@ async function handleSearch(params: MemoryParams): Promise<string> {
     }
   } catch {}
 
-  // Hybrid semantic search
+  // Hybrid semantic search with graph connectivity (Pilar 3)
   let hybridResults = "";
   try {
-    const { hybridSearch, formatHybridResults } = await import("../engine/kumaSearch.js");
-    const semanticResults = await hybridSearch(query, 8);
+    const { enhancedHybridSearch, formatHybridResults } = await import("../engine/kumaSearch.js");
+    const semanticResults = await enhancedHybridSearch(query, 8);
     if (semanticResults.length > 0) {
       hybridResults = "\n" + formatHybridResults(query, semanticResults);
     }
@@ -742,22 +756,26 @@ async function handleDeleteNode(params: MemoryParams): Promise<string> {
 // ============================================================
 
 async function handleAddNode(params: MemoryParams): Promise<string> {
-  const type = params.title as "function" | "class" | "component" | "file" | "api_route" | "test";
+  const type = params.title as string;
   const name = params.content;
   const filePath = params.scope;
 
   if (!type || !name) {
-    return "⚠️ `title` (node type: function/class/component/file/api_route/test) and `content` (node name) required.\nExample: kuma_memory({ action: 'add_node', title: 'function', content: 'sendMessage', scope: 'ChatService.ts' })";
+    return "⚠️ `title` (node type) and `content` (node name) required.\n\n✅ Allowed types: arch_flow, gotcha, decision, cross_service_link, feature_domain, file, research\n❌ Rejected: function, class, component, variable, method\n\nExample: kuma_memory({ action: 'arch_flow', content: 'domain: AuthFlow | hops: auth.ts → middleware.ts' })";
   }
 
-  const validTypes = ["function", "class", "component", "file", "api_route", "test"];
-  if (!validTypes.includes(type)) {
-    return `⚠️ Invalid type "${type}". Valid types: ${validTypes.join(", ")}`;
+  // Pilar 4: Noise Filter — reject AST-level node types
+  if (!isNodeTypeAllowed(type)) {
+    return [
+      `❌ **Noise Filter:** Type "${type}" is not allowed.`,
+      "",
+      getNoiseFilterPolicy(),
+    ].join("\n");
   }
 
   try {
     const { upsertNode, nodeId, addEdge } = await import("../engine/kumaGraph.js");
-    const nodeIdStr = filePath ? `${type}::${filePath}::${name}` : nodeId(type, name);
+    const nodeIdStr = filePath ? `${type}::${filePath}::${name}` : nodeId(type as "arch_flow" | "gotcha" | "decision" | "cross_service_link" | "feature_domain" | "file" | "research", name);
     
     await upsertNode({
       id: nodeIdStr,
@@ -890,4 +908,22 @@ async function handleGraphHealth(_params: MemoryParams): Promise<string> {
 async function handleLayersSummary(_params: MemoryParams): Promise<string> {
   const { getLayersSummary } = await import("../engine/domainRules.js");
   return getLayersSummary();
+}
+
+// ============================================================
+// HARVEST — Git Auto-Harvesting (Pilar 5)
+// ============================================================
+
+async function handleHarvest(params: MemoryParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_memory_harvest", { scope: params.scope });
+  const { harvestGitHistory, installGitHook } = await import("../engine/kumaGitHarvester.js");
+
+  // If scope is "install", just install the hook
+  if (params.scope === "install") {
+    return installGitHook();
+  }
+
+  const count = params.limit || 10;
+  const dryRun = params.status === "dry-run" || params.status === "preview";
+  return await harvestGitHistory({ commitCount: count, dryRun });
 }

@@ -11,7 +11,7 @@ import { healOnQuery } from "./kumaSelfHeal.js";
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
   | "feature_domain" | "workflow" | "cross_service_link"
   | "gotcha" | "decision" | "research"
-  | "feature";
+  | "feature" | "arch_flow";
 export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes"
   | "flows_through" | "triggers" | "syncs_with"
   | "affects";

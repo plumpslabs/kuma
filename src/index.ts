@@ -182,7 +182,14 @@ async function main(): Promise<void> {
   }
 
   if (args[0] === "--hook") {
-    // Silence: just exit immediately — hook is a no-op for now
+    // Git hook mode: harvest recent commit into knowledge graph
+    const hookType = args[1] || "post-commit";
+    if (hookType === "post-commit") {
+      try {
+        const { harvestGitHistory } = await import("./engine/kumaGitHarvester.js");
+        await harvestGitHistory({ commitCount: 1 });
+      } catch {}
+    }
     process.exit(0);
   }
 
@@ -418,31 +425,11 @@ async function main(): Promise<void> {
 
       // 5. ISSUE #16: Auto-capture — install git hooks for passive graph updates
       try {
-        const fs = await import("node:fs");
-        const path = await import("node:path");
-        const hooksDir = path.resolve(process.cwd(), ".kuma", "hooks");
-        if (!fs.existsSync(hooksDir)) {
-          fs.mkdirSync(hooksDir, { recursive: true });
-          // Create a post-commit hook template
-          const hookContent = `#!/bin/bash
-# Kuma auto-capture hook (post-commit)
-# Auto-updates knowledge graph after git commits
-if command -v npx &> /dev/null; then
-  npx -y @plumpslabs/kuma --hook post-commit 2>/dev/null || true
-fi
-`;
-          const gitHooksDir = path.resolve(process.cwd(), ".git", "hooks");
-          if (fs.existsSync(gitHooksDir)) {
-            const postCommitPath = path.join(gitHooksDir, "post-commit");
-            if (!fs.existsSync(postCommitPath)) {
-              fs.writeFileSync(postCommitPath, hookContent, "utf-8");
-              try { fs.chmodSync(postCommitPath, 0o755); } catch {}
-              console.error(`[${SERVER_NAME}] ✅ Created .git/hooks/post-commit for auto-capture`);
-            }
-          }
-        }
+        const { installGitHook } = await import("./engine/kumaGitHarvester.js");
+        const hookResult = installGitHook();
+        console.error(`[${SERVER_NAME}] ${hookResult}`);
       } catch (err) {
-        console.error(`[${SERVER_NAME}] ⚠️ Auto-capture hook setup: ${err}`);
+        console.error(`[${SERVER_NAME}] ⚠️ Git hook setup: ${err}`);
       }
 
       // 6. ISSUE #16: Pre-warm search vector cache
@@ -454,6 +441,15 @@ fi
         }
       } catch (err) {
         console.error(`[${SERVER_NAME}] ⚠️ Search vector cache: ${err}`);
+      }
+
+      // 7. Pre-warm graph connectivity (Pilar 3)
+      try {
+        const { buildGraphConnectivity } = await import("./engine/kumaSearch.js");
+        await buildGraphConnectivity();
+        console.error(`[${SERVER_NAME}] ✅ Graph connectivity index built`);
+      } catch (err) {
+        console.error(`[${SERVER_NAME}] ⚠️ Graph connectivity: ${err}`);
       }
 
       console.error(`[${SERVER_NAME}] ✅ Cold start bootstrap complete`);
@@ -484,13 +480,19 @@ fi
     `[${SERVER_NAME}] Session started: ${new Date().toISOString()}`,
   );
   console.error(
-    `[${SERVER_NAME}] Kuma V3 — Safety-first context & orchestration engine`,
+    `[${SERVER_NAME}] Kuma v2.0 — Zero-Overhead Autonomous Brain Engine`,
   );
   console.error(
-    `[${SERVER_NAME}] 🧠 Call kuma_context({ action: "init" }) at session start`,
+    `[${SERVER_NAME}] ⚡ Auto-init: no manual init needed (Pilar 1)`,
   );
   console.error(
-    `[${SERVER_NAME}] 🔬 Call kuma_context({ action: "research", scope: "..." }) before editing`,
+    `[${SERVER_NAME}] 📛 Namespace normalized: kuma_kuma_* → kuma_* (Pilar 2)`,
+  );
+  console.error(
+    `[${SERVER_NAME}] 🧹 Noise filter: AST node types rejected (Pilar 4)`,
+  );
+  console.error(
+    `[${SERVER_NAME}] 🐙 Git auto-harvester installed (Pilar 5)`,
   );
   console.error(
     `[${SERVER_NAME}] 🛡️ 3 coarse-grained tools: kuma_context, kuma_memory, kuma_safety`,
