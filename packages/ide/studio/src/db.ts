@@ -56,13 +56,13 @@ export function getDashboardData() {
       )
     `),
     nodes: queryJson(
-      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path,'metadata',COALESCE(metadata,'{}'))) FROM nodes ORDER BY updated_at DESC`
+      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path,'severity',COALESCE(severity,'medium'),'confidence',COALESCE(confidence,0.8),'metadata',COALESCE(metadata,'{}'))) FROM nodes ORDER BY updated_at DESC`
     ),
     edges: queryJson(
       `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type,'weight',weight)) FROM edges`
     ),
     gotchas: queryJson(
-      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''))) FROM known_gotchas ORDER BY severity DESC`
+      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'created_at',created_at)) FROM known_gotchas ORDER BY severity DESC`
     ),
     features: queryJson(
       `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'))) FROM nodes WHERE type = 'feature' ORDER BY name`
@@ -76,10 +76,15 @@ export function getDashboardData() {
 /** Get full details for a single node (for modal) */
 export function getNodeDetail(nodeId: string) {
   const escaped = nodeId.replace(/'/g, "''");
-  const shortName = nodeId.split('::').pop()?.replace(/'/g, "''") || '';
+  const parts = nodeId.split('::');
+  const shortName = parts.pop()?.replace(/'/g, "''") || '';
+  // For gotcha nodes (gotcha::filePath::desc), extract the file path (second part)
+  const filePath = parts[0] === 'gotcha' && parts.length >= 2 ? parts[1]?.replace(/'/g, "''") : '';
+  // For research nodes (research::scope), extract the scope
+  const scope = parts[0] === 'research' && parts.length >= 2 ? parts.slice(1).join('::').replace(/'/g, "''") : '';
 
   const node = queryJson<any>(
-    `SELECT json_object('id',id,'name',name,'type',type,'file_path',file_path,'metadata',COALESCE(metadata,'{}'),'updated_at',updated_at) FROM nodes WHERE id = '${escaped}'`
+    `SELECT json_object('id',id,'name',name,'type',type,'file_path',COALESCE(file_path,''),'metadata',COALESCE(metadata,'{}'),'severity',COALESCE(severity,'medium'),'confidence',COALESCE(confidence,0.8),'last_verified_at',last_verified_at,'created_at',created_at,'updated_at',updated_at) FROM nodes WHERE id = '${escaped}'`
   );
 
   const nodeObj = Array.isArray(node) ? node[0] : node;
@@ -95,8 +100,12 @@ export function getNodeDetail(nodeId: string) {
   );
   const incoming = rawIn ? rawIn.split('\n').filter(Boolean).map(r => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean) : [];
 
+  // Match gotchas by file path (for gotcha nodes) or by short name — also return added_by and created_at
+  const gotchaFilter = filePath
+    ? `file_path = '${filePath}'`
+    : `file_path = '${escaped}' OR file_path LIKE '%${shortName}%'`;
   const rawGotcha = query(
-    `SELECT json_object('id',id,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity) FROM known_gotchas WHERE file_path = '${escaped}' OR file_path LIKE '%${shortName}%'`
+    `SELECT json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'created_at',created_at) FROM known_gotchas WHERE ${gotchaFilter}`
   );
   const gotchas = rawGotcha ? rawGotcha.split('\n').filter(Boolean).map(r => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean) : [];
 

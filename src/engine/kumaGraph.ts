@@ -5,16 +5,16 @@
 // Stored in SQLite. Supports impact analysis, flow navigation,
 // research queries, and confidence-weighted traversal.
 
-import { getDb, saveDb, flushDb } from "./kumaDb.js";
+import { getDb, saveDb, flushDb, generateNodeId } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
   | "feature_domain" | "workflow" | "cross_service_link"
   | "gotcha" | "decision" | "research"
-  | "feature" | "arch_flow";
+  | "feature" | "arch_flow" | "flow_explanation";
 export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes"
   | "flows_through" | "triggers" | "syncs_with"
-  | "affects";
+  | "affects" | "explains";
 
 interface GraphNode {
   id: string;
@@ -42,7 +42,12 @@ interface GraphQuery {
  * Generate a stable node ID from type and name.
  */
 export function nodeId(type: NodeType, name: string): string {
-  return `${type}::${name}`;
+  // File nodes use deterministic ID (same file = same node, no duplicates)
+  if (type === "file") {
+    return `file::${name}`;
+  }
+  // All other types use UUID (no mutable-ID duplicates)
+  return generateNodeId(type, name);
 }
 
 // ============================================================
@@ -132,17 +137,21 @@ export async function upsertNode(node: GraphNode): Promise<void> {
     const db = await getDb();
     const id = node.id || nodeId(node.type, node.name);
     const metadata = JSON.stringify(node.metadata ?? {});
+    const severity = (node.metadata as any)?.severity || "medium";
+    const confidence = (node.metadata as any)?.confidence || 0.8;
 
     db.run(`
-      INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
-      VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+      INSERT INTO nodes (id, type, name, file_path, metadata, severity, confidence, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         name = excluded.name,
         file_path = COALESCE(excluded.file_path, nodes.file_path),
         metadata = excluded.metadata,
+        severity = excluded.severity,
+        confidence = excluded.confidence,
         updated_at = strftime('%s','now')
-    `, [id, node.type, node.name, node.filePath || null, metadata]);
+    `, [id, node.type, node.name, node.filePath || null, metadata, severity, confidence]);
 
     // Update FTS index
     try {
@@ -1089,14 +1098,7 @@ export async function searchGraph(query: string, limit: number = 20): Promise<st
       stmt.free();
 
       if (results.length > 0) {
-        const lines: string[] = [
-          `🔍 **Graph Search** — ${results.length} result(s) for "${query}"`,
-          "",
-        ];
-        for (const r of results) {
-          lines.push(`  • **${r.name}** (${r.type})${r.file_path ? ` — ${r.file_path}` : ""}`);
-        }
-        return lines.join("\n");
+        return formatSearchResults(results, query, db);
       }
     } catch {
       // FTS might not be available, fall through to LIKE query
@@ -1121,18 +1123,80 @@ export async function searchGraph(query: string, limit: number = 20): Promise<st
       return await codebaseSearchFallback(query, limit);
     }
 
-    const lines: string[] = [
-      `🔍 **Graph Search** — ${results.length} result(s) for "${query}"`,
-      "",
-    ];
-    for (const r of results) {
-      lines.push(`  • **${r.name}** (${r.type})${r.file_path ? ` — ${r.file_path}` : ""}`);
-    }
-
-    return lines.join("\n");
+    return formatSearchResults(results, query, db);
   } catch (err) {
     return `Error searching graph: ${err}`;
   }
+}
+
+/**
+ * Format search results with subgraph expansion + flow_explanation for top nodes.
+ */
+function formatSearchResults(results: Array<Record<string, unknown>>, query: string, db: Awaited<ReturnType<typeof getDb>>): string {
+  const lines: string[] = [
+    `🔍 **Graph Search** — ${results.length} result(s) for "${query}"`,
+    "",
+  ];
+
+  // Top N results (limit to 10 for readability)
+  const topResults = results.slice(0, 10);
+  for (const r of topResults) {
+    const nodeType = r.type as string;
+    const icon = nodeType === "gotcha" ? "⚠️" : nodeType === "decision" ? "📌" : nodeType === "arch_flow" ? "🏛️" : nodeType === "flow_explanation" ? "📝" : nodeType === "research" ? "🔬" : "📄";
+    lines.push(`${icon} **${r.name}** (${r.type})${r.file_path ? ` — ${r.file_path}` : ""}`);
+
+    // Subgraph expansion: get connected nodes (1 hop out)
+    try {
+      const stmtEdges = db.prepare(`
+        SELECT n2.id, n2.type, n2.name, e.type as edge_type
+        FROM edges e
+        JOIN nodes n2 ON n2.id = e.target_id
+        WHERE e.source_id = ?
+        LIMIT 5
+      `);
+      stmtEdges.bind([r.id]);
+      const connected: Array<Record<string, unknown>> = [];
+      while (stmtEdges.step()) {
+        connected.push(stmtEdges.getAsObject());
+      }
+      stmtEdges.free();
+
+      if (connected.length > 0) {
+        lines.push(`  ↳ connected to: ${connected.map(c => `${c.name} (${c.type})`).join(", ")}`);
+      }
+    } catch {}
+
+    // Flow explanation: if it's a feature_domain, find its flow_explanation node
+    if (nodeType === "feature_domain" || nodeType === "arch_flow") {
+      try {
+        const domainName = (r.name as string).replace("feature_domain::", "").replace("arch_flow::", "");
+        const stmtProse = db.prepare(`
+          SELECT metadata FROM nodes WHERE type = 'flow_explanation' AND name LIKE ?
+          LIMIT 1
+        `);
+        stmtProse.bind([`%${domainName}%`]);
+        if (stmtProse.step()) {
+          const metaRow = stmtProse.getAsObject();
+          stmtProse.free();
+          let meta: Record<string, unknown> = {};
+          try { meta = JSON.parse(metaRow.metadata as string); } catch {}
+          if (meta.prose) {
+            lines.push(`  📝 ${meta.prose}`);
+          }
+        } else {
+          stmtProse.free();
+        }
+      } catch {}
+    }
+
+    lines.push("");
+  }
+
+  if (results.length > 10) {
+    lines.push(`... and ${results.length - 10} more results`);
+  }
+
+  return lines.join("\n");
 }
 
 /**

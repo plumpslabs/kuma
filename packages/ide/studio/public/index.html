@@ -658,12 +658,48 @@ async function openNodeModal(nodeId) {
     html += '<div class="modal-section">';
     html += '<h3>Info</h3>';
     html += '<div class="modal-kv"><span class="key">Type</span><span class="val"><span style="color:var(--accent)">'+escapeHtml(n.type)+'</span></span></div>';
+    html += '<div class="modal-kv"><span class="key">ID</span><span class="val" style="font-family:monospace;font-size:10px;color:var(--muted)">'+escapeHtml(n.id)+'</span></div>';
     if (n.file_path) html += '<div class="modal-kv"><span class="key">Path</span><span class="val" style="color:var(--accent2)">'+escapeHtml(n.file_path)+'</span></div>';
-    if (meta.description) html += '<div class="modal-kv"><span class="key">Description</span><span class="val">'+escapeHtml(meta.description)+'</span></div>';
-    if (meta.tags && meta.tags.length) html += '<div class="modal-kv"><span class="key">Tags</span><span class="val">'+meta.tags.map(function(t){return '<span class="tag">'+escapeHtml(t)+'</span>';}).join(' ')+'</span></div>';
-    if (meta.risk) html += '<div class="modal-kv"><span class="key">Risk</span><span class="val" style="color:'+(meta.risk==='critical'?'var(--red)':meta.risk==='high'?'var(--orange)':meta.risk==='medium'?'var(--yellow)':'var(--green)')+'">'+escapeHtml(meta.risk)+'</span></div>';
+    if (n.severity) html += '<div class="modal-kv"><span class="key">Severity</span><span class="val" style="color:'+(n.severity==='critical'?'var(--red)':n.severity==='high'?'var(--orange)':n.severity==='medium'?'var(--yellow)':'var(--green)')+'">'+escapeHtml(n.severity)+'</span></div>';
+    if (n.confidence !== undefined && n.confidence !== null) html += '<div class="modal-kv"><span class="key">Confidence</span><span class="val" style="color:var(--accent)">'+escapeHtml(String(n.confidence))+'</span></div>';
+    if (n.last_verified_at) html += '<div class="modal-kv"><span class="key">Last Verified</span><span class="val">'+new Date(n.last_verified_at*1000).toLocaleString()+'</span></div>';
+    if (n.created_at) html += '<div class="modal-kv"><span class="key">Created</span><span class="val">'+new Date(n.created_at*1000).toLocaleString()+'</span></div>';
     if (n.updated_at) html += '<div class="modal-kv"><span class="key">Updated</span><span class="val">'+new Date(n.updated_at*1000).toLocaleString()+'</span></div>';
     html += '</div>';
+
+    // ALL metadata fields — render every key dynamically
+    var metaKeys = Object.keys(meta);
+    if (metaKeys.length > 0) {
+      html += '<div class="modal-section">';
+      html += '<h3>Metadata ('+metaKeys.length+' fields)</h3>';
+      metaKeys.forEach(function(key) {
+        var val = meta[key];
+        if (val === null || val === undefined || val === '') return;
+        var display = '';
+        var color = 'var(--text)';
+        if (Array.isArray(val)) {
+          if (val.length === 0) return;
+          display = val.join(' → ');
+          color = 'var(--accent2)';
+        } else if (typeof val === 'object') {
+          display = JSON.stringify(val, null, 2);
+          color = 'var(--muted)';
+        } else if (typeof val === 'number') {
+          display = String(val);
+          color = 'var(--accent)';
+        } else if (key === 'severity' || key === 'risk') {
+          display = String(val);
+          color = val === 'critical' ? 'var(--red)' : val === 'high' ? 'var(--orange)' : val === 'medium' ? 'var(--yellow)' : 'var(--green)';
+        } else if (key === 'stale') {
+          display = val === 1 ? 'YES — needs heal' : 'No';
+          color = val === 1 ? 'var(--red)' : 'var(--green)';
+        } else {
+          display = String(val);
+        }
+        html += '<div class="modal-kv"><span class="key">'+escapeHtml(key)+'</span><span class="val" style="color:'+color+'">'+escapeHtml(display)+'</span></div>';
+      });
+      html += '</div>';
+    }
 
     // Outgoing relations
     if (outgoing.length) {
@@ -704,8 +740,12 @@ async function openNodeModal(nodeId) {
         var got = typeof g === 'string' ? JSON.parse(g) : g;
         html += '<div class="gotcha-item" style="border-color:var(--'+(got.severity==='critical'?'red':got.severity==='high'?'orange':got.severity==='medium'?'yellow':'green')+')">';
         html += '<div class="desc">'+escapeHtml(got.description)+'</div>';
-        html += '<span class="sev-tag sev-'+got.severity+'">'+got.severity+'</span>';
-        html += '</div>';
+        html += '<div style="display:flex;gap:8px;align-items:center;margin-top:4px">';
+        html += '<span class="sev-tag sev-'+got.severity+'">'+escapeHtml(got.severity)+'</span>';
+        if (got.workaround) html += '<span style="color:var(--accent2);font-size:10px">Workaround: '+escapeHtml(got.workaround)+'</span>';
+        if (got.added_by) html += '<span style="color:var(--muted);font-size:10px">by: '+escapeHtml(got.added_by)+'</span>';
+        if (got.created_at) html += '<span style="color:var(--muted);font-size:10px">'+new Date(got.created_at*1000).toLocaleDateString()+'</span>';
+        html += '</div></div>';
       });
       html += '</div>';
     }

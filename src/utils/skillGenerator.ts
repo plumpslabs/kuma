@@ -7,40 +7,40 @@
 
 import type { AgentType } from "./agentDetector.js";
 
-// Shared bootstrap message — points to .kuma/init.md as single source of truth
+// Shared bootstrap message — lean mode as default (3 steps, not 10)
 const BOOTSTRAP = [
   "Kuma MCP tools are available (kuma_context, kuma_memory, kuma_safety).",
   "**Before coding, call `kuma_context({ action: \"init\" })`** to load project context.",
-  "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
   "",
-  "⚡ **ADAPTIVE WORKFLOW (Lean Mode by Default):**",
-  "  • **Lean Mode (Default, < 3 files):** `init` → edit/read → record (`decision`/`gotcha`/`feature` if needed)",
-  "  • **Standard Mode (3-10 files/unfamiliar):** `init` → `guard` → `research` → edit → `record` → `verify`",
-  "  • **Full Mode (> 10 files/refactor):** `init` → `guard` → `research` → `impact` → edit → `record` → `verify` → `changes`",
+  "⚡ **DEFAULT WORKFLOW (Lean — 3 steps):**",
+  "  1. `init` — load context",
+  "  2. *(edit/read using native tools)*",
+  "  3. `changes` — review session",
   "",
-  "🔴 **MUST RECORD:** `decision` (rationale), `gotcha` (bug/quirk), `arch_flow` (complex flow), `feature` (high-level module ownership)",
-  "🟢 **SKIP RECORDING:** function, class, import, route (use native grep/glob instead)",
+  "📝 **RECORD when needed (don't force it):**",
+  "  • Found a bug? → `kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
+  "  • Traced a flow? → `kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
+  "  • Chose between options? → `kuma_memory({ action: \"decision\" })`",
   "",
-  "📖 Full rules & modes: `.kuma/init.md` | `.kuma/MODE.md` | `.kuma/SKIP_RULES.md`",
-  "🧠 Tools: `kuma_context` | `kuma_memory` | `kuma_safety`",
+  "📖 Full rules: `.kuma/init.md`",
 ].join("\n");
 
-// OpenCode-specific bootstrap — uses kuma_kuma_* prefix (OpenCode doubles the prefix)
+// OpenCode-specific bootstrap — uses kuma_kuma_* prefix
 const BOOTSTRAP_OPENCODE = [
   "Kuma MCP tools are available (kuma_kuma_context, kuma_kuma_memory, kuma_kuma_safety).",
   "**Before coding, call `kuma_kuma_context({ action: \"init\" })`** to load project context.",
-  "Project knowledge persists in `.kuma/memories/*.md` across sessions.",
   "",
-  "⚡ **ADAPTIVE WORKFLOW (Lean Mode by Default):**",
-  "  • **Lean Mode (Default, < 3 files):** `kuma_kuma_context({ action: \"init\" })` → edit/read → record (`decision`/`gotcha`)",
-  "  • **Standard Mode (3-10 files/unfamiliar):** `init` → `guard` → `research` → edit → `record` → `verify`",
-  "  • **Full Mode (> 10 files/refactor):** `init` → `guard` → `research` → `impact` → edit → `record` → `verify` → `changes`",
+  "⚡ **DEFAULT WORKFLOW (Lean — 3 steps):**",
+  "  1. `init` — load context",
+  "  2. *(edit/read using native tools)*",
+  "  3. `changes` — review session",
   "",
-  "🔴 **MUST RECORD:** `decision` (rationale), `gotcha` (bug/quirk), `arch_flow` (complex flow), `feature` (high-level module ownership)",
-  "🟢 **SKIP RECORDING:** function, class, import, route (use native grep/glob instead)",
+  "📝 **RECORD when needed (don't force it):**",
+  "  • Found a bug? → `kuma_kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
+  "  • Traced a flow? → `kuma_kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
+  "  • Chose between options? → `kuma_kuma_memory({ action: \"decision\" })`",
   "",
-  "📖 Full rules & modes: `.kuma/init.md` | `.kuma/MODE.md` | `.kuma/SKIP_RULES.md`",
-  "🧠 Tools: `kuma_kuma_context` | `kuma_kuma_memory` | `kuma_kuma_safety`",
+  "📖 Full rules: `.kuma/init.md`",
 ].join("\n");
 
 /**

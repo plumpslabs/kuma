@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.3.31] — 2026-07-31
+
+### 🧹 Data Structure Hardening, Instruction Cleanup & Studio Full Metadata
+
+- **UUID-Based Node IDs**: New nodes now generate UUID-based IDs (`type::uuid::name`) via `generateNodeId()` to prevent mutable-ID duplicates. File nodes retain deterministic `file::path` IDs for consistency.
+- **Severity/Confidence Columns**: Added `severity` (TEXT) and `confidence` (REAL) as first-class columns on the `nodes` table. Schema auto-migrates existing DBs. `upsertNode()` populates from metadata.
+- **`last_verified_at` Column**: Added `last_verified_at` (INTEGER) to `nodes` table. Self-heal automatically updates timestamp when file is verified to exist on disk.
+- **Session Mining**: New `kuma_memory({ action: 'session_mine' })` auto-extracts gotchas/decisions/arch_flows from tool call transcript. Scope: `preview` shows suggestions, `approve` auto-records.
+- **Semantic Layer**: Arch flow recording auto-generates `flow_explanation` prose nodes linked via `explains` edges. New `flow_explanation` node type added to allowed types.
+- **Gotcha Staleness Verification**: New `kuma_safety({ action: 'gotcha_staleness' })` verifies file/symbol references still exist. Removes obsolete gotchas (deleted files).
+- **Search with Subgraph**: Graph search now includes 1-hop subgraph connections and `flow_explanation` prose for feature_domain/arch_flow nodes.
+- **Heal Removes Obsolete Gotchas**: Self-heal now actually removes gotcha nodes referencing deleted files (not just marking stale). Report shows removed count.
+- **FTS Index Rebuild**: `rebuildFtsIndex()` called after gotcha add and research_save to keep search results fresh.
+- **Studio Full Metadata**: Detail modal dynamically renders ALL metadata fields per node type (not hardcoded 1-2 fields). Shows severity, confidence, last_verified_at in Info section. Gotcha cards show added_by, created_at, workaround.
+- **Instruction Cleanup**: Removed "Zero Duplicate" claims, replaced with honest limitations. Workflow simplified from 10 mandatory steps to 3-step lean default. Removed 230 lines of orphaned/duplicate content from init.ts. Fixed `_db` reference error in `rebuildFtsIndex()`.
+
 ## [2.3.30] — 2026-07-31
 
 ### 🐛 Windows Kuma Studio Fix & Feature Node Instruction

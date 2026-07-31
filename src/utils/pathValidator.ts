@@ -233,3 +233,50 @@ export function getKumaDir(): string {
 export function getKumaBackupsDir(): string {
   return path.join(getKumaDir(), "backups");
 }
+
+// ============================================================
+// SCOPE NORMALIZATION — Prevent duplicate nodes from path variants
+// ============================================================
+
+/**
+ * Normalize a scope/path to a canonical form relative to project root.
+ * Handles: absolute paths, file:line format, backslash/forward slash,
+ * leading ./ or ../, and strips trailing whitespace.
+ *
+ * Returns null if the scope is not a resolvable file path (e.g., a domain name).
+ */
+export function normalizeScope(raw: string, projectRoot?: string): string | null {
+  if (!raw || !raw.trim()) return null;
+  const root = projectRoot ?? getProjectRoot();
+
+  let scope = raw.trim();
+
+  // Strip file:line format (e.g., "src/auth.ts:403" → "src/auth.ts")
+  const lineMatch = scope.match(/^(.+):(\d+)$/);
+  if (lineMatch) scope = lineMatch[1];
+
+  // Normalize backslashes to forward slashes
+  scope = scope.replace(/\\/g, "/");
+
+  // If it looks like a domain name (no slashes, no extension), return as-is
+  if (!scope.includes("/") && !scope.includes(".")) return scope;
+
+  // Try to resolve relative to project root
+  const resolved = path.resolve(root, scope);
+  const relative = path.relative(root, resolved);
+
+  // If resolved path escapes project root, return normalized string only
+  if (relative.startsWith("..")) return scope.replace(/^\.\//, "");
+
+  // Return forward-slash relative path
+  return relative.replace(/\\/g, "/");
+}
+
+/**
+ * Normalize a node ID by normalizing its scope portion.
+ * e.g., "file::ProspectAssignmentService.js" → "file::crm_sales_backend/src/.../ProspectAssignmentService.js"
+ */
+export function normalizeNodeId(type: string, rawName: string, projectRoot?: string): string {
+  const normalized = normalizeScope(rawName, projectRoot);
+  return normalized ? `${type}::${normalized}` : `${type}::${rawName}`;
+}

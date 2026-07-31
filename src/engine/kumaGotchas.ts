@@ -7,7 +7,7 @@
 // ============================================================
 
 import { sessionMemory } from "./sessionMemory.js";
-import { getDb, saveDb } from "./kumaDb.js";
+import { getDb, saveDb, rebuildFtsIndex } from "./kumaDb.js";
 import { getActiveGotchas, checkFileGotchas, appendToLayer } from "./domainRules.js";
 
 // ============================================================
@@ -46,7 +46,9 @@ export interface GotchaEntry {
 }
 
 /**
- * Add a known gotcha to both the structured table and the markdown file.
+ * Add a known gotcha to the structured table (single source of truth).
+ * Graph nodes are derived — sync via syncGotchasGraph() when needed.
+ * Automatically links to related arch_flow and decision nodes via causes edges.
  */
 export async function addGotcha(entry: GotchaEntry): Promise<string> {
   try {
@@ -62,39 +64,64 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
       `- **Added**: ${new Date().toISOString().split("T")[0]}`,
     ].filter(Boolean).join("\n");
 
-    // Save to structured table
-    db.run(
-      `INSERT INTO known_gotchas (file_path, description, severity, workaround) VALUES (?, ?, ?, ?)`,
-      [entry.filePath, entry.description, severity, entry.workaround || null]
+    // Upsert: update if same file_path + description exists, otherwise insert
+    const checkStmt = db.prepare(
+      `SELECT id FROM known_gotchas WHERE file_path = ? AND description LIKE ?`
     );
+    checkStmt.bind([entry.filePath, `${entry.description.substring(0, 30)}%`]);
+    const existing = checkStmt.step();
+    let existingId: number | null = null;
+    if (existing) {
+      const row = checkStmt.getAsObject() as { id: number };
+      existingId = row.id;
+    }
+    checkStmt.free();
+
+    if (existingId !== null) {
+      // Update existing gotcha
+      db.run(
+        `UPDATE known_gotchas SET severity = ?, workaround = ?, updated_at = strftime('%s','now') WHERE id = ?`,
+        [severity, entry.workaround || null, existingId]
+      );
+    } else {
+      // Insert new gotcha
+      db.run(
+        `INSERT INTO known_gotchas (file_path, description, severity, workaround) VALUES (?, ?, ?, ?)`,
+        [entry.filePath, entry.description, severity, entry.workaround || null]
+      );
+    }
 
     // Append to Layer 3 markdown file
     const mdResult = appendToLayer("gotcha", formatted);
 
-    // Save to graph nodes & edges to ensure graph connectedness
-    try {
-      const { upsertNode, addEdge, nodeId } = await import("./kumaGraph.js");
-      const fileNodeId = nodeId("file", entry.filePath);
-      const gotchaNodeId = `gotcha::${entry.filePath}::${entry.description.substring(0, 30)}`;
-
-      await upsertNode({ id: fileNodeId, type: "file", name: entry.filePath });
-      await upsertNode({
-        id: gotchaNodeId,
-        type: "gotcha",
-        name: `gotcha:${entry.description.substring(0, 40)}`,
-        filePath: entry.filePath,
-        metadata: { severity, workaround: entry.workaround },
-      });
-      await addEdge({ sourceId: fileNodeId, targetId: gotchaNodeId, type: "depends_on" });
-    } catch {}
-
     saveDb();
+    rebuildFtsIndex();
     sessionMemory.recordToolCall("kuma_gotcha_add", {
       filePath: entry.filePath,
       severity,
     });
 
-    return `✅ **Gotcha recorded**: ${entry.filePath} — ${entry.description}\n${mdResult}`;
+    // Auto-link to related arch_flow and decision nodes via causes edges
+    let linkedCount = 0;
+    try {
+      const { addEdge } = await import("./kumaGraph.js");
+      // Find arch_flow nodes that reference this file in their hops
+      const stmt = db.prepare(`
+        SELECT id FROM nodes WHERE type = 'arch_flow'
+        AND (metadata LIKE ? OR file_path = ?)
+        LIMIT 5
+      `);
+      stmt.bind([`%${entry.filePath}%`, entry.filePath]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject() as { id: string };
+        const gotchaNodeId = `gotcha::${entry.filePath}::${entry.description.substring(0, 30)}`;
+        try { await addEdge({ sourceId: gotchaNodeId, targetId: row.id, type: "triggers" }); linkedCount++; } catch {}
+      }
+      stmt.free();
+    } catch {}
+
+    const action = existingId !== null ? "updated" : "recorded";
+    return `✅ **Gotcha ${action}**: ${entry.filePath} — ${entry.description}${linkedCount > 0 ? ` (linked to ${linkedCount} flow(s))` : ""}\n${mdResult}`;
   } catch (err) {
     return `❌ Failed to add gotcha: ${err}`;
   }
@@ -226,5 +253,45 @@ export async function syncGotchasToDb(): Promise<{ synced: number }> {
     return { synced };
   } catch {
     return { synced: 0 };
+  }
+}
+
+/**
+ * Sync gotcha graph nodes from known_gotchas table (single source of truth).
+ * Derives graph nodes + edges so visualization stays consistent.
+ */
+export async function syncGotchasGraph(): Promise<{ created: number }> {
+  try {
+    await ensureGotchasSchema();
+    const { upsertNode, addEdge } = await import("./kumaGraph.js");
+    const db = await getDb();
+    let created = 0;
+
+    const stmt = db.prepare(
+      `SELECT file_path, description, severity, workaround FROM known_gotchas`
+    );
+    const rows: Array<{ file_path: string; description: string; severity: string; workaround: string | null }> = [];
+    while (stmt.step()) rows.push(stmt.getAsObject() as any);
+    stmt.free();
+
+    for (const g of rows) {
+      const fileNodeId = `file::${g.file_path}`;
+      const gotchaNodeId = `gotcha::${g.file_path}::${g.description.substring(0, 30)}`;
+
+      await upsertNode({ id: fileNodeId, type: "file", name: g.file_path });
+      await upsertNode({
+        id: gotchaNodeId,
+        type: "gotcha",
+        name: `gotcha:${g.description.substring(0, 40)}`,
+        filePath: g.file_path,
+        metadata: { severity: g.severity, workaround: g.workaround || undefined },
+      });
+      await addEdge({ sourceId: fileNodeId, targetId: gotchaNodeId, type: "depends_on" });
+      created++;
+    }
+
+    return { created };
+  } catch {
+    return { created: 0 };
   }
 }

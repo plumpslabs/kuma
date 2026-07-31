@@ -144,7 +144,7 @@ export function detectTestRunner(root = process.cwd()): { runner: string; baseCo
       }
     } catch {}
   }
-  return { runner: "unknown", baseCommand: "npm test || echo 'No test runner configured'" };
+  return { runner: "unknown", baseCommand: "" };
 }
 
 function checkAllowed(root: string): string | null {
@@ -212,6 +212,27 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
     _localRunning = true;
     const { runner, baseCommand } = detectTestRunner(root);
 
+    // 📭 NO TESTS — Honest reporting instead of fake pass
+    if (runner === "unknown" || !baseCommand) {
+      _localRunning = false;
+      releaseFileLock(root);
+      const durationMs = Date.now() - startTime;
+      const output = "ℹ️ No test framework detected. Install Jest, Vitest, pytest, or similar to enable verification.";
+      await saveVerification(scope, "none", "none", true, output, durationMs);
+      return [
+        `⚪ **Verification: NO TESTS**`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        "",
+        `🛠️ **Runner**: \`none\` (no test framework detected)`,
+        `🎯 **Scope**: \`${scope}\``,
+        `⏱️ **Duration**: ${durationMs}ms`,
+        "",
+        "ℹ️ No test framework detected. Install Jest, Vitest, pytest, or similar to enable verification.",
+        "",
+        "💡 **Tip:** This is NOT a pass — it means nothing was verified. Run your tests manually or install a test framework.",
+      ].join("\n");
+    }
+
     let testFiles: string[] = [];
     const modified = sessionMemory.getModifiedFiles().map(f => f.filePath);
 
@@ -257,7 +278,20 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
       const child = exec(fullCommand, { cwd: root, timeout: timeoutMs }, async (error, stdout, stderr) => {
         const durationMs = Date.now() - startTime;
         const rawOutput = (stdout + "\n" + stderr).trim();
-        const passed = !error;
+        let passed = !error;
+
+        // 🚨 Detect fake passes — commands that succeed but didn't actually run tests
+        const fakePassPatterns = [
+          /Missing script.*test/i,
+          /No test runner configured/i,
+          /No tests found/i,
+          /Cannot find.*test/i,
+          /0 passing/i,
+          /no test specified/i,
+        ];
+        if (passed && fakePassPatterns.some(p => p.test(rawOutput))) {
+          passed = false; // Treat as NO_TESTS, not PASSED
+        }
         const truncatedOutput = rawOutput.length > 2000 ? rawOutput.substring(rawOutput.length - 2000) : rawOutput;
 
         await saveVerification(scope, runner, fullCommand, passed, truncatedOutput, durationMs);
@@ -281,11 +315,18 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
         ];
 
         if (!passed) {
-          lines.push("⚠️ **Verification failed!** Please fix test failures before shipping.");
-          if (error && (error as any).killed) {
-            lines.push(`⏰ **Process was killed after ${timeoutMs}ms timeout**`);
+          // Check if it's "no tests" vs "actual failure"
+          const isNoTests = fakePassPatterns.some(p => p.test(rawOutput));
+          if (isNoTests) {
+            lines[0] = `⚪ **Verification: NO TESTS**`;
+            lines.push("ℹ️ No tests ran. Install Jest, Vitest, pytest, or similar to enable verification.");
+          } else {
+            lines.push("⚠️ **Verification failed!** Please fix test failures before shipping.");
+            if (error && (error as any).killed) {
+              lines.push(`⏰ **Process was killed after ${timeoutMs}ms timeout**`);
+            }
+            lines.push("```text", rawOutput.substring(0, 1500), "```");
           }
-          lines.push("```text", rawOutput.substring(0, 1500), "```");
         } else {
           lines.push("🎉 All scoped tests passed!");
           if (rawOutput) lines.push("```text", rawOutput.substring(0, 800), "```");

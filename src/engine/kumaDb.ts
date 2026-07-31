@@ -2,17 +2,31 @@ import initSqlJs from "sql.js";
 import type { Database as SqlJsDatabase } from "sql.js";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { getKumaDir } from "../utils/pathValidator.js";
 
 // ============================================================
 // KUMA DB — SQLite database manager (via sql.js, zero native build)
-// Schema v3.1 — All 55 issues from post-mortem addressed
+// Schema v3.2 — UUID-based IDs + severity/confidence columns
 // ============================================================
 
 const DB_FILENAME = "kuma.db";
 
 let dbInstance: SqlJsDatabase | null = null;
 let initPromise: Promise<SqlJsDatabase> | null = null;
+
+// ============================================================
+// NODE ID GENERATION — UUID for new nodes
+// ============================================================
+
+/**
+ * Generate a unique node ID.
+ * New nodes get UUID-based IDs. Legacy text IDs are still supported.
+ */
+export function generateNodeId(type: string, name: string): string {
+  const uuid = crypto.randomUUID().slice(0, 8);
+  return `${type}::${uuid}::${name}`;
+}
 
 /**
  * Reset the cached dbInstance so the next getDb() call reloads from disk.
@@ -109,9 +123,27 @@ function createSchema(db: SqlJsDatabase): void {
     name TEXT NOT NULL,
     file_path TEXT,
     metadata TEXT DEFAULT '{}',
+    severity TEXT DEFAULT 'medium',
+    confidence REAL DEFAULT 0.8,
+    last_verified_at INTEGER,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   )`);
+
+  // Migration: add new columns to existing nodes table if missing
+  try {
+    const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='nodes'`);
+    const nodesSql = schema[0]?.values?.[0]?.[0] as string || '';
+    if (!nodesSql.includes('severity')) {
+      db.run(`ALTER TABLE nodes ADD COLUMN severity TEXT DEFAULT 'medium'`);
+    }
+    if (!nodesSql.includes('confidence')) {
+      db.run(`ALTER TABLE nodes ADD COLUMN confidence REAL DEFAULT 0.8`);
+    }
+    if (!nodesSql.includes('last_verified_at')) {
+      db.run(`ALTER TABLE nodes ADD COLUMN last_verified_at INTEGER`);
+    }
+  } catch { /* migration non-critical */ }
 
   // Edges: relationships between nodes
   // NOTE: 'contains' = file→symbol (file contains function/class/component)
@@ -1215,6 +1247,25 @@ export async function getLatestVerifications(limit = 10): Promise<Array<{ id: nu
   } catch (err) {
     console.error(`[KumaDB] Failed to get verifications: ${err}`);
     return [];
+  }
+}
+
+// ============================================================
+// FTS INDEX REBUILD — Keep search fresh after writes
+// ============================================================
+
+/**
+ * Rebuild the full-text search index from current node data.
+ * Call after bulk writes (gotcha add, research_save, etc.) to keep search results fresh.
+ */
+export function rebuildFtsIndex(): void {
+  try {
+    const db = dbInstance;
+    if (!db) return;
+    // Rebuild FTS5 index from nodes table
+    db.run(`INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')`);
+  } catch {
+    // FTS5 might not be available
   }
 }
 

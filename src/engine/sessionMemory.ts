@@ -744,31 +744,39 @@ class SessionMemory {
   detectLoop(): { isLooping: boolean; toolName?: string; message?: string } {
     this.ensureInit();
 
-    const recentCalls = this.state.toolCalls.slice(-10);
-    if (recentCalls.length < 6) return { isLooping: false };
+    const recentCalls = this.state.toolCalls.slice(-20);
+    if (recentCalls.length < 12) return { isLooping: false };
 
-    // Check: same tool called >3 times
-    // 🔧 FIX (Issue #14): Exclude kuma_memory from loop detection when arguments differ
-    const toolCounts = new Map<string, { count: number; actions: Set<string> }>();
+    // Check: same tool called >10 times with no variation = potential runaway loop
+    // 🧹 False-positive suppression: cleanup operations (delete_node) are expected in batches
+    const CLEANUP_TOOLS = new Set(["kuma_memory_delete", "kuma_memory", "delete_node"]);
+
+    const toolCounts = new Map<string, { count: number; actions: Set<string>; params: Set<string> }>();
     for (const call of recentCalls) {
       const existing = toolCounts.get(call.toolName);
       const action = (call.params.action as string) || "";
+      const paramKey = JSON.stringify({ action, scope: call.params.scope, target: call.params.target });
       if (existing) {
         existing.count++;
         existing.actions.add(action);
+        existing.params.add(paramKey);
       } else {
-        toolCounts.set(call.toolName, { count: 1, actions: new Set([action]) });
+        toolCounts.set(call.toolName, { count: 1, actions: new Set([action]), params: new Set([paramKey]) });
       }
     }
 
-    for (const [toolName, { count, actions }] of toolCounts) {
-      if (count >= 4) {
-        // 🧹 Suppress false-positive: if tool is called with different actions, it's not a loop
+    for (const [toolName, { count, actions, params }] of toolCounts) {
+      if (count >= 10) {
+        // Suppress: cleanup operations in batches are not loops
+        if (CLEANUP_TOOLS.has(toolName)) continue;
+        // Suppress: tool called with many different param variations = not a loop
+        if (params.size >= 5) continue;
+        // Suppress: tool called with many different actions = not a loop
         if (actions.size >= 3) continue;
         return {
           isLooping: true,
           toolName,
-          message: `Detected potential loop: "${toolName}" called ${count} times in last ${recentCalls.length} tool calls. Consider a different approach.`,
+          message: `Detected potential runaway loop: "${toolName}" called ${count} times in last ${recentCalls.length} tool calls with no variation. Consider a different approach.`,
         };
       }
     }

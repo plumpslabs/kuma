@@ -5,7 +5,7 @@ import { acquireLock, releaseLock, listLocks, cleanStaleLocks } from "../engine/
 import { saveHealthSnapshot, getSecurityFindings, addSecurityFinding, runGarbageCollection, runDoctor, checkPortability, ensureGitignore } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
-type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean" | "policy" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "contract";
+type SafetyAction = "guard" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "verify" | "clean" | "policy" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "contract" | "gotcha_staleness";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -59,6 +59,7 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
     case "rollback_label": return handleRollbackLabel(params);
     case "checkpoint_list": return handleCheckpointList(params);
     case "contract": return handleContract(params);
+    case "gotcha_staleness": return handleGotchaStaleness(params);
     default: return `Unknown action "${action}".`;
   }
 }
@@ -439,3 +440,12 @@ async function handleVerify(params: SafetyParams): Promise<string> {
   return verifyResult + recordingWarning;
 }
 
+// ============================================================
+// GOTCHA STALENESS — Verify gotcha file/symbol references
+// ============================================================
+
+async function handleGotchaStaleness(_params: SafetyParams): Promise<string> {
+  const { verifyGotchaStaleness, formatGotchaStalenessReport } = await import("../engine/kumaSelfHeal.js");
+  const stale = await verifyGotchaStaleness();
+  return formatGotchaStalenessReport(stale);
+}

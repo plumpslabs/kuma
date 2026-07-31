@@ -34,6 +34,7 @@ interface HealResult {
   missing: number;
   total: number;
   cascadedEdges: number;
+  removed: number;
 }
 
 // ============================================================
@@ -165,6 +166,11 @@ export async function detectStaleNodes(): Promise<StaleEntry[]> {
             issue: contentMatch ? "path-changed" : "file-missing",
           });
         }
+      } else {
+        // File exists — update last_verified_at
+        try {
+          db.run(`UPDATE nodes SET last_verified_at = strftime('%s','now') WHERE id = ?`, [row.id]);
+        } catch {}
       }
     }
     stmt.free();
@@ -180,10 +186,14 @@ export async function detectStaleNodes(): Promise<StaleEntry[]> {
 
 /**
  * Use git log --follow to find renamed files.
+ * Falls back to basename search if git doesn't have rename info.
  */
 function findRenamedPath(oldPath: string): string | null {
+  const root = getProjectRoot();
+  const basename = path.basename(oldPath);
+
+  // Try git rename detection first
   try {
-    const root = getProjectRoot();
     const output = execSync(
       `git log --follow --diff-filter=R --name-only --format="" -1 -- "${oldPath}"`,
       { cwd: root, encoding: "utf-8", maxBuffer: 1024 * 1024, timeout: 5000 }
@@ -193,10 +203,26 @@ function findRenamedPath(oldPath: string): string | null {
       const lines = output.split("\n").filter(Boolean);
       return lines[lines.length - 1] || null;
     }
-    return null;
-  } catch {
-    return null;
-  }
+  } catch {}
+
+  // Fallback: find files with same basename in the project
+  try {
+    const result = execSync(
+      `find . -name "${basename}" -type f -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./dist/*" 2>/dev/null | head -5`,
+      { cwd: root, encoding: "utf-8", maxBuffer: 1024 * 1024, timeout: 5000 }
+    ).trim();
+
+    if (result) {
+      const candidates = result.split("\n").filter(Boolean);
+      // Return the first candidate that's different from the old path
+      for (const c of candidates) {
+        const relative = c.startsWith("./") ? c.slice(2) : c;
+        if (relative !== oldPath) return relative;
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 // ============================================================
@@ -259,11 +285,27 @@ async function healStaleNode(entry: StaleEntry): Promise<boolean> {
       return true;
     }
 
-    // File truly missing — mark as stale
-    db.run(`UPDATE nodes SET metadata = json_set(COALESCE(NULLIF(metadata,''), '{}'), '$.stale', 1) WHERE id = ?`,
-      [entry.nodeId]);
+    // File truly missing — clean up based on node type
+    if (entry.type === "gotcha") {
+      // Gotcha referencing deleted file = obsolete. Remove it.
+      db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [entry.nodeId, entry.nodeId]);
+      db.run("DELETE FROM nodes WHERE id = ?", [entry.nodeId]);
+      // Also remove from known_gotchas table
+      const parts = entry.nodeId.split("::");
+      if (parts.length >= 3) {
+        db.run("DELETE FROM known_gotchas WHERE file_path = ? AND description LIKE ?", [parts[1], `${parts.slice(2).join("::")}%`]);
+      }
+    } else if (entry.type === "research") {
+      // Research referencing deleted file — keep (research can be valuable even if source deleted)
+      db.run(`UPDATE nodes SET metadata = json_set(COALESCE(NULLIF(metadata,''), '{}'), '$.stale', 1, '$.stale_reason', 'file_missing') WHERE id = ?`,
+        [entry.nodeId]);
+    } else {
+      // Other node types — mark stale but keep
+      db.run(`UPDATE nodes SET metadata = json_set(COALESCE(NULLIF(metadata,''), '{}'), '$.stale', 1, '$.stale_reason', 'file_missing') WHERE id = ?`,
+        [entry.nodeId]);
+    }
     saveDb();
-    return false;
+    return entry.type === "gotcha"; // Return true if we actually removed something
   } catch (err) {
     console.error(`[KumaSelfHeal] Failed to heal node ${entry.nodeId}: ${err}`);
     return false;
@@ -281,18 +323,23 @@ export async function autoHeal(): Promise<HealResult> {
   const stale = await detectStaleNodes();
   let healed = 0;
   let missing = 0;
+  let removed = 0;
 
   for (const entry of stale) {
     const success = await healStaleNode(entry);
-    if (success) healed++;
-    else missing++;
+    if (success) {
+      healed++;
+      removed++; // healStaleNode returns true when it actually removes (gotcha)
+    } else {
+      missing++;
+    }
   }
 
-  // Cascade edges for nodes that are still stale (truly missing)
-  const staleNodeIds = stale.filter(e => !e.newPath).map(e => e.nodeId);
+  // Cascade edges for nodes that are still stale (truly missing, non-gotcha)
+  const staleNodeIds = stale.filter(e => !e.newPath && e.type !== "gotcha").map(e => e.nodeId);
   const cascadedEdges = await cascadeStaleEdges(staleNodeIds);
 
-  return { healed, missing, total: stale.length, cascadedEdges };
+  return { healed, missing, total: stale.length, cascadedEdges, removed };
 }
 
 // ============================================================
@@ -355,6 +402,7 @@ export function formatHealReport(result: HealResult): string {
     "",
     `📊 ${result.total} stale entr${result.total > 1 ? "ies" : "y"} found`,
     `✅ ${result.healed} healed (file renamed → path updated)`,
+    result.removed > 0 ? `🗑️ ${result.removed} removed (obsolete gotcha referencing deleted file)` : "",
     `❌ ${result.missing} missing (file deleted — marked as stale)`,
     result.cascadedEdges > 0 ? `🔗 ${result.cascadedEdges} cascade edges updated` : "",
     "",
@@ -363,12 +411,105 @@ export function formatHealReport(result: HealResult): string {
   if (result.healed > 0) {
     lines.push("💡 Healed entries had their file paths updated via git rename detection or content hash matching.");
   }
+  if (result.removed > 0) {
+    lines.push("🗑️ Obsolete gotchas (referencing deleted files) were removed from both graph and table.");
+  }
   if (result.missing > 0) {
     lines.push("⚠️ Missing entries were marked as stale. The Knowledge Graph will deprioritize them.");
-    lines.push("💡 Run incremental healing after making changes to keep the graph fresh.");
   }
 
   return lines.join("\n");
 }
 
+// ============================================================
+// GOTCHA STALENESS — Verify file/symbol references still exist
+// ============================================================
+
+/**
+ * Verify that gotchas still reference valid files.
+ * Returns list of stale gotchas with details.
+ */
+export async function verifyGotchaStaleness(): Promise<Array<{
+  gotchaId: string;
+  file_path: string;
+  issue: "file_missing" | "symbol_missing";
+}>> {
+  const db = await getDb();
+  const stale: Array<{ gotchaId: string; file_path: string; issue: "file_missing" | "symbol_missing" }> = [];
+
+  try {
+    const rows = db.exec(`
+      SELECT id, metadata FROM nodes WHERE type = 'gotcha'
+    `);
+    if (rows.length === 0) return stale;
+
+    const columns = rows[0].columns;
+    const filePathIdx = columns.indexOf("metadata");
+
+    for (const row of rows[0].values) {
+      const nodeId = row[0] as string;
+      let metadata: Record<string, unknown> = {};
+      try { metadata = JSON.parse(row[filePathIdx] as string); } catch {}
+
+      const filePath = metadata.file_path as string;
+      if (!filePath || filePath.startsWith("search::") || filePath.startsWith("api_route::")) continue;
+
+      const fullPath = path.join(getProjectRoot(), filePath);
+      if (!fs.existsSync(fullPath)) {
+        stale.push({ gotchaId: nodeId, file_path: filePath, issue: "file_missing" });
+      } else {
+        // File exists — check if referenced symbol exists (if description mentions a specific function/class)
+        const desc = (metadata.description as string) || "";
+        const symbolMatch = desc.match(/\b(function|class|method|const|let|var|export)\s+(\w+)/i);
+        if (symbolMatch) {
+          const symbolName = symbolMatch[2];
+          try {
+            const content = fs.readFileSync(fullPath, "utf-8");
+            if (!content.includes(symbolName)) {
+              stale.push({ gotchaId: nodeId, file_path: filePath, issue: "symbol_missing" });
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+
+  return stale;
+}
+
+/**
+ * Format gotcha staleness report.
+ */
+export function formatGotchaStalenessReport(stale: Awaited<ReturnType<typeof verifyGotchaStaleness>>): string {
+  if (stale.length === 0) {
+    return "✅ **Gotcha Staleness Check** — All gotcha references are valid.";
+  }
+
+  const fileMissing = stale.filter(s => s.issue === "file_missing");
+  const symbolMissing = stale.filter(s => s.issue === "symbol_missing");
+
+  const lines: string[] = [
+    `⚠️ **Gotcha Staleness Report**`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    "",
+    `📊 ${stale.length} stale gotcha${stale.length > 1 ? "s" : ""} found`,
+    fileMissing.length > 0 ? `  🗑️ ${fileMissing.length} reference${fileMissing.length > 1 ? "s" : ""} deleted file` : "",
+    symbolMissing.length > 0 ? `  🔍 ${symbolMissing.length} reference${symbolMissing.length > 1 ? "s" : ""} missing symbol` : "",
+    "",
+  ];
+
+  for (const s of fileMissing.slice(0, 5)) {
+    lines.push(`  🗑️ \`${s.gotchaId}\` → file missing: \`${s.file_path}\``);
+  }
+  for (const s of symbolMissing.slice(0, 5)) {
+    lines.push(`  🔍 \`${s.gotchaId}\` → symbol missing in \`${s.file_path}\``);
+  }
+
+  if (stale.length > 5) lines.push(`  ... and ${stale.length - 5} more`);
+
+  lines.push("");
+  lines.push("💡 Use `kuma_memory({ action: 'delete_node', target: '<gotchaId>' })` to remove obsolete gotchas.");
+
+  return lines.join("\n");
+}
 

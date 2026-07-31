@@ -17,6 +17,7 @@ export const ALLOWED_NODE_TYPES = new Set([
   "feature_domain",      // High-level feature domains
   "file",                // File references (needed for graph connectivity)
   "research",            // Research cache nodes (needed for search)
+  "flow_explanation",    // Prose explanation of arch_flow (semantic layer)
 ]);
 
 /**
