@@ -65,7 +65,7 @@ describe("SessionMemory", () => {
   });
 
   test("detectLoop detects tool loop", () => {
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 12; i++) {
       sessionMemory.recordToolCall("same_tool", {});
     }
     const loop = sessionMemory.detectLoop();

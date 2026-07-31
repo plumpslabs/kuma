@@ -104,7 +104,7 @@ describe("kumaSelfHeal", () => {
       mockGetAsObject.mockReturnValue(undefined);
       mockExecSync.mockReturnValue(Buffer.from(""));
       const result = await autoHeal();
-      expect(result).toEqual({ total: 0, healed: 0, missing: 0, cascadedEdges: 0 });
+      expect(result).toEqual({ total: 0, healed: 0, missing: 0, cascadedEdges: 0, removed: 0 });
     });
   });
 });
