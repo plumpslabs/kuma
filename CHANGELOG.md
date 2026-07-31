@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.30] — 2026-07-31
+
+### 🐛 Windows Kuma Studio Fix & Feature Node Instruction
+
+- **Windows `kuma studio` Fix**: Fixed `spawn start ENOENT` crash on Windows. The `start` command is a `cmd.exe` built-in, not a standalone executable — now correctly spawns `cmd /c start` on `win32`. Also fixed path separator handling for Windows backslash paths in project name detection.
+- **`feature` Node Instruction Fix**: Added `feature` to SKILL.md bootstrap "MUST RECORD" list and promoted it to the primary workflow in `init.md`. Previously, agents were not instructed to record `feature` nodes, resulting in zero feature nodes in the knowledge graph despite the capability existing.
+
 ## [2.3.29] — 2026-07-30
 
 ### ⚡ Zero-Overhead Auto-Init, Namespace Normalization & Graph Noise Filter
@@ -10,7 +17,6 @@
 - **Noise Filter Engine (`kumaNoiseFilter.ts`)**: Added strict allowlist for node types. Only `arch_flow`, `gotcha`, `decision`, `cross_service_link`, `feature_domain`, `file`, and `research` are permitted. AST-level types (`function`, `class`, `component`, `variable`) are blocked at the `add_node` handler to prevent graph pollution.
 - **Git Commit Auto-Harvesting (`kumaGitHarvester.ts`)**: Real post-commit hook extracts commit messages and diffs to create `decision` and `gotcha` nodes automatically. Significant commits (>3 files or refactor/migrate keywords) are flagged as decisions; fix/revert commits are recorded as gotchas. New `kuma_memory({ action: 'harvest' })` action for manual extraction.
 - **`noise_policy` Action**: New `kuma_memory({ action: 'noise_policy' })` to inspect filter rules and allowed node types.
-- **`feature` Node Instruction Fix**: Added `feature` to SKILL.md bootstrap "MUST RECORD" list and promoted it to the primary workflow in `init.md`. Previously, agents were not instructed to record `feature` nodes, resulting in zero feature nodes in the knowledge graph despite the capability existing.
 
 ## [2.3.28] — 2026-07-30
 

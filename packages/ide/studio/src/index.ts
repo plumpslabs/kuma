@@ -72,7 +72,7 @@ app.get("/", (c) => {
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   const dbPath = findKumaDb();
   const projectName = dbPath
-    ? dbPath.replace("/.kuma/kuma.db", "").split("/").pop()
+    ? dbPath.replace(/[\/\\]\.kuma[\/\\]kuma\.db$/, "").split(/[\/\\]/).pop()
     : "unknown";
 
   console.error(`♢ Kuma Studio`);
@@ -83,6 +83,13 @@ serve({ fetch: app.fetch, port: PORT }, (info) => {
 
   // Auto-open browser
   const url = `http://localhost:${PORT}`;
-  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  spawn(cmd, [url], { stdio: "ignore", detached: true });
+  try {
+    if (process.platform === "win32") {
+      // 'start' is a cmd.exe built-in, not a standalone executable
+      spawn("cmd", ["/c", "start", url.replace(/&/g, "^&")], { stdio: "ignore", detached: true, shell: false });
+    } else {
+      const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+      spawn(cmd, [url], { stdio: "ignore", detached: true });
+    }
+  } catch {}
 });
