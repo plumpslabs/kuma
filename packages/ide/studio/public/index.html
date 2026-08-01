@@ -252,6 +252,8 @@ header .status .dot.off { background: var(--red); }
       <div class="tab active" data-tab="features"><i data-lucide="star" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Features</div>
       <div class="tab" data-tab="gotchas"><i data-lucide="alert-triangle" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Gotchas</div>
       <div class="tab" data-tab="health"><i data-lucide="heart-pulse" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Health</div>
+      <div class="tab" data-tab="efficiency"><i data-lucide="zap" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Efficiency</div>
+      <div class="tab" data-tab="staleness"><i data-lucide="activity" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Staleness</div>
     </div>
     <div class="tab-content" id="tab-content"></div>
   </div>
@@ -273,7 +275,7 @@ async function resetKumaDb() {
   var confirmation = prompt("⚠️ TYPE 'DELETE' TO CONFIRM RESETTING KUMA DB\nThis will permanently wipe all knowledge:");
   if (confirmation !== "DELETE") { if (confirmation !== null) alert("Reset cancelled."); return; }
   try {
-    var res = await fetch(API + "/reset-db", { method: "POST" }).then(function(r){return r.json()});
+    var res = await fetch(API + "/reset-db?confirm=1", { method: "POST" }).then(function(r){return r.json()});
     if (res.ok) { alert("Kuma DB reset."); refetch(); }
   } catch (e) { alert("Reset failed: " + e.message); }
 }
@@ -281,7 +283,7 @@ async function resetKumaDb() {
 async function stopKumaStudio() {
   if (!confirm("Stop Kuma Studio?")) return;
   try {
-    await fetch(API + "/stop-server", { method: "POST" });
+    await fetch(API + "/stop-server?confirm=1", { method: "POST" });
     document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#94a3b8;font-size:16px;">Server stopped. Close this tab.</div>';
   } catch (e) { alert("Stop failed: " + e.message); }
 }
@@ -336,6 +338,8 @@ async function init() {
   renderFeatures(data);
   renderGotchas(data);
   renderHealth(data);
+  renderEfficiency(data);
+  renderStaleness(data);
   setupSearch();
   lucide.createIcons();
 }
@@ -784,7 +788,7 @@ async function refetch() {
     if (status.ok) { dot.className = 'dot on'; txt.textContent = status.project || 'connected'; } else { dot.className = 'dot off'; txt.textContent = 'no kuma.db found'; }
     var data = await fetch(API+'/dashboard').then(function(r){return r.json()});
     if (data.error) { showError(data.error); return; }
-    renderStats(data); renderGraph(data); renderFeatures(data); renderGotchas(data); renderHealth(data);
+    renderStats(data); renderGraph(data); renderFeatures(data); renderGotchas(data); renderHealth(data); renderEfficiency(data); renderStaleness(data);
     lucide.createIcons();
   } catch(e) { showError('Refetch failed: ' + e.message); }
   btn.innerHTML = '<i data-lucide="refresh-cw" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Refetch';
@@ -802,7 +806,9 @@ function setupTabs(){
   content.innerHTML =
     '<div class="panel active" id="panel-features"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-gotchas"><div class="empty">Loading...</div></div>' +
-    '<div class="panel" id="panel-health"><div class="empty">Loading...</div></div>';
+    '<div class="panel" id="panel-health"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-efficiency"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-staleness"><div class="empty">Loading...</div></div>';
   document.querySelectorAll('.tab').forEach(function(tab){
     tab.onclick = function(){
       document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
@@ -865,6 +871,137 @@ function renderHealth(data){
     var date = h.created_at ? new Date(h.created_at*1000).toLocaleDateString() : '-';
     return '<div class="health-item"><div class="score '+cls+'">'+h.score+'</div><div class="meta">'+escapeHtml(summary)+' &middot; '+date+'</div></div>';
   }).join('');
+}
+
+// ============ EFFICIENCY PANEL (GAP 1) ============
+// Proves the philosophy: "the more you use Kuma, the more efficient it gets."
+// Every saved decision / record is an asset — here is the evidence.
+
+function fmtDuration(sec) {
+  if (!sec || sec <= 0) return "0s";
+  if (sec >= 3600) return (sec/3600).toFixed(1)+"h";
+  if (sec >= 60) return Math.round(sec/60)+"m "+(sec%60)+"s";
+  return sec+"s";
+}
+
+function renderEfficiency(data){
+  var el = document.getElementById("panel-efficiency");
+  if(!el) return;
+  var eff = data.efficiency || {};
+  var m = eff.metrics || {};
+  var r = eff.recordings || {};
+  var savedSec = m.researchTimeSaved ? Math.round(m.researchTimeSaved/1000) : 0;
+  var passRate = eff.verificationPassRate;
+  var passColor = passRate == null ? 'var(--muted)' : passRate >= 80 ? 'var(--green)' : passRate >= 50 ? 'var(--yellow)' : 'var(--red)';
+
+  var stat = function(num, lbl, color){
+    return '<div style="flex:1;min-width:110px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)"><div style="font-size:20px;font-weight:700;color:'+(color||'var(--accent2)')+'">'+num+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+lbl+'</div></div>';
+  };
+
+  var html = '';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
+    stat(eff.sessions||0, 'sessions') +
+    stat(eff.toolCalls||0, 'tool calls') +
+    stat(eff.totalEdits||0, 'file edits') +
+    stat(eff.researchCacheScopes||0, 'research cached', 'var(--green)') +
+    stat(eff.decisions||0, 'decisions', 'var(--accent)') +
+    stat(eff.verifications||0, 'verifications', passRate==null?'var(--muted)':'var(--green)') +
+    '</div>';
+
+  // The headline: time saved from cache — the compounding asset
+  html += '<div class="health-item" style="border-left:3px solid var(--green);margin-bottom:12px">' +
+    '<div style="font-size:13px;color:var(--muted)">⏱ Estimated time saved from research cache</div>' +
+    '<div class="score good" style="font-size:28px">'+fmtDuration(savedSec)+'</div>' +
+    '<div class="meta">'+ (m.filesRead||0) +' files read &middot; '+ (m.filesEdited||0) +' files edited (current session)</div>' +
+    '</div>';
+
+  // Recording assets — what we've banked
+  var recTotal = r.total||0;
+  html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px">📦 Recorded Assets</div>';
+  html += '<div class="health-item" style="margin-bottom:12px">';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  html += '<span class="sev-tag" style="background:rgba(124,58,237,0.15);color:var(--accent)">arch_flow: '+(r.archFlows||0)+'</span>';
+  html += '<span class="sev-tag" style="background:#f9731620;color:var(--orange)">gotcha: '+(r.gotchas||0)+'</span>';
+  html += '<span class="sev-tag" style="background:#eab30820;color:var(--yellow)">decision: '+(r.decisions||0)+'</span>';
+  html += '<span class="sev-tag" style="background:#06b6d420;color:var(--accent2)">research_save: '+(r.researchSaves||0)+'</span>';
+  html += '</div>';
+  html += '<div class="meta" style="margin-top:6px">Total assets banked: <b style="color:var(--accent2)">'+recTotal+'</b> — each one saves re-research next session</div>';
+  html += '</div>';
+
+  // Verification pass rate
+  html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px">🧪 Verification</div>';
+  html += '<div class="health-item" style="margin-bottom:12px">' +
+    '<div class="score" style="color:'+passColor+'">'+(passRate==null?'—':passRate+'%')+'</div>' +
+    '<div class="meta">'+(eff.verifications||0)+' runs &middot; pass rate</div>' +
+    '</div>';
+
+  // Recent sessions breakdown
+  var sess = eff.recentSessions || [];
+  if (sess.length) {
+    html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px">🕐 Recent Sessions</div>';
+    html += sess.map(function(s){
+      var d = s.startedAt ? new Date(s.startedAt*1000) : null;
+      var dateStr = d ? d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '-';
+      return '<div class="health-item">' +
+        '<div style="font-size:12px;color:var(--text)">'+escapeHtml(s.goal || 'untitled goal')+'</div>' +
+        '<div class="meta">'+dateStr+' &middot; '+s.toolCalls+' calls &middot; '+s.edits+' edits'+(s.failures?' &middot; <span style="color:var(--red)">'+s.failures+' failures</span>':'')+'</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  el.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ============ STALENESS PANEL (GAP 4) ============
+// Assets can become liabilities when stale. Surface them before they bite.
+
+function renderStaleness(data){
+  var el = document.getElementById("panel-staleness");
+  if(!el) return;
+  var st = data.staleness || { checked: 0, staleNodes: 0, missing: [] };
+  var html = '';
+
+  if (!st.staleNodes) {
+    html += '<div class="health-item" style="border-left:3px solid var(--green)">' +
+      '<div class="score good" style="font-size:22px">✅ All fresh</div>' +
+      '<div class="meta">'+st.checked+' file references checked — no stale assets found.</div>' +
+      '</div>';
+  } else {
+    html += '<div class="health-item" style="border-left:3px solid var(--red)">' +
+      '<div class="score bad" style="font-size:22px">'+st.staleNodes+' stale node(s)</div>' +
+      '<div class="meta">'+st.missing.length+' file(s) referenced but missing on disk ('+st.checked+' checked).</div>' +
+      '</div>';
+    html += '<div style="display:flex;gap:6px;margin:10px 0">' +
+      '<button onclick="copyHealCommand(this)" style="background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:6px 12px;font-size:11px;cursor:pointer">🛠 Copy heal command</button>' +
+      '</div>';
+    html += st.missing.map(function(m){
+      return '<div class="gotcha-item" style="border-color:var(--red)">' +
+        '<div class="file">'+escapeHtml(m.filePath)+'</div>' +
+        '<div class="desc">Referenced by <b style="color:var(--red)">'+m.nodeCount+'</b> node(s) but the file no longer exists.</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  el.innerHTML = html;
+  lucide.createIcons();
+}
+
+function copyHealCommand(btn) {
+  var cmd = "kuma_memory({ action: 'heal' })";
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cmd).then(function() {
+      if (btn) { btn.textContent = "✅ Copied!"; setTimeout(function(){ btn.textContent = "🛠 Copy heal command"; }, 1500); }
+    }).catch(function() {
+      if (btn) { btn.textContent = "⚠️ Copy failed"; setTimeout(function(){ btn.textContent = "🛠 Copy heal command"; }, 1500); }
+    });
+  } else {
+    // Fallback for non-secure contexts
+    var ta = document.createElement("textarea");
+    ta.value = cmd; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); if (btn) { btn.textContent = "✅ Copied!"; setTimeout(function(){ btn.textContent = "🛠 Copy heal command"; }, 1500); } } catch(e) {}
+    document.body.removeChild(ta);
+  }
 }
 
 function setupSearch() {

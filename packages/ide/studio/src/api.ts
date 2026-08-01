@@ -1,11 +1,49 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { getDashboardData, getNodeDetail, findKumaDb } from "./db.js";
 
 import fs from "node:fs";
 
 const api = new Hono();
-api.use("/*", cors());
+
+// ============================================================
+// HARDENING (GAP 3): CORS restricted to localhost only.
+// Any cross-origin page (e.g. a malicious website) that tries to
+// reach localhost:3322 will be rejected unless it originates from
+// localhost / 127.0.0.1. Destructive endpoints additionally
+// require an explicit `?confirm=1` param.
+// ============================================================
+
+const LOCALHOST_ORIGINS = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+
+function isLocalhostOrigin(origin: string | undefined): boolean {
+  if (!origin) return false; // No Origin header → treat as non-browser (curl etc.) — allow, but confirm params still apply
+  return LOCALHOST_ORIGINS.test(origin);
+}
+
+api.use("/*", async (c, next) => {
+  const origin = c.req.header("origin");
+  if (origin && !isLocalhostOrigin(origin)) {
+    return c.json({ error: "Forbidden: cross-origin requests are not allowed." }, 403);
+  }
+  // Only reflect CORS headers for localhost origins
+  if (origin) {
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Vary", "Origin");
+    c.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    c.header("Access-Control-Allow-Headers", "Content-Type");
+  }
+  await next();
+});
+
+/** Guard for destructive endpoints — require ?confirm=1.
+ * Returns a Hono Response to short-circuit with, or null when allowed. */
+function confirmGuard(c: any): Response | null {
+  const confirm = c.req.query("confirm");
+  if (confirm !== "1") {
+    return c.json({ ok: false, error: "Confirmation required: pass ?confirm=1" }, 400);
+  }
+  return null;
+}
 
 /** GET /api/status — check if DB exists */
 api.get("/status", (c) => {
@@ -23,10 +61,10 @@ api.get("/status", (c) => {
   });
 });
 
-/** GET /api/dashboard — all dashboard data */
-api.get("/dashboard", (c) => {
+/** GET /api/dashboard — all dashboard data (efficiency + staleness included) */
+api.get("/dashboard", async (c) => {
   try {
-    const data = getDashboardData();
+    const data = await getDashboardData();
     return c.json(data);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -34,10 +72,10 @@ api.get("/dashboard", (c) => {
 });
 
 /** GET /api/node/:id — full node detail (outgoing, incoming, gotchas) */
-api.get("/node/:id", (c) => {
+api.get("/node/:id", async (c) => {
   try {
     const nodeId = c.req.param("id");
-    const detail = getNodeDetail(nodeId);
+    const detail = await getNodeDetail(nodeId);
     if (!detail) return c.json({ error: "Node not found" }, 404);
     return c.json(detail);
   } catch (e: any) {
@@ -45,8 +83,10 @@ api.get("/node/:id", (c) => {
   }
 });
 
-/** POST /api/reset-db — clear kuma.db database */
+/** POST /api/reset-db?confirm=1 — clear kuma.db database (requires confirmation) */
 api.post("/reset-db", (c) => {
+  const blocked = confirmGuard(c);
+  if (blocked) return blocked;
   try {
     const dbPath = findKumaDb();
     if (dbPath && fs.existsSync(dbPath)) {
@@ -54,12 +94,14 @@ api.post("/reset-db", (c) => {
     }
     return c.json({ ok: true, message: "Kuma DB reset successfully" });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ ok: false, error: e.message }, 500);
   }
 });
 
-/** POST /api/stop-server — shut down studio server */
+/** POST /api/stop-server?confirm=1 — shut down studio server (requires confirmation) */
 api.post("/stop-server", (c) => {
+  const blocked = confirmGuard(c);
+  if (blocked) return blocked;
   setTimeout(() => process.exit(0), 500);
   return c.json({ ok: true, message: "Kuma Studio server shutting down" });
 });

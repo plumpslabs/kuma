@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 import fastGlob from "fast-glob";
 import { recordDecisionLog } from "./kumaDb.js";
 import { recordDecision } from "./kumaMemory.js";
+import { SOURCE_EXT_GLOB } from "./languageSupport.js";
 
 export interface MineOptions {
   scope?: string;
@@ -117,7 +118,7 @@ export async function mineHistoricalDecisions(options: MineOptions = {}): Promis
   // 2. Scan Inline Comments
   if (candidates.length < limit) {
     try {
-      const scopePattern = options.scope ? `**/*${options.scope}*.*` : "**/*.{ts,js,py,go,rs,java,md}";
+      const scopePattern = options.scope ? `**/*${options.scope}*.*` : `**/*.{${SOURCE_EXT_GLOB.slice(1, -1)},md}`;
       const files = await fastGlob(scopePattern, {
         cwd: root,
         ignore: ["node_modules/**", "dist/**", ".kuma/**", ".git/**", "coverage/**"],

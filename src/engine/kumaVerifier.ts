@@ -292,9 +292,26 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
         if (passed && fakePassPatterns.some(p => p.test(rawOutput))) {
           passed = false; // Treat as NO_TESTS, not PASSED
         }
+        const isNoTests = fakePassPatterns.some(p => p.test(rawOutput));
         const truncatedOutput = rawOutput.length > 2000 ? rawOutput.substring(rawOutput.length - 2000) : rawOutput;
 
         await saveVerification(scope, runner, fullCommand, passed, truncatedOutput, durationMs);
+
+        // 🧠 AUTO-GOTCHA (P1): self-learning loop — repeated failures → gotcha.
+        // Only real failures count; "no tests" and cached results do not.
+        let autoGotchaMessage: string | null = null;
+        if (scope !== "session-impact" && !isNoTests) {
+          try {
+            const { trackVerificationResult } = await import("./kumaAutoGotcha.js");
+            const autoResult = await trackVerificationResult(scope, passed);
+            if (autoResult.message) autoGotchaMessage = autoResult.message;
+          } catch { /* non-critical */ }
+        } else if (passed) {
+          try {
+            const { resetScopeFailures } = await import("./kumaAutoGotcha.js");
+            resetScopeFailures(scope);
+          } catch { /* non-critical */ }
+        }
 
         // Release lock & state
         _localRunning = false;
@@ -315,8 +332,6 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
         ];
 
         if (!passed) {
-          // Check if it's "no tests" vs "actual failure"
-          const isNoTests = fakePassPatterns.some(p => p.test(rawOutput));
           if (isNoTests) {
             lines[0] = `⚪ **Verification: NO TESTS**`;
             lines.push("ℹ️ No tests ran. Install Jest, Vitest, pytest, or similar to enable verification.");
@@ -330,6 +345,10 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
         } else {
           lines.push("🎉 All scoped tests passed!");
           if (rawOutput) lines.push("```text", rawOutput.substring(0, 800), "```");
+        }
+
+        if (autoGotchaMessage) {
+          lines.push("", autoGotchaMessage);
         }
 
         resolve(lines.join("\n"));

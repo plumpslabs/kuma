@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
+import { getTestCandidates } from "./languageSupport.js";
 
 // ============================================================
 // CONTRACT SCHEMA
@@ -70,15 +71,21 @@ const DEFAULT_CONTRACTS: ContractConfig = {
       postConditions: [
         {
           type: "not_contains",
-          target: "*.ts",
+          target: "*",
           value: "catch {}",
           description: "Empty catch blocks suppress errors silently",
         },
         {
           type: "not_contains",
-          target: "*.ts",
+          target: "*",
           value: "catch (e) {}",
           description: "Empty catch (e) {} suppresses errors silently",
+        },
+        {
+          type: "not_contains",
+          target: "*",
+          value: "except:",
+          description: "Bare except blocks suppress errors silently (Python)",
         },
       ],
       severity: "error",
@@ -310,15 +317,12 @@ function evaluateCondition(
 
     case "has_test_file": {
       if (!contextPath) return { passed: true, message: "⚠️ No file to check" };
-      const basename = path.basename(contextPath, path.extname(contextPath));
-      const dir = path.dirname(contextPath);
-      const possibleTests = [
-        path.join(dir, `${basename}.test.ts`),
-        path.join(dir, `${basename}.spec.ts`),
-        path.join(dir, `__tests__/${basename}.test.ts`),
-        path.join(dir, `__tests__/${basename}.spec.ts`),
-      ];
-      const hasTest = possibleTests.some(t => fs.existsSync(t));
+      const candidates = getTestCandidates(contextPath);
+      // Check both the project-relative candidate and the absolute path
+      const hasTest = candidates.some(t => {
+        const abs = path.isAbsolute(t) ? t : path.resolve(root, t);
+        return fs.existsSync(abs);
+      });
       return {
         passed: hasTest,
         message: hasTest
@@ -358,6 +362,10 @@ function resolveTarget(pattern: string, contextPath?: string, root?: string): st
       try {
         const files = fs.readdirSync(dir);
         return files
+          // 🔴 Only real files — reading a directory throws EISDIR
+          .filter(f => {
+            try { return fs.statSync(path.join(dir, f)).isFile(); } catch { return false; }
+          })
           .filter(f => f.endsWith(suffix) || f.includes(suffix))
           .map(f => path.join(dir, f));
       } catch {

@@ -101,45 +101,56 @@ Each tool should have a single clear purpose. No overlap, no confusion.
 
 ## Project Structure
 
+Kuma uses a **V3 coarse-grained architecture**: 3 tools, each triggering a complete internal workflow in one MCP call.
+
 ```
 src/
-├── index.ts                      # MCP server entry point
-├── manifest.ts                   # Tool registration (16 tools)
-├── agents/
-│   ├── codeReviewer.ts           # Pattern-based code review
-│   └── projectConventions.ts     # Project auto-detection
-├── engine/
-│   ├── lspClient.ts              # TypeScript Language Server client
-│   ├── orchestrator.ts           # Multi-agent parallel execution
-│   ├── sessionMemory.ts          # Session state + persistence
-│   └── types.ts                  # Core type definitions
+├── index.ts                      # MCP server entry point + CLI (init / studio)
+├── manifest.ts                   # Tool registration (3 V3 tools: kuma_context, kuma_memory, kuma_safety)
 ├── tools/
-│   ├── batchFileWriter.ts        # Batch file creation (max 15)
-│   ├── gitDiff.ts                # Structured git diff output
-│   ├── gitLog.ts                 # Git commit history
-│   ├── kumaReflect.ts            # Session reflection/drift detection
-│   ├── lspTools.ts               # LSP query tools with fallback
-│   ├── preciseDiffEditor.ts      # Search-and-replace with fuzzy fallback
-│   ├── projectStructure.ts       # Directory tree viewer
-│   ├── safeTerminalExec.ts       # Sandboxed command execution
-│   ├── smartFilePicker.ts        # Smart file reader with chunking
-│   ├── smartGrep.ts              # Regex search with context
-│   └── staticAnalysis.ts         # Linter/checker passthrough
-└── utils/
-    ├── conventionsDetector.ts    # Framework/package detection
-    ├── errorHandler.ts           # Error classification + circuit breaker
-    ├── pathValidator.ts          # Path sandboxing + backups
-    └── tokenCounter.ts           # Token estimation utilities
+│   ├── kumaContextTool.ts        # kuma_context handler (research, impact, navigate, digest, sync...)
+│   ├── kumaMemoryTool.ts         # kuma_memory handler (decision, arch_flow, gotcha, search...)
+│   ├── kumaSafetyTool.ts         # kuma_safety handler (guard, verify, policy, ast...)
+│   └── kumaGuard.ts              # Anti-pattern / drift / loop detection
+├── engine/
+│   ├── kumaRouter.ts             # Dispatches actions to handlers
+│   ├── kumaDb.ts                 # sql.js (WASM) SQLite persistence + schema
+│   ├── kumaGraph.ts              # Knowledge graph (nodes/edges, impact, flow)
+│   ├── sessionMemory.ts          # Session state + persistence + metrics
+│   ├── kumaSelfHeal.ts           # Staleness detection + git-aware repair
+│   ├── contextDigest.ts          # <500 token project briefing
+│   ├── kumaProgressiveContext.ts # Progressive disclosure / skill boundaries
+│   ├── kumaMemory.ts             # Decision memory, 3-layer memory
+│   ├── kumaPolicyEngine.ts       # Policy-as-Code evaluation
+│   ├── kumaVerifier.ts           # Safety-guarded test verification
+│   ├── ...                       # (kumaLock, kumaCheckpoint, kumaDriftDetector, etc.)
+├── cli/
+│   └── init.ts                   # kuma init — config generation for 13 AI agents
+├── utils/
+│   ├── pathValidator.ts          # Path sandboxing + backups
+│   ├── agentDetector.ts          # AI agent auto-detection
+│   └── skillGenerator.ts         # Native skill file generation
+packages/
+├── core/                         # @kuma/ide-core — read-only DB access for IDE extensions
+└── ide/
+    ├── studio/                   # Kuma Studio — web knowledge graph dashboard
+    ├── vscode/                   # VS Code extension
+    ├── neovim/                   # Neovim plugin
+    └── zed/                      # Zed extension
 tests/                            # Jest test files (mirror src/)
 ```
 
-### Adding a New Tool
+### Adding a New Action (not a new tool)
 
-1. Create the handler in `src/tools/<toolName>.ts`
-2. Export a handler function following the existing pattern
-3. Register the tool in `src/manifest.ts` using `server.tool()`
-4. Create tests in `tests/<toolName>.test.ts`
-5. Update README.md with the new tool
+Kuma intentionally keeps **3 coarse-grained tools**. New capabilities are added as **actions** within an existing tool:
+
+1. Create the handler in `src/engine/<feature>.ts`
+2. Wire the action into the router (`src/engine/kumaRouter.ts`) or the tool handler
+3. Extend the `z.enum([...])` action list in `src/manifest.ts`
+4. Create tests in `tests/<feature>.test.ts`
+5. Update README.md with the new action
+
+> 🚫 Only add a brand-new tool if the action genuinely doesn't fit `kuma_context`, `kuma_memory`, or `kuma_safety`.
 
 ---
 

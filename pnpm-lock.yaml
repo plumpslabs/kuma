@@ -93,6 +93,9 @@ importers:
       hono:
         specifier: ^4.7.0
         version: 4.12.28
+      sql.js:
+        specifier: ^1.14.1
+        version: 1.14.1
     devDependencies:
       tsup:
         specifier: ^8.3.0

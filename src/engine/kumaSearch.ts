@@ -93,6 +93,27 @@ interface TokenVector {
   terms: Map<string, number>; // term -> tf-idf score
   source: string;
   sourceType: "graph" | "memory" | "research";
+  recency?: number; // 0-1, 1 = most recent (used for recency×weight prioritization)
+}
+
+// ============================================================
+// RETRIEVAL SCALING (P2) — bigger projects must find MORE,
+// not less. Hard caps raised + recency weighting so large
+// codebases keep retrieving the freshest relevant context.
+// ============================================================
+
+const SCALE_LIMITS = {
+  maxNodes: 5000,     // was 500 — graphs grow with project size
+  maxMemoryFiles: 30, // was 10
+  maxResearch: 300,   // was 50
+  maxEdges: 20000,    // was 2000 (graph connectivity)
+};
+
+/** Compute a 0-1 recency score from an epoch timestamp (90-day half-life). */
+function recencyScore(epochSec: number): number {
+  if (!epochSec) return 0.5;
+  const ageDays = Math.max(0, (Date.now() / 1000 - epochSec) / 86400);
+  return Math.max(0, Math.min(1, 1 - ageDays / 90));
 }
 
 let _vectorCache: { vectors: TokenVector[]; builtAt: number } | null = null;
@@ -109,10 +130,10 @@ export async function buildSearchVectors(): Promise<TokenVector[]> {
 
   const vectors: TokenVector[] = [];
 
-  // 1. Collect from knowledge graph nodes
+  // 1. Collect from knowledge graph nodes (SCALED: up to 5000, recency-tracked)
   try {
     const db = await getDb();
-    const stmt = db.prepare("SELECT id, name, metadata, file_path FROM nodes ORDER BY updated_at DESC LIMIT 500");
+    const stmt = db.prepare("SELECT id, name, metadata, file_path, updated_at FROM nodes ORDER BY updated_at DESC LIMIT " + SCALE_LIMITS.maxNodes);
     while (stmt.step()) {
       const row = stmt.getAsObject() as Record<string, unknown>;
       const name = (row.name as string) || "";
@@ -131,20 +152,22 @@ export async function buildSearchVectors(): Promise<TokenVector[]> {
         terms: termCounts,
         source: name || (row.id as string),
         sourceType: "graph",
+        recency: recencyScore(row.updated_at as number),
       });
     }
     stmt.free();
   } catch { /* skip */ }
 
-  // 2. Collect from memory files
+  // 2. Collect from memory files (SCALED: up to 30, mtime-based recency)
   try {
     const root = getProjectRoot();
     const memDir = path.join(root, ".kuma", "memories");
     if (fs.existsSync(memDir)) {
-      const files = fs.readdirSync(memDir).filter(f => f.endsWith(".md")).slice(0, 10);
+      const files = fs.readdirSync(memDir).filter(f => f.endsWith(".md")).slice(0, SCALE_LIMITS.maxMemoryFiles);
       for (const file of files) {
         try {
-          const content = fs.readFileSync(path.join(memDir, file), "utf-8");
+          const fullPath = path.join(memDir, file);
+          const content = fs.readFileSync(fullPath, "utf-8");
           const text = content.toLowerCase();
           const rawTerms = extractTerms(text);
           const termCounts = new Map<string, number>();
@@ -155,16 +178,17 @@ export async function buildSearchVectors(): Promise<TokenVector[]> {
             terms: termCounts,
             source: file.replace(/\.md$/, ""),
             sourceType: "memory",
+            recency: recencyScore(Math.floor(fs.statSync(fullPath).mtimeMs / 1000)),
           });
         } catch { /* skip */ }
       }
     }
   } catch { /* skip */ }
 
-  // 3. Collect from research cache
+  // 3. Collect from research cache (SCALED: up to 300, recency-tracked)
   try {
     const db = await getDb();
-    const stmt = db.prepare("SELECT scope, record FROM research_cache ORDER BY updated_at DESC LIMIT 50");
+    const stmt = db.prepare("SELECT scope, record, updated_at FROM research_cache ORDER BY updated_at DESC LIMIT " + SCALE_LIMITS.maxResearch);
     while (stmt.step()) {
       const row = stmt.getAsObject() as Record<string, unknown>;
       const scope = (row.scope as string) || "";
@@ -179,6 +203,7 @@ export async function buildSearchVectors(): Promise<TokenVector[]> {
         terms: termCounts,
         source: scope,
         sourceType: "research",
+        recency: recencyScore(row.updated_at as number),
       });
     }
     stmt.free();
@@ -328,9 +353,7 @@ export async function hybridSearch(
     stmt.free();
   } catch (err) {
     console.error(`[KumaSearch] DB search failed: ${err}`);
-  }
-
-  // 4. TF-IDF vector similarity scoring
+  }    // 4. TF-IDF vector similarity scoring (+ recency×weight blend, P2)
   try {
     const vectors = await buildSearchVectors();
     for (const vec of vectors) {
@@ -338,7 +361,8 @@ export async function hybridSearch(
       const existing = results.find(r => r.source === vec.source);
       if (existing) {
         existing.vectorScore = vectorScore;
-        existing.score = Math.min(100, Math.round(existing.keywordScore * 0.6 + vectorScore * 0.4));
+        const recencyBoost = Math.round((vec.recency ?? 0.5) * 10); // 0-10 pts
+        existing.score = Math.min(100, Math.round(existing.keywordScore * 0.6 + vectorScore * 0.4 + recencyBoost));
         for (const [term] of vec.terms) {
           if (queryVector.has(term) && !existing.matchedTerms.includes(term)) {
             existing.matchedTerms.push(term);
@@ -349,10 +373,11 @@ export async function hybridSearch(
         for (const [term] of vec.terms) {
           if (queryVector.has(term)) matchedTerms.push(term);
         }
+        const recencyBoost = Math.round((vec.recency ?? 0.5) * 10);
         results.push({
           source: vec.source,
           sourceType: vec.sourceType,
-          score: Math.round(vectorScore * 0.4),
+          score: Math.min(100, Math.round(vectorScore * 0.4 + recencyBoost)),
           keywordScore: 0,
           vectorScore,
           matchedTerms,
@@ -446,7 +471,7 @@ export async function buildGraphConnectivity(): Promise<GraphConnectivity> {
 
   try {
     const db = await getDb();
-    const stmt = db.prepare("SELECT source_id, target_id FROM edges LIMIT 2000");
+    const stmt = db.prepare("SELECT source_id, target_id FROM edges LIMIT " + SCALE_LIMITS.maxEdges);
     while (stmt.step()) {
       const row = stmt.getAsObject() as Record<string, unknown>;
       const src = (row.source_id as string) || "";

@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.3.32] — 2026-08-01
+
+### 🌍 Multi-Language Support, Self-Learning Loop & Legacy Onboarding
+
+- **Multi-Language Engine (`languageSupport.ts`)**: Kuma is now language-agnostic — single source of truth for **15 languages** (TS/JS, Python, Go, Rust, Java, Kotlin, C#, Ruby, PHP, C/C++, Swift, Scala, Dart, Shell).
+  - `isTestFile()` — cross-language test detection (`foo.test.ts`, `test_foo.py`, `foo_test.go`, `FooTest.java`, `foo_spec.rb`).
+  - `getTestCandidates()` — per-language test file conventions for contract checks.
+  - `matchImportPath()` — import/require detection (CJS, ESM, Python, Go, Rust, C/C++, Ruby, PHP, Java, C#).
+  - `grepIncludeFlags()` — multi-language impact analysis.
+- **Multi-Language Wiring**: `kumaCodeScanner` (discovery + import resolution + test detection), `kumaGraph` impact fallback, `kumaContractEngine` `has_test_file`, `kumaAstValidator` import whitelist + Python empty-catch (`except: pass`) + reward-hacking detection, `kumaMiner` inline-comment scan glob all use the shared registry.
+- **Auto-Gotcha Self-Learning Loop (`kumaAutoGotcha.ts`)**: Verification failures now teach Kuma. Repeated failures → automatic gotcha (2× consecutive → `medium`, 4× → escalates to `high`). Anti-flood dedup; passing verification resets the counter.
+- **Legacy Codebase Onboarding (`init --legacy`)**: One-command bulk onboarding for existing/large repos — git history harvest (last 25 commits → decisions + gotchas), inline marker mining (`HACK`/`FIXME`/`TODO` → severity-tagged gotchas), feature graph bootstrap, and architecture digest.
+- **Path-Scoped Rules (`kumaPathRules.ts`)**: `kuma_context` init & research now inject rules matching the current goal/scope on demand.
+- **Retrieval Scaling (`kumaSearch.ts`)**: Hard caps raised for big projects — nodes 500→5000, memory 10→30, research 50→300, edges 2000→20000. Added recency×weight scoring (90-day half-life) so freshest relevant context surfaces first.
+- **Verifier Auto-Gotcha Integration**: `runAutoVerification` feeds real failures (not "no tests") into the auto-gotcha loop and reports recorded gotchas in the verification output.
+- **Kuma Studio**: Full node metadata rendering, sql.js dependency for direct DB reads, and richer graph dashboard.
+- **Docs Redesign**: `docs/index.html` overhauled — Kuma logo, fuller documentation layout, better use of space.
+- **CONTRIBUTING Update**: Documented V3 coarse-grained architecture (3 tools) and "add an action, not a tool" workflow.
+
 ## [2.3.31] — 2026-07-31
 
 ### 🧹 Data Structure Hardening, Instruction Cleanup & Studio Full Metadata

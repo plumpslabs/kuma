@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
+import { isTestFile, matchImportPath } from "./languageSupport.js";
 
 
 export interface ValidationFinding {
@@ -82,9 +83,14 @@ export function validateCodeContent(
       });
     }
 
-    // 2. Exception swallowing (empty catch blocks)
-    if (/catch\s*\([^)]*\)\s*\{\s*\}/.test(line) ||
-        (/catch\s*\([^)]*\)\s*\{/.test(line) && lines[i + 1]?.trim() === "}")) {
+    // 2. Exception swallowing (empty catch blocks / bare except / ignored result)
+    const emptyCatch =
+      /catch\s*\([^)]*\)\s*\{\s*\}/.test(line) ||
+      (/catch\s*\([^)]*\)\s*\{/.test(line) && lines[i + 1]?.trim() === "}") ||
+      // Python: bare/empty except blocks (except:, except Exception: pass)
+      /except\s*([^:]*)\s*:\s*(pass|\.\.\.)\s*(#.*)?$/.test(line) ||
+      (/except\s*([^:]*)\s*:\s*$/.test(line) && /^pass(\s*#.*)?$/.test(lines[i + 1]?.trim() ?? ""));
+    if (emptyCatch) {
       findings.push({
         line: lineNum,
         severity: "error",
@@ -95,10 +101,12 @@ export function validateCodeContent(
     }
 
     // 3. Reward hacking — hardcoded fallback returns in test files
-    if (filePath?.includes(".test.") || filePath?.includes(".spec.")) {
+    if (isTestFile(filePath || "")) {
       if (
         /\breturn\s+(true|false|null|undefined|0|""|'')\s*;/.test(line) ||
         /\breturn\s+\d+\s*;/.test(line) ||
+        /\breturn\s+(True|False|None)\b/.test(line) ||
+        /\breturn\s+0\b/.test(line) ||
         /\bPromise\.resolve\s*\(\s*(true|false|null|undefined|0|""|'')\s*\)/.test(line)
       ) {
         findings.push({
@@ -113,8 +121,7 @@ export function validateCodeContent(
 
     // 4. Hardcoded return values in non-test files (general anti-pattern)
     if (
-      !filePath?.includes(".test.") &&
-      !filePath?.includes(".spec.") &&
+      !isTestFile(filePath || "") &&
       /\breturn\s+(true|false|null)\s*;/.test(line) &&
       ((lines[i - 1] || "").includes("TODO") || (lines[i - 1] || "").includes("FIXME") || (lines[i - 1] || "").includes("HACK"))
     ) {
@@ -127,19 +134,16 @@ export function validateCodeContent(
       });
     }
 
-    // 5. Import validation against whitelist
-    const importMatch = line.match(/import\s+(?:\{[^}]*\}\s+from\s+)?['"]([^'"]+)['"]/);
-    if (importMatch) {
-      const imported = importMatch[1];
-      if (whitelist.blocked.some(b => imported.includes(b))) {
-        findings.push({
-          line: lineNum,
-          severity: "error",
-          category: "import-violation",
-          message: `Blocked import: "${imported}" is not allowed per security whitelist`,
-          suggestion: `Remove or replace the import. Allowed packages: ${whitelist.allowed.slice(0, 5).join(", ") || "(none specified)"}`,
-        });
-      }
+    // 5. Import validation against whitelist (multi-language)
+    const imported = matchImportPath(line);
+    if (imported && whitelist.blocked.some(b => imported.includes(b))) {
+      findings.push({
+        line: lineNum,
+        severity: "error",
+        category: "import-violation",
+        message: `Blocked import: "${imported}" is not allowed per security whitelist`,
+        suggestion: `Remove or replace the import. Allowed packages: ${whitelist.allowed.slice(0, 5).join(", ") || "(none specified)"}`,
+      });
     }
   }
 

@@ -34,6 +34,7 @@ Usage:
   npx @plumpslabs/kuma init --skip-existing Skip generation if file exists
   npx @plumpslabs/kuma init --claude --cursor  Generate specific files
   npx @plumpslabs/kuma studio        Start Kuma Studio web dashboard (knowledge graph visualizer)
+  npx @plumpslabs/kuma init --legacy  Bulk-onboard an existing (legacy) codebase
   npx @plumpslabs/kuma init --help  Show this help
 
 Available config files:
@@ -201,6 +202,25 @@ async function main(): Promise<void> {
 
     if (flags.includes("--help") || flags.includes("-h")) {
       printHelp();
+      process.exit(0);
+    }
+
+    // ============================================================
+    // LEGACY ONBOARDING MODE: kuma init --legacy
+    // Bulk-bootstraps an existing (legacy) codebase: git harvest →
+    // decisions/gotchas, inline markers → gotchas, feature graph,
+    // architecture digest. All in one command.
+    // ============================================================
+    if (flags.includes("--legacy")) {
+      try {
+        const { runLegacyOnboarding } = await import("./engine/kumaLegacyOnboard.js");
+        console.error("🐻 Kuma Legacy Onboarding — making your existing codebase agent-ready...");
+        const report = await runLegacyOnboarding();
+        console.log(report);
+      } catch (err) {
+        console.error(`❌ Legacy onboarding failed: ${err}`);
+        process.exit(1);
+      }
       process.exit(0);
     }
 

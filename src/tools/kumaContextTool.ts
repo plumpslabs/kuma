@@ -197,6 +197,16 @@ async function handleInit(_params: ContextParams): Promise<string> {
     // Health score is non-critical
   }
 
+  // 7. PATH-SCOPED RULES (P2): on-demand rules for the current goal
+  try {
+    const { formatPathRules } = await import("../engine/kumaPathRules.js");
+    const rulesBlock = formatPathRules(_params.goal);
+    if (rulesBlock) {
+      lines.push("");
+      lines.push(rulesBlock);
+    }
+  } catch { /* non-critical */ }
+
   lines.push("", "💡 Call kuma_context({ action: 'research', scope: '<area>' }) to research a specific area.");
 
   return lines.join("\n");
@@ -337,6 +347,16 @@ async function handleResearch(params: ContextParams): Promise<string> {
     lines.push("  ⚠️ Memory lookup failed");
   }
   lines.push("");
+
+  // STEP 5.5: PATH-SCOPED RULES (P2) — inject rules matching this scope
+  try {
+    const { formatPathRules } = await import("../engine/kumaPathRules.js");
+    const rulesBlock = formatPathRules(scope);
+    if (rulesBlock) {
+      lines.push(rulesBlock);
+      lines.push("");
+    }
+  } catch { /* non-critical */ }
 
   // Save to research cache
   const newRecord = {

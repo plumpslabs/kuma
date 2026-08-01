@@ -7,6 +7,7 @@
 
 import { getDb, saveDb, flushDb, generateNodeId } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
+import { grepIncludeFlags, isTestFile } from "./languageSupport.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
   | "feature_domain" | "workflow" | "cross_service_link"
@@ -892,7 +893,7 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
       stmt.free();
 
       if (results.length === 0) {
-        return `🔍 **Graph Query** — No nodes found for "${query}".\n\nTry a different search term or check if the graph has been built by using tools like smart_grep or lsp_query.`;
+        return `🔍 **Graph Query** — No nodes found for "${query}".\n\nTry a different search term or use kuma_context({ action: 'research', scope: '<term>' }) to build graph context.`;
       }
 
       const lines: string[] = [
@@ -938,7 +939,7 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
       stmt.free();
 
       if (results.length === 0) {
-        return `🔍 **Graph Edges** — No connections found for node "${query}".\n\nTry kuma_graph_query({ type: 'nodes', query: '<search>' }) to find node IDs first.`;
+        return `🔍 **Graph Edges** — No connections found for node "${query}".\n\nTry kuma_context({ action: 'research', scope: '<term>' }) to build related graph nodes first.`;
       }
 
       const lines: string[] = [
@@ -963,7 +964,7 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
       // Find paths between two nodes (BFS, depth-limited)
       const parts = query.split("→").map((s) => s.trim());
       if (parts.length !== 2) {
-        return `⚠️ For path queries, use format: "sourceNodeID → targetNodeID"\nExample: kuma_graph_query({ type: 'paths', query: 'function::login → function::validatePassword' })`;
+        return `⚠️ For path queries, use format: "sourceNodeID → targetNodeID"\nExample: kuma_context({ action: 'impact', target: 'login' }) → traces connections between nodes.`;
       }
 
       const [sourceId, targetId] = parts;
@@ -1476,7 +1477,7 @@ async function codebaseImpactFallback(target: string): Promise<ImpactResult> {
     // Use grep to find references to the target symbol in source files
     // 🔴 SAFETY: 5s timeout + 256KB maxBuffer to prevent resource exhaustion
     const grepResult = execSync(
-      `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.json" -l "${target.replace(/"/g, '\\"')}" . 2>/dev/null | grep -v node_modules | grep -v .git | grep -v dist | grep -v .kuma | head -50`,
+      `grep -rn ${grepIncludeFlags()} --include="*.json" --include="*.md" -l "${target.replace(/"/g, '\\"')}" . 2>/dev/null | grep -v node_modules | grep -v .git | grep -v dist | grep -v .kuma | head -50`,
       { cwd: root, encoding: "utf-8", timeout: 5000, maxBuffer: 256 * 1024 },
     ).trim();
 
@@ -1488,7 +1489,7 @@ async function codebaseImpactFallback(target: string): Promise<ImpactResult> {
 
     // Count total references across all files
     const fileCount = files.length;
-    const testFiles = files.filter(f => f.includes("test") || f.includes("spec") || f.includes("__tests__")).length;
+    const testFiles = files.filter((f) => isTestFile(f)).length;
 
     const risk: ImpactResult["risk"] = fileCount > 20 ? "high" : fileCount > 5 ? "medium" : "low";
 

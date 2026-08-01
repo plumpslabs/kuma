@@ -32,6 +32,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import { upsertNode, addEdge, nodeId } from "./kumaGraph.js";
+import { DEFAULT_SOURCE_INCLUDES, SOURCE_EXTENSIONS, SOURCE_EXT_GLOB, isTestFile } from "./languageSupport.js";
 
 // ============================================================
 // Types
@@ -76,7 +77,10 @@ function getRoot(): string {
 }
 
 // ============================================================
-// Regex Patterns — TypeScript / JavaScript Only
+// Regex Patterns — TypeScript / JavaScript (structural node parsing)
+// NOTE: file discovery, import resolution & test detection are
+// multi-language via languageSupport.ts; the syntax-level regexes
+// below only extract structure from TS/JS-family files.
 // ============================================================
 
 const FUNCTION_DECL_RE = /(?:export\s+)?(?:async\s+)?function\s*(?:\*\s*)?(\w+)\s*\(/g;
@@ -91,7 +95,6 @@ const EXPRESS_ROUTE_RE = /\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]\
 const HONO_ROUTE_RE = /c\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g;
 const EXPORT_RE = /export\s+(?:default\s+)?(\w+)/g;
 const CALL_RE = /(\w+)\s*\(/g;
-const TEST_PATTERNS = [".test.", ".spec.", "__tests__", "/test/"];
 
 // Cross-scan caches
 const knownComponents = new Set<string>();
@@ -121,7 +124,7 @@ function getDirectoryDirs(filePaths: string[]): string[] {
 }
 
 // ============================================================
-// Main Scanner — TS/JS only
+// Main Scanner — multi-language discovery
 // ============================================================
 
 export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResult> {
@@ -131,23 +134,16 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
 
   const result: ScanResult = { nodeCount: 0, edgeCount: 0, filesScanned: 0, errors: [] };
 
-  // 1. Discover source files (TS/JS only — other languages rely on inline recording)
-  const includePatterns = options.include || [
-    "src/**/*.{ts,tsx,js,jsx}",
-    "app/**/*.{ts,tsx,js,jsx}",
-    "lib/**/*.{ts,tsx,js,jsx}",
-    "packages/**/*.{ts,tsx,js,jsx}",
-    "server/**/*.{ts,tsx,js,jsx}",
-    "api/**/*.{ts,tsx,js,jsx}",
-  ];
+  // 1. Discover source files (multi-language — any supported language)
+  const includePatterns = options.include || [...DEFAULT_SOURCE_INCLUDES];
 
   if (options.scope) {
     includePatterns.length = 0;
     if (options.scope.includes("/") || options.scope.includes(".")) {
       includePatterns.push(options.scope);
     } else {
-      includePatterns.push(`**/*${options.scope}*/**/*.{ts,tsx,js,jsx}`);
-      includePatterns.push(`**/*${options.scope}*.{ts,tsx,js,jsx}`);
+      includePatterns.push(`**/*${options.scope}*/**/*.${SOURCE_EXT_GLOB}`);
+      includePatterns.push(`**/*${options.scope}*.${SOURCE_EXT_GLOB}`);
     }
   }
 
@@ -262,7 +258,8 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
 }
 
 // ============================================================
-// File Parsing — TypeScript / JavaScript only
+// File Parsing — TS/JS structural regex (other languages: file/test
+// nodes only via languageSupport.ts; structure via kuma_memory)
 // ============================================================
 
 interface ParsedFile {
@@ -285,7 +282,7 @@ function parseFile(filePath: string, content: string): ParsedFile {
     routes: [],
     imports: [],
     exports: [],
-    isTest: TEST_PATTERNS.some((p) => filePath.includes(p)),
+    isTest: isTestFile(filePath),
   };
 
   const lines = content.split("\n");
@@ -574,7 +571,10 @@ function resolveImportPath(fromFile: string, importPath: string, root: string): 
   if (!importPath.startsWith(".") && !importPath.startsWith("/")) return null;
 
   const fromDir = path.dirname(path.join(root, fromFile));
-  const exts = [".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx", "/index.js", "/index.jsx"];
+  const exts = [
+    ...SOURCE_EXTENSIONS,
+    ...SOURCE_EXTENSIONS.map((e) => `/index${e}`),
+  ];
 
   for (const ext of exts) {
     const resolved = path.resolve(fromDir, importPath + ext);
@@ -583,7 +583,7 @@ function resolveImportPath(fromFile: string, importPath: string, root: string): 
 
   const dirPath = path.resolve(fromDir, importPath);
   if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
-    for (const ext of [".ts", ".tsx", ".js", ".jsx"]) {
+    for (const ext of SOURCE_EXTENSIONS) {
       const indexPath = path.join(dirPath, `index${ext}`);
       if (fs.existsSync(indexPath)) return path.relative(root, indexPath);
     }

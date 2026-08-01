@@ -12,11 +12,13 @@
   --amber-50: #FFFBEB;
   --amber-100: #FEF3C7;
   --amber-200: #FDE68A;
+  --amber-300: #FCD34D;
   --amber-400: #FBBF24;
   --amber-500: #F59E0B;
   --amber-600: #D97706;
   --amber-700: #B45309;
   --amber-800: #92400E;
+  --amber-900: #78350F;
   --gray-50: #F9FAFB;
   --gray-100: #F3F4F6;
   --gray-200: #E5E7EB;
@@ -26,375 +28,410 @@
   --gray-600: #4B5563;
   --gray-700: #374151;
   --gray-800: #1F2937;
+  --gray-850: #18202E;
   --gray-900: #111827;
-  --gray-950: #0F172A;
+  --gray-950: #0B1220;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+  --maxw: 1180px;
+  --radius: 14px;
 }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
 body {
   font-family: var(--font-sans);
   background: var(--gray-950);
+  background-image:
+    radial-gradient(1000px 500px at 85% -10%, rgba(245,158,11,0.06), transparent 60%),
+    radial-gradient(800px 400px at 0% 0%, rgba(217,119,6,0.05), transparent 50%);
   color: var(--gray-100);
-  line-height: 1.7;
-  display: flex;
-  min-height: 100vh;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
 }
+::selection { background: rgba(245,158,11,0.25); color: var(--amber-100); }
+
+/* ─── Scroll progress ─── */
+.scroll-progress {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0;
+  background: linear-gradient(90deg, var(--amber-600), var(--amber-400));
+  z-index: 200; transition: width 0.1s linear;
+}
+
+/* ─── Top bar ─── */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(11,18,32,0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(31,41,55,0.8);
+}
+.topbar-inner {
+  max-width: var(--maxw); margin: 0 auto;
+  display: flex; align-items: center; gap: 1.5rem;
+  padding: 0.65rem 1.5rem; height: 60px;
+}
+.brand { display: flex; align-items: center; gap: 0.7rem; text-decoration: none; color: var(--gray-100); }
+.brand img { width: 38px; height: 38px; border-radius: 10px; box-shadow: 0 2px 10px rgba(217,119,6,0.35); }
+.brand-name { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.02em; }
+.brand-name small { font-size: 0.62rem; color: var(--amber-500); font-weight: 600; display: block; letter-spacing: 0.06em; text-transform: uppercase; margin-top: -2px; }
+.topnav { display: flex; gap: 0.15rem; margin-left: 1rem; flex-wrap: wrap; }
+.topnav a {
+  color: var(--gray-400); text-decoration: none; font-size: 0.86rem; font-weight: 500;
+  padding: 0.4rem 0.7rem; border-radius: 8px; transition: all 0.15s;
+}
+.topnav a:hover { color: var(--amber-300); background: rgba(245,158,11,0.08); }
+.topnav a.active { color: var(--amber-400); background: rgba(245,158,11,0.12); font-weight: 600; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.84rem; font-weight: 600; text-decoration: none;
+  padding: 0.45rem 0.95rem; border-radius: 9px; border: 1px solid transparent;
+  transition: all 0.18s; cursor: pointer; font-family: inherit;
+}
+.btn-ghost { color: var(--gray-300); border-color: var(--gray-700); background: transparent; }
+.btn-ghost:hover { color: var(--gray-100); border-color: var(--gray-500); transform: translateY(-1px); }
+.btn-amber {
+  color: #1F1300; background: linear-gradient(135deg, var(--amber-400), var(--amber-600));
+  box-shadow: 0 2px 14px rgba(245,158,11,0.3);
+}
+.btn-amber:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(245,158,11,0.42); }
+.menu-toggle {
+  display: none; background: none; border: 1px solid var(--gray-700); color: var(--gray-200);
+  border-radius: 8px; width: 38px; height: 38px; font-size: 1.1rem; cursor: pointer;
+}
+
+/* ─── Layout ─── */
+.layout { max-width: var(--maxw); margin: 0 auto; padding: 1.5rem; display: flex; gap: 3rem; }
+.main { flex: 1; min-width: 0; padding: 1.5rem 0 5rem; }
+
+/* ─── Hero ─── */
+.hero { padding: 7.5rem 1.5rem 2.5rem; text-align: center; position: relative; overflow: hidden; }
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(rgba(245,158,11,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245,158,11,0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(600px 300px at 50% 30%, black, transparent);
+  -webkit-mask-image: radial-gradient(600px 300px at 50% 30%, black, transparent);
+}
+.hero-logo {
+  width: 110px; height: 110px; margin: 0 auto 1.4rem; position: relative;
+  border-radius: 26px; box-shadow: 0 10px 50px rgba(217,119,6,0.35), 0 0 0 1px rgba(245,158,11,0.2);
+  animation: float 5s ease-in-out infinite;
+}
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+.hero h1 {
+  font-size: clamp(2.6rem, 6vw, 4rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.1;
+  background: linear-gradient(180deg, #fff, var(--amber-200));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero h1 .sub {
+  display: block; font-size: clamp(1.05rem, 2.4vw, 1.4rem); font-weight: 600;
+  color: var(--amber-500); letter-spacing: -0.01em; margin-top: 0.6rem;
+  -webkit-text-fill-color: var(--amber-500);
+}
+.hero-tagline { font-size: 1.05rem; color: var(--gray-400); max-width: 680px; margin: 1.1rem auto 0; }
+.hero-badges { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin: 1.6rem 0; }
+.hero-badge {
+  background: rgba(31,41,55,0.7); border: 1px solid var(--gray-700); color: var(--gray-200);
+  padding: 0.32rem 0.85rem; border-radius: 100px; font-size: 0.78rem; font-family: var(--font-mono);
+  transition: all 0.15s;
+}
+.hero-badge:hover { border-color: var(--amber-600); color: var(--amber-300); }
+.install-card {
+  display: inline-flex; align-items: center; gap: 0.75rem; max-width: 100%;
+  background: var(--gray-900); border: 1px solid var(--gray-700); border-radius: 12px;
+  padding: 0.55rem 0.6rem 0.55rem 1.1rem; font-family: var(--font-mono); font-size: 0.92rem;
+  color: var(--amber-200); box-shadow: 0 6px 30px rgba(0,0,0,0.4);
+}
+.install-card .dollar { color: var(--gray-500); }
+.copy-btn {
+  background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35); color: var(--amber-300);
+  border-radius: 8px; padding: 0.4rem 0.75rem; font-size: 0.8rem; font-family: var(--font-mono);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.copy-btn:hover { background: rgba(245,158,11,0.22); }
+.copy-btn.done { color: #34D399; border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }
+.hero-cta { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 1.6rem; }
 
 /* ─── Sidebar ─── */
 .sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  background: var(--gray-900);
-  border-right: 1px solid var(--gray-800);
-  padding: 2rem 1.5rem;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
+  width: 230px; flex-shrink: 0; position: sticky; top: 84px;
+  align-self: flex-start; max-height: calc(100vh - 104px); overflow-y: auto;
+  padding-right: 0.5rem;
 }
-.sidebar-logo {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 2rem;
-  text-decoration: none;
-  color: var(--gray-100);
+.sidebar::-webkit-scrollbar { width: 5px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--gray-700); border-radius: 4px; }
+.sidebar-section {
+  margin: 1.4rem 0 0.5rem; padding: 0 0.7rem;
+  font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gray-500);
 }
-.sidebar-logo svg { width: 36px; height: 36px; }
-.sidebar-logo span {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.sidebar-logo small {
-  font-size: 0.65rem;
-  color: var(--amber-500);
-  display: block;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.sidebar-nav { display: flex; flex-direction: column; gap: 0.25rem; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 1px; }
 .sidebar-nav a {
-  color: var(--gray-400);
-  text-decoration: none;
-  padding: 0.45rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  transition: all 0.15s;
+  color: var(--gray-400); text-decoration: none; padding: 0.42rem 0.7rem; border-radius: 8px;
+  font-size: 0.86rem; border-left: 2px solid transparent; transition: all 0.15s;
 }
-.sidebar-nav a:hover { color: var(--amber-400); background: rgba(245,158,11,0.08); }
-.sidebar-nav a.active { color: var(--amber-500); background: rgba(245,158,11,0.1); font-weight: 600; }
-.sidebar-section { margin-top: 1.5rem; margin-bottom: 0.5rem; padding: 0 0.75rem; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); }
+.sidebar-nav a:hover { color: var(--amber-300); background: rgba(245,158,11,0.06); }
+.sidebar-nav a.active {
+  color: var(--amber-400); background: rgba(245,158,11,0.1); border-left-color: var(--amber-500); font-weight: 600;
+}
 
-/* ─── Main ─── */
-.main {
-  flex: 1;
-  max-width: 860px;
-  padding: 3rem 3rem 6rem;
-}
-.main h1 {
-  font-size: 2.5rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  margin-bottom: 0.5rem;
-}
-.main h1 .sub {
-  display: block;
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: var(--amber-500);
-  margin-top: 0.5rem;
-  letter-spacing: 0;
-}
+/* ─── Typography ─── */
 .main h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin-top: 3rem;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--gray-800);
-  color: var(--amber-400);
+  font-size: 1.9rem; font-weight: 800; letter-spacing: -0.025em; color: var(--gray-50);
+  margin: 4rem 0 0.4rem; scroll-margin-top: 90px;
 }
-.main h3 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  color: var(--gray-200);
+.main h2 .hash { color: var(--amber-600); font-weight: 700; margin-right: 0.35rem; }
+.main h2::after {
+  content: ""; display: block; width: 52px; height: 4px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--amber-500), transparent); margin-top: 0.5rem;
 }
-.main p { margin-bottom: 1rem; color: var(--gray-300); }
-.main a { color: var(--amber-400); text-decoration: none; }
-.main a:hover { text-decoration: underline; }
-.main ul, .main ol { margin-bottom: 1rem; padding-left: 1.5rem; color: var(--gray-300); }
-.main li { margin-bottom: 0.35rem; }
-.main strong { color: var(--gray-100); }
-.main code {
-  font-family: var(--font-mono);
-  font-size: 0.8em;
-  background: var(--gray-800);
-  padding: 0.2em 0.4em;
-  border-radius: 4px;
-  color: var(--amber-200);
+.main h3 { font-size: 1.15rem; font-weight: 700; margin: 2.4rem 0 0.8rem; color: var(--amber-300); }
+.main p { margin-bottom: 1.1rem; color: var(--gray-300); font-size: 0.98rem; }
+.main a { color: var(--amber-400); text-decoration: none; border-bottom: 1px solid rgba(245,158,11,0.25); transition: border-color 0.15s; }
+.main a:hover { border-bottom-color: var(--amber-400); }
+.main ul, .main ol { margin-bottom: 1.2rem; padding-left: 1.5rem; color: var(--gray-300); }
+.main li { margin-bottom: 0.4rem; }
+.main strong { color: var(--gray-50); font-weight: 700; }
+.main code:not(pre code) {
+  font-family: var(--font-mono); font-size: 0.82em;
+  background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.18);
+  padding: 0.15em 0.45em; border-radius: 6px; color: var(--amber-200);
 }
-.main pre {
-  background: var(--gray-900);
-  border: 1px solid var(--gray-800);
-  border-radius: 8px;
-  padding: 1.25rem;
-  overflow-x: auto;
-  margin-bottom: 1.5rem;
-  font-size: 0.85rem;
-  line-height: 1.5;
-}
-.main pre code {
-  background: none;
-  padding: 0;
-  color: var(--gray-100);
-  font-size: inherit;
-}
+.lead { font-size: 1.06rem; color: var(--gray-300); max-width: 760px; }
 
-/* ─── Hero ─── */
-.hero {
-  text-align: center;
-  padding: 3rem 0 2rem;
+/* ─── Code blocks ─── */
+.code-block {
+  margin: 1.4rem 0 1.8rem; border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--gray-800); background: var(--gray-900);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
 }
-.hero-logo { margin-bottom: 1.5rem; }
-.hero-logo svg { width: 80px; height: 80px; }
-.hero p {
-  font-size: 1.1rem;
-  color: var(--gray-400);
-  max-width: 600px;
-  margin: 0.5rem auto 1.5rem;
+.code-head {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 1rem;
+  background: var(--gray-850); border-bottom: 1px solid var(--gray-800);
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--gray-500);
 }
-.hero-badges { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
-.hero-badge {
-  background: var(--gray-800);
-  color: var(--gray-300);
-  padding: 0.3rem 0.8rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-family: var(--font-mono);
-}
+.code-head .dots { display: flex; gap: 0.35rem; }
+.code-head .dots i { width: 10px; height: 10px; border-radius: 50%; }
+.code-head .dots i:nth-child(1) { background: #F87171; }
+.code-head .dots i:nth-child(2) { background: #FBBF24; }
+.code-head .dots i:nth-child(3) { background: #34D399; }
+.code-head .lang { margin-left: 0.5rem; }
+.code-head .copy-btn { margin-left: auto; padding: 0.28rem 0.6rem; font-size: 0.72rem; }
+.code-block pre { padding: 1.15rem 1.3rem; overflow-x: auto; font-size: 0.86rem; line-height: 1.6; }
+.code-block pre code { background: none; padding: 0; color: var(--gray-100); font-size: inherit; font-family: var(--font-mono); }
 
 /* ─── Cards ─── */
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.1rem; margin: 1.6rem 0; }
 .card {
-  background: var(--gray-900);
-  border: 1px solid var(--gray-800);
-  border-radius: 10px;
-  padding: 1.25rem;
-  transition: border-color 0.2s;
+  background: linear-gradient(180deg, var(--gray-900), var(--gray-850));
+  border: 1px solid var(--gray-800); border-radius: var(--radius);
+  padding: 1.5rem; transition: all 0.2s; position: relative; overflow: hidden;
 }
-.card:hover { border-color: var(--amber-700); }
-.card h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; color: var(--amber-400); }
-.card p { font-size: 0.85rem; color: var(--gray-400); margin: 0; }
-.card .emoji { font-size: 1.5rem; margin-bottom: 0.5rem; display: block; }
+.card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--amber-600), transparent); opacity: 0.4; transition: opacity 0.2s;
+}
+.card:hover { transform: translateY(-3px); border-color: var(--amber-700); box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+.card:hover::before { opacity: 1; }
+.card .emoji { font-size: 1.7rem; display: block; margin-bottom: 0.7rem; }
+.card h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.45rem; color: var(--amber-300); }
+.card p { font-size: 0.87rem; color: var(--gray-400); margin: 0; line-height: 1.6; }
 
-/* ─── Table ─── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 1.5rem;
-  font-size: 0.875rem;
-}
+/* ─── Tables ─── */
+.table-wrap { overflow-x: auto; margin: 1.3rem 0 1.8rem; border-radius: 12px; border: 1px solid var(--gray-800); }
+table { width: 100%; border-collapse: collapse; font-size: 0.87rem; min-width: 560px; }
 table th {
-  text-align: left;
-  padding: 0.65rem 0.75rem;
-  background: var(--gray-800);
-  color: var(--gray-200);
-  font-weight: 600;
-  border: 1px solid var(--gray-700);
+  text-align: left; padding: 0.75rem 1rem; background: var(--gray-850);
+  color: var(--amber-300); font-weight: 700; border-bottom: 1px solid var(--gray-700);
+  font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;
 }
-table td {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--gray-800);
-  color: var(--gray-300);
-}
-table tr:hover td { background: var(--gray-800); }
+table td { padding: 0.7rem 1rem; border-bottom: 1px solid var(--gray-800); color: var(--gray-300); vertical-align: top; }
+table tbody tr { transition: background 0.12s; }
+table tbody tr:hover { background: rgba(245,158,11,0.05); }
+table tbody tr:last-child td { border-bottom: none; }
 
 /* ─── Pipeline ─── */
-.pipeline { margin: 1.5rem 0; }
+.pipeline { margin: 1.6rem 0; position: relative; padding-left: 2.2rem; }
+.pipeline::before {
+  content: ""; position: absolute; left: 13px; top: 8px; bottom: 8px; width: 2px;
+  background: linear-gradient(180deg, var(--amber-600), rgba(245,158,11,0.1));
+}
 .pipeline-step {
-  display: flex;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  background: var(--gray-900);
-  border: 1px solid var(--gray-800);
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
+  position: relative; padding: 1.1rem 1.4rem; margin-bottom: 1rem;
+  background: var(--gray-900); border: 1px solid var(--gray-800); border-radius: 12px;
+  transition: all 0.18s;
 }
-.pipeline-step:first-child { border-color: var(--amber-700); }
+.pipeline-step:hover { border-color: var(--amber-700); transform: translateX(3px); }
 .pipeline-step .num {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--amber-500);
-  min-width: 2rem;
-  padding-top: 0.1rem;
+  position: absolute; left: -2.2rem; top: 1.05rem; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--amber-600); color: #1F1300; border-radius: 50%;
+  font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800;
+  box-shadow: 0 0 0 4px var(--gray-950);
 }
-.pipeline-step .content h4 { font-size: 0.9rem; color: var(--gray-100); margin-bottom: 0.2rem; }
-.pipeline-step .content p { font-size: 0.85rem; color: var(--gray-400); margin: 0; }
+.pipeline-step .content h4 { font-size: 0.98rem; font-weight: 700; color: var(--gray-50); margin-bottom: 0.3rem; }
+.pipeline-step .content p { font-size: 0.88rem; color: var(--gray-400); margin: 0; }
+
+/* ─── Callouts ─── */
+.callout {
+  display: flex; gap: 0.8rem; padding: 1rem 1.2rem; margin: 1.4rem 0;
+  border-radius: 12px; border: 1px solid; font-size: 0.9rem; align-items: flex-start;
+}
+.callout .ico { font-size: 1.15rem; line-height: 1.4; }
+.callout.info { background: rgba(59,130,246,0.07); border-color: rgba(59,130,246,0.25); color: #BFDBFE; }
+.callout.warn { background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.25); color: var(--amber-200); }
+.callout.danger { background: rgba(239,68,68,0.07); border-color: rgba(239,68,68,0.25); color: #FECACA; }
 
 /* ─── Footer ─── */
 .footer {
-  margin-top: 4rem;
-  padding-top: 2rem;
-  border-top: 1px solid var(--gray-800);
-  text-align: center;
-  color: var(--gray-500);
-  font-size: 0.85rem;
+  border-top: 1px solid var(--gray-800); padding: 2.5rem 1.5rem 3rem;
+  text-align: center; color: var(--gray-500); font-size: 0.88rem;
 }
-.footer a { color: var(--amber-400); }
+.footer .foot-links { display: flex; justify-content: center; gap: 1.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.footer a { color: var(--gray-400); text-decoration: none; border-bottom: none; transition: color 0.15s; }
+.footer a:hover { color: var(--amber-400); }
+
+/* ─── Back to top ─── */
+#back-top {
+  position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 90;
+  width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--gray-700);
+  background: var(--gray-900); color: var(--amber-400); font-size: 1.1rem; cursor: pointer;
+  opacity: 0; pointer-events: none; transform: translateY(10px); transition: all 0.25s;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+#back-top.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+#back-top:hover { border-color: var(--amber-600); background: var(--gray-850); }
 
 /* ─── Responsive ─── */
-@media (max-width: 900px) {
-  body { flex-direction: column; }
+@media (max-width: 960px) {
+  .layout { flex-direction: column; gap: 1rem; padding: 1rem; }
   .sidebar {
-    width: 100%;
-    height: auto;
-    position: static;
-    padding: 1rem 1.5rem;
-    border-right: none;
-    border-bottom: 1px solid var(--gray-800);
+    position: static; width: 100%; max-height: none;
+    display: none; order: -1; padding: 0.8rem 0;
   }
-  .sidebar-logo { margin-bottom: 1rem; }
-  .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
-  .sidebar-section { display: none; }
-  .main { padding: 2rem 1.5rem 4rem; }
-  .main h1 { font-size: 1.8rem; }
+  .sidebar.open { display: block; }
+  .menu-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  .topnav { display: none; }
+  .hero { padding: 6rem 1rem 2rem; }
+  .main h2 { font-size: 1.55rem; }
   .cards { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .hero-badges { gap: 0.3rem; }
 }
 </style>
 </head>
 <body>
 
-<!-- ═══ Sidebar ═══ -->
-<nav class="sidebar">
-  <a href="#" class="sidebar-logo">
-    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="50" cy="50" r="48" fill="#D97706"/>
-      <circle cx="50" cy="50" r="44" fill="#F59E0B"/>
-      <circle cx="50" cy="45" r="30" fill="#92400E"/>
-      <circle cx="35" cy="38" r="5" fill="#1F2937"/>
-      <circle cx="65" cy="38" r="5" fill="#1F2937"/>
-      <ellipse cx="50" cy="50" rx="10" ry="6" fill="#B45309"/>
-      <path d="M35 58 Q50 72 65 58" stroke="#1F2937" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    </svg>
-    <div><span>Kuma</span><small>v2.3.30</small></div>
-  </a>
-  <div class="sidebar-nav">
-    <span class="sidebar-section">Getting Started</span>
-    <a href="#overview">Overview</a>
-    <a href="#quick-start">Quick Start</a>
-    <a href="#philosophy">Philosophy</a>
-    <span class="sidebar-section">Core</span>
-    <a href="#tools">3 Coarse-Grained Tools</a>
-    <a href="#pipeline">Research Pipeline</a>
-    <a href="#workflow">Workflow</a>
-    <span class="sidebar-section">Features</span>
-    <a href="#features">Features</a>
-    <a href="#safety">Safety</a>
-    <a href="#undo">Selective Undo</a>
-    <a href="#heal">Self-Healing</a>
-    <a href="#storage">Storage Layout</a>
-    <span class="sidebar-section">Reference</span>
-    <a href="#api">API Reference</a>
-    <a href="#v3">V3 Changes</a>
-    <a href="#comparison">Comparison</a>
-  </div>
-</nav>
+<div class="scroll-progress" id="scroll-progress"></div>
 
-<!-- ═══ Main ═══ -->
-<main class="main">
-
-<!-- ─── Hero ─── -->
-<section class="hero">
-  <div class="hero-logo">
-    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="50" cy="50" r="48" fill="#D97706"/>
-      <circle cx="50" cy="50" r="44" fill="#F59E0B"/>
-      <circle cx="50" cy="45" r="30" fill="#92400E"/>
-      <circle cx="35" cy="38" r="5" fill="#1F2937"/>
-      <circle cx="65" cy="38" r="5" fill="#1F2937"/>
-      <ellipse cx="50" cy="50" rx="10" ry="6" fill="#B45309"/>
-      <path d="M35 58 Q50 72 65 58" stroke="#1F2937" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    </svg>
+<!-- ═══ Top bar ═══ -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top">
+      <img src="../public/kuma.png" alt="Kuma" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png';">
+      <span class="brand-name">Kuma<small>v2.3.32</small></span>
+    </a>
+    <nav class="topnav" id="topnav">
+      <a href="#overview">Overview</a>
+      <a href="#quick-start">Quick Start</a>
+      <a href="#tools">Tools</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#features">Features</a>
+      <a href="#safety">Safety</a>
+      <a href="#api">API</a>
+    </nav>
+    <div class="topbar-actions">
+      <a class="btn btn-ghost" href="https://github.com/plumpslabs/kuma" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-amber" href="#quick-start">Get Started</a>
+      <button class="menu-toggle" id="menu-toggle" aria-label="Toggle navigation">☰</button>
+    </div>
   </div>
-  <h1>Kuma <span class="sub">Safety-first context & orchestration engine for AI coding agents</span></h1>
-  <p>Zero-setup MCP server that ensures AI agents never break your project. Mandatory research pipeline, knowledge graph, impact analysis, decision memory, and safety guard.</p>
+</header>
+
+<!-- ═══ Hero ═══ -->
+<section class="hero" id="top">
+  <img class="hero-logo" src="../public/kuma.png" alt="Kuma Logo" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png';">
+  <h1>Kuma<span class="sub">Safety-first context &amp; orchestration engine for AI coding agents</span></h1>
+  <p class="hero-tagline">Zero-setup MCP server that ensures AI agents never break your project — mandatory research pipeline, knowledge graph, impact analysis, decision memory, and a safety guard.</p>
   <div class="hero-badges">
     <span class="hero-badge">MCP Server</span>
     <span class="hero-badge">SQLite Graph</span>
+    <span class="hero-badge">3 Tools</span>
     <span class="hero-badge">13 Agents</span>
     <span class="hero-badge">MIT License</span>
     <span class="hero-badge">Node 18+</span>
     <span class="hero-badge">Zero Infra</span>
   </div>
-  <pre><code>npx -y @plumpslabs/kuma</code></pre>
-</section>
-
-<!-- ─── Overview ─── -->
-<section id="overview">
-  <h2>Overview</h2>
-  <p>Kuma is a <strong>safety-first context & orchestration engine</strong> that runs as an MCP server alongside your AI coding agent. Its job is simple: <strong>make sure the agent understands what it's about to change before it changes it.</strong></p>
-  <p>Unlike other MCP tools that give agents more power (editing, searching, executing), Kuma gives agents <strong>discipline</strong> — a mandatory research pipeline, a knowledge graph of your codebase, impact analysis before every change, and a safety layer that catches mistakes.</p>
-  <p>Kuma works with any MCP-compatible AI agent: Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, and 7 more.</p>
-</section>
-
-<!-- ─── Philosophy ─── -->
-<section id="philosophy">
-  <h2>Philosophy</h2>
-  <div class="cards">
-    <div class="card">
-      <span class="emoji">🛡️</span>
-      <h4>Safety over Speed</h4>
-      <p>5 seconds slower but safe beats fast but business logic broken. Every operation has a safety net.</p>
-    </div>
-    <div class="card">
-      <span class="emoji">🔬</span>
-      <h4>Research First</h4>
-      <p>Agents must research, record, and validate before touching code. No direct edits without context.</p>
-    </div>
-    <div class="card">
-      <span class="emoji">📦</span>
-      <h4>1 Call = 1 Workflow</h4>
-      <p>Coarse-grained pipelines. One MCP call triggers multi-step deterministic flows — not micro-tools.</p>
-    </div>
-    <div class="card">
-      <span class="emoji">📝</span>
-      <h4>Trigger-based Docs</h4>
-      <p>When significant changes happen, Kuma suggests recording decisions. Not silent auto-tracking.</p>
-    </div>
-    <div class="card">
-      <span class="emoji">🔗</span>
-      <h4>Deterministic</h4>
-      <p>Pipeline uses SQLite + graph + file operations. No LLM calls needed for core operations.</p>
-    </div>
-    <div class="card">
-      <span class="emoji">⏳</span>
-      <h4>Long-term Continuity</h4>
-      <p>Documentation survives for humans AND future AI agents. Not just for the current session.</p>
-    </div>
+  <div class="install-card"><span class="dollar">$</span><span id="install-cmd">npx -y @plumpslabs/kuma</span> <button class="copy-btn" onclick="copyText(document.getElementById('install-cmd').textContent, this)">Copy</button></div>
+  <div class="hero-cta">
+    <a class="btn btn-amber" href="#quick-start">Quick Start</a>
+    <a class="btn btn-ghost" href="#philosophy">The Philosophy</a>
   </div>
 </section>
 
-<!-- ─── Quick Start ─── -->
-<section id="quick-start">
-  <h2>Quick Start</h2>
-  <h3>Run the MCP Server</h3>
-  <pre><code>npx -y @plumpslabs/kuma</code></pre>
-  <h3>Generate Agent Config</h3>
-  <pre><code># For all 13 supported agents
+<!-- ═══ Layout ═══ -->
+<div class="layout">
+
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-nav">
+      <span class="sidebar-section">Getting Started</span>
+      <a href="#overview">Overview</a>
+      <a href="#quick-start">Quick Start</a>
+      <a href="#philosophy">Philosophy</a>
+      <span class="sidebar-section">Core</span>
+      <a href="#tools">3 Coarse-Grained Tools</a>
+      <a href="#pipeline">Research Pipeline</a>
+      <a href="#workflow">Workflow</a>
+      <span class="sidebar-section">Features</span>
+      <a href="#features">Features</a>
+      <a href="#safety">Safety</a>
+      <a href="#undo">Selective Undo</a>
+      <a href="#heal">Self-Healing</a>
+      <a href="#storage">Storage Layout</a>
+      <span class="sidebar-section">Reference</span>
+      <a href="#api">API Reference</a>
+      <a href="#v3">V3 Changes</a>
+      <a href="#comparison">Comparison</a>
+    </div>
+  </aside>
+
+  <!-- ═══ Main ═══ -->
+  <main class="main">
+
+    <!-- ─── Overview ─── -->
+    <section id="overview">
+      <h2><span class="hash">#</span>Overview</h2>
+      <p class="lead">Kuma is a <strong>safety-first context &amp; orchestration engine</strong> that runs as an MCP server alongside your AI coding agent. Its job is simple: <strong>make sure the agent understands what it's about to change before it changes it.</strong></p>
+      <p>Unlike other MCP tools that give agents more power (editing, searching, executing), Kuma gives agents <strong>discipline</strong> — a mandatory research pipeline, a knowledge graph of your codebase, impact analysis before every change, and a safety layer that catches mistakes.</p>
+      <p>Kuma works with any MCP-compatible AI agent: Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, and 7 more.</p>
+      <div class="callout info"><span class="ico">🧠</span><div><strong>Think of it this way:</strong> your AI agent is the surgeon. Kuma is the pre-op checklist, the patient history, the X-ray, and the post-op report — all in one.</div></div>
+    </section>
+
+    <!-- ─── Quick Start ─── -->
+    <section id="quick-start">
+      <h2><span class="hash">#</span>Quick Start</h2>
+      <h3>Run the MCP server</h3>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>npx -y @plumpslabs/kuma</code></pre>
+      </div>
+      <p>That's it — zero configuration. The server starts, your agent connects, and Kuma auto-generates <code>.kuma/init.md</code> (behavioral rules) plus a native skill file for your agent.</p>
+      <h3>Generate agent config (optional)</h3>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code># For all 13 supported agents
 npx @plumpslabs/kuma init --all
 
 # Or specific agents
 npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
-  <h3>Add to Your MCP Client</h3>
-  <pre><code>{
+      </div>
+      <h3>Add to your MCP client</h3>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">json</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>{
   "mcpServers": {
     "kuma": {
       "command": "npx",
@@ -402,128 +439,169 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     }
   }
 }</code></pre>
-</section>
-
-<!-- ─── 3 Tools ─── -->
-<section id="tools">
-  <h2>3 Coarse-Grained Tools</h2>
-  <p>Kuma V3 consolidates 46+ micro-tools into <strong>3 pipeline-driven tools</strong>. Each action triggers an internal multi-step workflow — the agent doesn't chain individual calls.</p>
-
-  <h3>🧠 kuma_context — Context & Research</h3>
-  <table>
-    <thead><tr><th>Action</th><th>Pipeline</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>init</code></td><td>Project brief</td><td>Load graph, detect stack, show structure. <strong>Call first every session.</strong></td></tr>
-      <tr><td><code>research</code></td><td>5-step pipeline</td><td>Cache → staleness → graph → impact → decisions. <strong>WAJIB before edits.</strong></td></tr>
-      <tr><td><code>impact</code></td><td>Graph traversal</td><td>"Change validateToken → 42 refs, 15 files, 3 tests."</td></tr>
-      <tr><td><code>navigate</code></td><td>Graph BFS</td><td>Trace full call chain from route to database.</td></tr>
-      <tr><td><code>changes</code></td><td>Change log query</td><td>Session changes with selective undo support.</td></tr>
-      <tr><td><code>rollback</code></td><td>File restore</td><td>Rollback a change by ID from the change log.</td></tr>
-      <tr><td><code>researches</code></td><td>Cache list</td><td>List all cached research with confidence & age.</td></tr>
-      <tr><td><code>health</code></td><td>Aggregate scoring</td><td>Project health dashboard: 0-100 score.</td></tr>
-      <tr><td><code>sync</code></td><td>Unified batch</td><td>Init + health + memory state in one call (~60-70% token savings).</td></tr>
-      <tr><td><code>visualize</code></td><td>Mermaid diagram</td><td>Generate knowledge graph visualizations.</td></tr>
-      <tr><td><code>digest</code></td><td>Ultra-compact brief</td><td>&lt;500 token project briefing (Issue #18).</td></tr>
-      <tr><td><code>drift</code></td><td>Staleness detection</td><td>Detect memory staleness &amp; code drift (Issue #20).</td></tr>
-    </tbody>
-  </table>
-
-  <h3>📝 kuma_memory — Decision & Knowledge</h3>
-  <table>
-    <thead><tr><th>Action</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>decision</code></td><td>ADR-style recording. Template, suggest, or record.</td></tr>
-      <tr><td><code>mine</code></td><td>Mine historical decisions from git log &amp; inline comments.</td></tr>
-      <tr><td><code>research_save</code></td><td>Save results to graph + <code>.kuma/research/</code></td></tr>
-      <tr><td><code>session</code></td><td>Session summary — files, failures, progress.</td></tr>
-      <tr><td><code>heal</code></td><td>Self-heal graph — stale detection, git repair.</td></tr>
-      <tr><td><code>search</code></td><td>Search memories + knowledge graph (TF-IDF hybrid).</td></tr>
-      <tr><td><code>changes</code></td><td>View change log for selective undo.</td></tr>
-      <tr><td><code>todo</code></td><td>Persistent todo CRUD with scope &amp; success criteria.</td></tr>
-      <tr><td><code>context</code></td><td>Inject context notes (Slack, Jira, meetings).</td></tr>
-      <tr><td><code>benchmark</code></td><td>Before/after metric capture &amp; diff.</td></tr>
-      <tr><td><code>decision_log</code></td><td>Living decision document with status tracking.</td></tr>
-      <tr><td><code>domain_rules</code></td><td>Layer 1 — Business domain rules (Issue #17).</td></tr>
-      <tr><td><code>arch_flow</code></td><td>Layer 2 — Architecture flow maps (Issue #17).</td></tr>
-      <tr><td><code>gotcha</code></td><td>Layer 3 — Known gotchas &amp; anti-regression (Issue #17/#21).</td></tr>
-      <tr><td><code>layers</code></td><td>Show all 3 memory layers summary.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>🛡️ kuma_safety — Safety & Policy</h3>
-  <table>
-    <thead><tr><th>Action</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>guard</code></td><td>Anti-pattern, drift, and tool-loop detection.</td></tr>
-      <tr><td><code>verify</code></td><td>Auto-verification — auto-detect runner, scope tests, 5-layer safety guard.</td></tr>
-      <tr><td><code>check</code></td><td>Pre-exec safety: policy, path, lock, risk.</td></tr>
-      <tr><td><code>audit</code></td><td>Query audit trail with stats and overrides.</td></tr>
-      <tr><td><code>lock</code></td><td>Multi-agent file locking.</td></tr>
-      <tr><td><code>health</code></td><td>Health score 0-100 with breakdown.</td></tr>
-      <tr><td><code>override</code></td><td>Logged safety bypass.</td></tr>
-      <tr><td><code>security</code></td><td>Leak scanner — credential/token detection.</td></tr>
-      <tr><td><code>gc</code></td><td>Garbage collection — orphan cleanup, VACUUM.</td></tr>
-      <tr><td><code>doctor</code></td><td>Health diagnostics — DB, schema, process status.</td></tr>
-      <tr><td><code>portability</code></td><td>Check path portability (no absolute paths).</td></tr>
-      <tr><td><code>gitignore</code></td><td>Auto-configure <code>.gitignore</code>.</td></tr>
-      <tr><td><code>clean</code></td><td>Purge scratch &amp; reset drift warnings.</td></tr>
-      <tr><td><code>policy</code></td><td>Policy-as-Code engine (Issue #24).</td></tr>
-      <tr><td><code>ast</code> / <code>validate</code></td><td>AST-based code validation (Issue #22).</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<!-- ─── Pipeline ─── -->
-<section id="pipeline">
-  <h2>Research Pipeline</h2>
-  <p>The 5-step research pipeline is Kuma's core. It runs every time an agent calls <code>kuma_context({ action: "research" })</code>:</p>
-  <div class="pipeline">
-    <div class="pipeline-step">
-      <div class="num">01</div>
-      <div class="content">
-        <h4>Load Research Cache</h4>
-        <p>Check <code>.kuma/research/&lt;scope&gt;.json</code>. Found? Compare content hash vs current code. Fresh? Return cached result with confidence score.</p>
       </div>
-    </div>
-    <div class="pipeline-step">
-      <div class="num">02</div>
-      <div class="content">
-        <h4>Graph Query</h4>
-        <p>Query SQLite knowledge graph for all nodes and edges related to the scope. Identify entry points, dependencies, and flow paths.</p>
-      </div>
-    </div>
-    <div class="pipeline-step">
-      <div class="num">03</div>
-      <div class="content">
-        <h4>Impact Analysis</h4>
-        <p>Graph traversal to find references, affected files, test coverage, and API routes. "If I change X, what breaks?"</p>
-      </div>
-    </div>
-    <div class="pipeline-step">
-      <div class="num">04</div>
-      <div class="content">
-        <h4>Decision & Failure Lookup</h4>
-        <p>Check <code>.kuma/memories/</code> and failure knowledge base. Surface previous decisions, known issues, and recurring patterns.</p>
-      </div>
-    </div>
-    <div class="pipeline-step">
-      <div class="num">05</div>
-      <div class="content">
-        <h4>Safety Check</h4>
-        <p>Validate policy compliance, active locks, and risk level. Return structured result with confidence score.</p>
-      </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<!-- ─── Workflow ─── -->
-<section id="workflow">
-  <h2>Workflow</h2>
-  <p>A typical Kuma-powered session follows this pattern:</p>
-  <pre><code># 1. Start session — understand the project
+    <!-- ─── Philosophy ─── -->
+    <section id="philosophy">
+      <h2><span class="hash">#</span>Philosophy</h2>
+      <p>Six principles guide every design decision in Kuma.</p>
+      <div class="cards">
+        <div class="card">
+          <span class="emoji">🛡️</span>
+          <h4>Safety over Speed</h4>
+          <p>5 seconds slower but safe beats fast but business logic broken. Every operation has a safety net.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">🔬</span>
+          <h4>Research First</h4>
+          <p>Agents must research, record, and validate before touching code. No direct edits without context.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">📦</span>
+          <h4>1 Call = 1 Workflow</h4>
+          <p>Coarse-grained pipelines. One MCP call triggers multi-step deterministic flows — not micro-tools.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">📝</span>
+          <h4>Trigger-based Docs</h4>
+          <p>When significant changes happen, Kuma suggests recording decisions. Not silent auto-tracking.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">🔗</span>
+          <h4>Deterministic</h4>
+          <p>Pipeline uses SQLite + graph + file operations. No LLM calls needed for core operations.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">⏳</span>
+          <h4>Long-term Continuity</h4>
+          <p>Documentation survives for humans AND future AI agents. Not just for the current session.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── 3 Tools ─── -->
+    <section id="tools">
+      <h2><span class="hash">#</span>3 Coarse-Grained Tools</h2>
+      <p class="lead">Kuma V3 consolidates 46+ micro-tools into <strong>3 pipeline-driven tools</strong>. Each action triggers an internal multi-step workflow — the agent doesn't chain individual calls.</p>
+
+      <h3>🧠 kuma_context — Context &amp; Research</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Action</th><th>Pipeline</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>init</code></td><td>Project brief</td><td>Load graph, detect stack, show structure. <strong>Call first every session.</strong></td></tr>
+          <tr><td><code>research</code></td><td>5-step pipeline</td><td>Cache → staleness → graph → impact → decisions. <strong>Required before edits.</strong></td></tr>
+          <tr><td><code>impact</code></td><td>Graph traversal</td><td>"Change validateToken → 42 refs, 15 files, 3 tests."</td></tr>
+          <tr><td><code>navigate</code></td><td>Graph BFS</td><td>Trace full call chain from route to database.</td></tr>
+          <tr><td><code>changes</code></td><td>Change log query</td><td>Session changes with selective undo support.</td></tr>
+          <tr><td><code>rollback</code></td><td>File restore</td><td>Rollback a change by ID from the change log.</td></tr>
+          <tr><td><code>researches</code></td><td>Cache list</td><td>List all cached research with confidence &amp; age.</td></tr>
+          <tr><td><code>health</code></td><td>Aggregate scoring</td><td>Project health dashboard: 0-100 score.</td></tr>
+          <tr><td><code>sync</code></td><td>Unified batch</td><td>Init + health + memory state in one call (~60-70% token savings).</td></tr>
+          <tr><td><code>visualize</code></td><td>Mermaid diagram</td><td>Generate knowledge graph visualizations.</td></tr>
+          <tr><td><code>digest</code></td><td>Ultra-compact brief</td><td>&lt;500 token project briefing (Issue #18).</td></tr>
+          <tr><td><code>drift</code></td><td>Staleness detection</td><td>Detect memory staleness &amp; code drift (Issue #20).</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>📝 kuma_memory — Decision &amp; Knowledge</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Action</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>decision</code></td><td>ADR-style recording. Template, suggest, or record.</td></tr>
+          <tr><td><code>mine</code></td><td>Mine historical decisions from git log &amp; inline comments.</td></tr>
+          <tr><td><code>research_save</code></td><td>Save results to graph + <code>.kuma/research/</code></td></tr>
+          <tr><td><code>session</code></td><td>Session summary — files, failures, progress.</td></tr>
+          <tr><td><code>heal</code></td><td>Self-heal graph — stale detection, git repair.</td></tr>
+          <tr><td><code>search</code></td><td>Search memories + knowledge graph (TF-IDF hybrid).</td></tr>
+          <tr><td><code>changes</code></td><td>View change log for selective undo.</td></tr>
+          <tr><td><code>todo</code></td><td>Persistent todo CRUD with scope &amp; success criteria.</td></tr>
+          <tr><td><code>context</code></td><td>Inject context notes (Slack, Jira, meetings).</td></tr>
+          <tr><td><code>benchmark</code></td><td>Before/after metric capture &amp; diff.</td></tr>
+          <tr><td><code>decision_log</code></td><td>Living decision document with status tracking.</td></tr>
+          <tr><td><code>domain_rules</code></td><td>Layer 1 — Business domain rules (Issue #17).</td></tr>
+          <tr><td><code>arch_flow</code></td><td>Layer 2 — Architecture flow maps (Issue #17).</td></tr>
+          <tr><td><code>gotcha</code></td><td>Layer 3 — Known gotchas &amp; anti-regression (Issue #17/#21).</td></tr>
+          <tr><td><code>layers</code></td><td>Show all 3 memory layers summary.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>🛡️ kuma_safety — Safety &amp; Policy</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Action</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>guard</code></td><td>Anti-pattern, drift, and tool-loop detection.</td></tr>
+          <tr><td><code>verify</code></td><td>Auto-verification — auto-detect runner, scope tests, 5-layer safety guard.</td></tr>
+          <tr><td><code>check</code></td><td>Pre-exec safety: policy, path, lock, risk.</td></tr>
+          <tr><td><code>audit</code></td><td>Query audit trail with stats and overrides.</td></tr>
+          <tr><td><code>lock</code></td><td>Multi-agent file locking.</td></tr>
+          <tr><td><code>health</code></td><td>Health score 0-100 with breakdown.</td></tr>
+          <tr><td><code>override</code></td><td>Logged safety bypass.</td></tr>
+          <tr><td><code>security</code></td><td>Leak scanner — credential/token detection.</td></tr>
+          <tr><td><code>gc</code></td><td>Garbage collection — orphan cleanup, VACUUM.</td></tr>
+          <tr><td><code>doctor</code></td><td>Health diagnostics — DB, schema, process status.</td></tr>
+          <tr><td><code>portability</code></td><td>Check path portability (no absolute paths).</td></tr>
+          <tr><td><code>gitignore</code></td><td>Auto-configure <code>.gitignore</code>.</td></tr>
+          <tr><td><code>clean</code></td><td>Purge scratch &amp; reset drift warnings.</td></tr>
+          <tr><td><code>policy</code></td><td>Policy-as-Code engine (Issue #24).</td></tr>
+          <tr><td><code>ast</code> / <code>validate</code></td><td>AST-based code validation (Issue #22).</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ─── Pipeline ─── -->
+    <section id="pipeline">
+      <h2><span class="hash">#</span>Research Pipeline</h2>
+      <p class="lead">The 5-step research pipeline is Kuma's core. It runs every time an agent calls <code>kuma_context({ action: "research" })</code> — all in a single MCP call. No chaining. No guesswork.</p>
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="num">01</div>
+          <div class="content">
+            <h4>Load Research Cache</h4>
+            <p>Check <code>.kuma/research/&lt;scope&gt;.json</code>. Found? Compare content hash vs current code. Fresh? Return cached result with confidence score.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="num">02</div>
+          <div class="content">
+            <h4>Graph Query</h4>
+            <p>Query SQLite knowledge graph for all nodes and edges related to the scope. Identify entry points, dependencies, and flow paths.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="num">03</div>
+          <div class="content">
+            <h4>Impact Analysis</h4>
+            <p>Graph traversal to find references, affected files, test coverage, and API routes. "If I change X, what breaks?"</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="num">04</div>
+          <div class="content">
+            <h4>Decision &amp; Failure Lookup</h4>
+            <p>Check <code>.kuma/memories/</code> and failure knowledge base. Surface previous decisions, known issues, and recurring patterns.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="num">05</div>
+          <div class="content">
+            <h4>Safety Check</h4>
+            <p>Validate policy compliance, active locks, and risk level. Return structured result with confidence score.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Workflow ─── -->
+    <section id="workflow">
+      <h2><span class="hash">#</span>Workflow</h2>
+      <p>A typical Kuma-powered session follows this pattern:</p>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">text</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code># 1. Start session — understand the project
 kuma_context({ action: "init", goal: "add password reset" })
 
-# 2. Research before touching code (WAJIB)
+# 2. Research before touching code
 kuma_context({ action: "research", scope: "auth" })
 
 # 3. Agent edits using native tools (not Kuma)
@@ -546,55 +624,58 @@ kuma_safety({ action: "guard", guardGoal: "add password reset" })
 
 # 7. Check changes for selective undo awareness
 kuma_context({ action: "changes" })</code></pre>
-</section>
+      </div>
+    </section>
 
-<!-- ─── Features ─── -->
-<section id="features">
-  <h2>Features</h2>
-  <table>
-    <thead><tr><th>Feature</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Knowledge Graph</strong></td><td>SQLite-backed (pure WASM). Nodes + edges + sessions. FTS5 full-text search.</td></tr>
-      <tr><td><strong>Research Pipeline</strong></td><td>5-step deterministic flow: cache → staleness → graph → impact → decisions.</td></tr>
-      <tr><td><strong>Impact Analysis</strong></td><td>Graph traversal tells you exactly what breaks before you change it.</td></tr>
-      <tr><td><strong>Confidence Scoring</strong></td><td>Age + file existence + edge weight → 0-1 confidence per research record.</td></tr>
-      <tr><td><strong>Self-Healing</strong></td><td>Auto-detect stale nodes, git-aware repair, cascading edge cleanup.</td></tr>
-      <tr><td><strong>Selective Undo</strong></td><td>Session-level change tracking. Undo specific changes without affecting others.</td></tr>
-      <tr><td><strong>Safety Guard</strong></td><td>Anti-patterns, drift detection, tool-loop prevention, unresolved failure check.</td></tr>
-      <tr><td><strong>Safety Policy</strong></td><td><code>never_touch</code>, <code>require_review</code>, <code>block_commands</code> via YAML.</td></tr>
-      <tr><td><strong>Safety Audit</strong></td><td>Every tool call recorded in SQLite. Queryable with override logging.</td></tr>
-      <tr><td><strong>Multi-Agent Lock</strong></td><td>File-level locks prevent simultaneous edits by multiple AI agents.</td></tr>
-      <tr><td><strong>Decision Memory</strong></td><td>ADR-style: context → options → rationale → outcome. Trigger-based.</td></tr>
-      <tr><td><strong>Session Memory</strong></td><td>Real-time state: modified files, failures, goal progress, tool history.</td></tr>
-      <tr><td><strong>13 Agent Support</strong></td><td>Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, and more.</td></tr>
-    </tbody>
-  </table>
-</section>
+    <!-- ─── Features ─── -->
+    <section id="features">
+      <h2><span class="hash">#</span>Features</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Knowledge Graph</strong></td><td>SQLite-backed (pure WASM). Nodes + edges + sessions. FTS5 full-text search.</td></tr>
+          <tr><td><strong>Research Pipeline</strong></td><td>5-step deterministic flow: cache → staleness → graph → impact → decisions.</td></tr>
+          <tr><td><strong>Impact Analysis</strong></td><td>Graph traversal tells you exactly what breaks before you change it.</td></tr>
+          <tr><td><strong>Confidence Scoring</strong></td><td>Age + file existence + edge weight → 0-1 confidence per research record.</td></tr>
+          <tr><td><strong>Self-Healing</strong></td><td>Auto-detect stale nodes, git-aware repair, cascading edge cleanup.</td></tr>
+          <tr><td><strong>Selective Undo</strong></td><td>Session-level change tracking. Undo specific changes without affecting others.</td></tr>
+          <tr><td><strong>Safety Guard</strong></td><td>Anti-patterns, drift detection, tool-loop prevention, unresolved failure check.</td></tr>
+          <tr><td><strong>Safety Policy</strong></td><td><code>never_touch</code>, <code>require_review</code>, <code>block_commands</code> via YAML.</td></tr>
+          <tr><td><strong>Safety Audit</strong></td><td>Every tool call recorded in SQLite. Queryable with override logging.</td></tr>
+          <tr><td><strong>Multi-Agent Lock</strong></td><td>File-level locks prevent simultaneous edits by multiple AI agents.</td></tr>
+          <tr><td><strong>Decision Memory</strong></td><td>ADR-style: context → options → rationale → outcome. Trigger-based.</td></tr>
+          <tr><td><strong>Session Memory</strong></td><td>Real-time state: modified files, failures, goal progress, tool history.</td></tr>
+          <tr><td><strong>13 Agent Support</strong></td><td>Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, and more.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
 
-<!-- ─── Safety ─── -->
-<section id="safety">
-  <h2>Safety</h2>
-  <p>Kuma's safety layer sits between the AI agent and your filesystem. Every operation is checked, logged, and auditable.</p>
-  <table>
-    <thead><tr><th>Feature</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Anti-Pattern Detection</strong></td><td>Script patching, bash grep, shell obfuscation, unsafe patterns.</td></tr>
-      <tr><td><strong>Drift Detection</strong></td><td>Edits made without corresponding tests — flagged and logged.</td></tr>
-      <tr><td><strong>Tool-Loop Prevention</strong></td><td>Same tool called 4+ times in last 10 calls triggers circuit breaker.</td></tr>
-      <tr><td><strong>Policy Enforcement</strong></td><td>YAML policy file: <code>never_touch</code>, <code>require_review</code>, <code>block_commands</code>.</td></tr>
-      <tr><td><strong>Path Validation</strong></td><td>All operations locked to project directory. System dirs protected.</td></tr>
-      <tr><td><strong>Safety Audit</strong></td><td>Every tool call recorded in SQLite <code>safety_audit</code> table.</td></tr>
-      <tr><td><strong>Multi-Agent Lock</strong></td><td>File-level locks prevent concurrent edits by multiple agents.</td></tr>
-      <tr><td><strong>Confidence Scoring</strong></td><td>0-1 confidence per research record based on age, file existence, edge weight.</td></tr>
-    </tbody>
-  </table>
-</section>
+    <!-- ─── Safety ─── -->
+    <section id="safety">
+      <h2><span class="hash">#</span>Safety</h2>
+      <p>Kuma's safety layer sits between the AI agent and your filesystem. Every operation is checked, logged, and auditable.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Anti-Pattern Detection</strong></td><td>Script patching, bash grep, shell obfuscation, unsafe patterns.</td></tr>
+          <tr><td><strong>Drift Detection</strong></td><td>Edits made without corresponding tests — flagged and logged.</td></tr>
+          <tr><td><strong>Tool-Loop Prevention</strong></td><td>Same tool called 4+ times in last 10 calls triggers circuit breaker.</td></tr>
+          <tr><td><strong>Policy Enforcement</strong></td><td>YAML policy file: <code>never_touch</code>, <code>require_review</code>, <code>block_commands</code>.</td></tr>
+          <tr><td><strong>Path Validation</strong></td><td>All operations locked to project directory. System dirs protected.</td></tr>
+          <tr><td><strong>Safety Audit</strong></td><td>Every tool call recorded in SQLite <code>safety_audit</code> table.</td></tr>
+          <tr><td><strong>Multi-Agent Lock</strong></td><td>File-level locks prevent concurrent edits by multiple agents.</td></tr>
+          <tr><td><strong>Confidence Scoring</strong></td><td>0-1 confidence per research record based on age, file existence, edge weight.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
 
-<!-- ─── Selective Undo ─── -->
-<section id="undo">
-  <h2>Selective Undo</h2>
-  <p>Unlike file-level rollback, Kuma provides <strong>change-aware selective undo</strong> via session tracking in the knowledge graph:</p>
-  <pre><code># View all changes in current session
+    <!-- ─── Selective Undo ─── -->
+    <section id="undo">
+      <h2><span class="hash">#</span>Selective Undo</h2>
+      <p>Unlike file-level rollback, Kuma provides <strong>change-aware selective undo</strong> via session tracking in the knowledge graph:</p>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">text</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code># View all changes in current session
 kuma_context({ action: "changes" })
 
 # Filter by file
@@ -602,37 +683,43 @@ kuma_context({ action: "changes", target: "src/auth.ts" })
 
 # Filter by time
 kuma_context({ action: "changes", since: 1722000000000 })</code></pre>
-  <p>The change log tracks: session ID, file path, symbol name, diff summary, and timestamp per modification. This enables reverting specific changes without affecting other work in the same session.</p>
-</section>
+      </div>
+      <p>The change log tracks: session ID, file path, symbol name, diff summary, and timestamp per modification. This enables reverting specific changes without affecting other work in the same session.</p>
+    </section>
 
-<!-- ─── Self-Healing ─── -->
-<section id="heal">
-  <h2>Self-Healing</h2>
-  <p>The knowledge graph automatically detects and repairs stale entries:</p>
-  <pre><code># Check for stale entries
+    <!-- ─── Self-Healing ─── -->
+    <section id="heal">
+      <h2><span class="hash">#</span>Self-Healing</h2>
+      <p>The knowledge graph automatically detects and repairs stale entries:</p>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">text</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code># Check for stale entries
 kuma_memory({ action: "heal", healAction: "check" })
 
 # Auto-heal
 kuma_memory({ action: "heal" })</code></pre>
-  <table>
-    <thead><tr><th>Feature</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Content Hash</strong></td><td>Detects files that changed since last scan (MD5 of head + tail + size).</td></tr>
-      <tr><td><strong>All-Node Scan</strong></td><td>Files, functions, classes, interfaces, modules, tests, and more.</td></tr>
-      <tr><td><strong>Git-Aware Repair</strong></td><td>Uses <code>git log --follow --diff-filter=R</code> to trace file renames.</td></tr>
-      <tr><td><strong>Cascading Edges</strong></td><td>Stale node edges get weight reduced to near-zero.</td></tr>
-      <tr><td><strong>Incremental Heal</strong></td><td>Batch processing — repairs only the affected subgraph, not full scan.</td></tr>
-    </tbody>
-  </table>
-</section>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Content Hash</strong></td><td>Detects files that changed since last scan (MD5 of head + tail + size).</td></tr>
+          <tr><td><strong>All-Node Scan</strong></td><td>Files, functions, classes, interfaces, modules, tests, and more.</td></tr>
+          <tr><td><strong>Git-Aware Repair</strong></td><td>Uses <code>git log --follow --diff-filter=R</code> to trace file renames.</td></tr>
+          <tr><td><strong>Cascading Edges</strong></td><td>Stale node edges get weight reduced to near-zero.</td></tr>
+          <tr><td><strong>Incremental Heal</strong></td><td>Batch processing — repairs only the affected subgraph, not full scan.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
 
-<!-- ─── Storage Layout ─── -->
-<section id="storage">
-  <h2>Storage Layout</h2>
-  <p>Kuma stores per-project data in <code>.kuma/</code>:</p>
-  <pre><code>.kuma/
+    <!-- ─── Storage Layout ─── -->
+    <section id="storage">
+      <h2><span class="hash">#</span>Storage Layout</h2>
+      <p>Kuma stores per-project data in <code>.kuma/</code>:</p>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">text</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>.kuma/
 ├── kuma.db                # SQLite — graph, sessions, research, audit, change log
-├── init.md                # Behavioral rules for AI agents (WAJIB read)
+├── init.md                # Behavioral rules for AI agents
 ├── config.json            # Per-project config
 ├── policy.yml             # Safety policy
 ├── research/              # Structured JSON research records
@@ -645,128 +732,214 @@ kuma_memory({ action: "heal" })</code></pre>
 │   ├── glossary.md
 │   └── known-issues.md
 └── .instance-id           # Anonymous ID for collective sync</code></pre>
-</section>
+      </div>
+    </section>
 
-<!-- ─── API Reference ─── -->
-<section id="api">
-  <h2>API Reference</h2>
-  <p>Full API reference available in <a href="api.md"><code>docs/api.md</code></a>.</p>
+    <!-- ─── API Reference ─── -->
+    <section id="api">
+      <h2><span class="hash">#</span>API Reference</h2>
+      <p>Full API reference available in <a href="api.md"><code>docs/api.md</code></a>.</p>
 
-  <h3>kuma_context</h3>
-  <table>
-    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>action</code></td><td><code>"init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift"</code></td><td>Action to perform</td></tr>
-      <tr><td><code>scope</code></td><td><code>string?</code></td><td>Research scope (e.g. "auth")</td></tr>
-      <tr><td><code>target</code></td><td><code>string?</code></td><td>Symbol/file for impact/navigate</td></tr>
-      <tr><td><code>goal</code></td><td><code>string?</code></td><td>Current goal</td></tr>
-      <tr><td><code>since</code></td><td><code>number?</code></td><td>Unix timestamp filter</td></tr>
-      <tr><td><code>compact</code></td><td><code>boolean?</code></td><td>Compact output mode</td></tr>
-    </tbody>
-  </table>
+      <h3>kuma_context</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>action</code></td><td><code>"init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>scope</code></td><td><code>string?</code></td><td>Research scope (e.g. "auth")</td></tr>
+          <tr><td><code>target</code></td><td><code>string?</code></td><td>Symbol/file for impact/navigate</td></tr>
+          <tr><td><code>goal</code></td><td><code>string?</code></td><td>Current goal</td></tr>
+          <tr><td><code>since</code></td><td><code>number?</code></td><td>Unix timestamp filter</td></tr>
+          <tr><td><code>compact</code></td><td><code>boolean?</code></td><td>Compact output mode</td></tr>
+        </tbody>
+      </table></div>
 
-  <h3>kuma_memory</h3>
-  <table>
-    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>action</code></td><td><code>"decision" | "mine" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "domain_rules" | "arch_flow" | "gotcha" | "layers"</code></td><td>Action to perform</td></tr>
-      <tr><td><code>scope</code></td><td><code>string?</code></td><td>Scope for research_save/search</td></tr>
-      <tr><td><code>query</code></td><td><code>string?</code></td><td>Search query</td></tr>
-      <tr><td><code>content</code></td><td><code>string?</code></td><td>Content for research_save</td></tr>
-      <tr><td><code>record</code></td><td><code>string?</code></td><td>JSON record string</td></tr>
-      <tr><td><code>confidence</code></td><td><code>number (0-1)?</code></td><td>Confidence score</td></tr>
-      <tr><td><code>decisionAction</code></td><td><code>"template" | "suggest" | "record"?</code></td><td>Decision sub-action</td></tr>
-      <tr><td><code>title</code></td><td><code>string?</code></td><td>Decision title</td></tr>
-      <tr><td><code>context</code></td><td><code>string?</code></td><td>Decision context</td></tr>
-      <tr><td><code>rationale</code></td><td><code>string?</code></td><td>Decision rationale</td></tr>
-      <tr><td><code>outcome</code></td><td><code>string?</code></td><td>Decision outcome</td></tr>
-      <tr><td><code>healAction</code></td><td><code>"check" | "heal"?</code></td><td>Heal sub-action</td></tr>
-      <tr><td><code>topic</code></td><td><code>string?</code></td><td>Session topic</td></tr>
-      <tr><td><code>limit</code></td><td><code>number?</code></td><td>Result limit</td></tr>
-      <tr><td><code>target</code></td><td><code>string?</code></td><td>File for changes / decision_log ID</td></tr>
-      <tr><td><code>since</code></td><td><code>number?</code></td><td>Timestamp filter</td></tr>
-      <tr><td><code>description</code></td><td><code>string?</code></td><td>Todo/gotcha description</td></tr>
-      <tr><td><code>status</code></td><td><code>string?</code></td><td>Status for todo/gotcha/decision_log</td></tr>
-      <tr><td><code>source</code></td><td><code>string?</code></td><td>Context source (slack, jira, meeting)</td></tr>
-      <tr><td><code>label</code></td><td><code>string?</code></td><td>Benchmark label</td></tr>
-      <tr><td><code>metrics</code></td><td><code>string?</code></td><td>Benchmark metrics JSON</td></tr>
-    </tbody>
-  </table>
+      <h3>kuma_memory</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>action</code></td><td><code>"decision" | "mine" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "domain_rules" | "arch_flow" | "gotcha" | "layers"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>scope</code></td><td><code>string?</code></td><td>Scope for research_save/search</td></tr>
+          <tr><td><code>query</code></td><td><code>string?</code></td><td>Search query</td></tr>
+          <tr><td><code>content</code></td><td><code>string?</code></td><td>Content for research_save</td></tr>
+          <tr><td><code>record</code></td><td><code>string?</code></td><td>JSON record string</td></tr>
+          <tr><td><code>confidence</code></td><td><code>number (0-1)?</code></td><td>Confidence score</td></tr>
+          <tr><td><code>decisionAction</code></td><td><code>"template" | "suggest" | "record"?</code></td><td>Decision sub-action</td></tr>
+          <tr><td><code>title</code></td><td><code>string?</code></td><td>Decision title</td></tr>
+          <tr><td><code>context</code></td><td><code>string?</code></td><td>Decision context</td></tr>
+          <tr><td><code>rationale</code></td><td><code>string?</code></td><td>Decision rationale</td></tr>
+          <tr><td><code>outcome</code></td><td><code>string?</code></td><td>Decision outcome</td></tr>
+          <tr><td><code>healAction</code></td><td><code>"check" | "heal"?</code></td><td>Heal sub-action</td></tr>
+          <tr><td><code>topic</code></td><td><code>string?</code></td><td>Session topic</td></tr>
+          <tr><td><code>limit</code></td><td><code>number?</code></td><td>Result limit</td></tr>
+          <tr><td><code>target</code></td><td><code>string?</code></td><td>File for changes / decision_log ID</td></tr>
+          <tr><td><code>since</code></td><td><code>number?</code></td><td>Timestamp filter</td></tr>
+          <tr><td><code>description</code></td><td><code>string?</code></td><td>Todo/gotcha description</td></tr>
+          <tr><td><code>status</code></td><td><code>string?</code></td><td>Status for todo/gotcha/decision_log</td></tr>
+          <tr><td><code>source</code></td><td><code>string?</code></td><td>Context source (slack, jira, meeting)</td></tr>
+          <tr><td><code>label</code></td><td><code>string?</code></td><td>Benchmark label</td></tr>
+          <tr><td><code>metrics</code></td><td><code>string?</code></td><td>Benchmark metrics JSON</td></tr>
+        </tbody>
+      </table></div>
 
-  <h3>kuma_safety</h3>
-  <table>
-    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>action</code></td><td><code>"guard" | "verify" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "clean" | "policy" | "ast" | "validate"</code></td><td>Action to perform</td></tr>
-      <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
-      <tr><td><code>guardCheck</code></td><td><code>"anti-pattern" | "loop" | "drift" | "context" | "all"?</code></td><td>Guard check type</td></tr>
-      <tr><td><code>actionCheck</code></td><td><code>string?</code></td><td>Action type for check</td></tr>
-      <tr><td><code>filePath</code></td><td><code>string?</code></td><td>File for check/lock</td></tr>
-      <tr><td><code>toolName</code></td><td><code>string?</code></td><td>Tool name for check/override</td></tr>
-      <tr><td><code>reason</code></td><td><code>string?</code></td><td>Override reason</td></tr>
-      <tr><td><code>lockAction</code></td><td><code>"acquire" | "release" | "list" | "clean"?</code></td><td>Lock sub-action</td></tr>
-      <tr><td><code>lockFilePath</code></td><td><code>string?</code></td><td>File for lock</td></tr>
-      <tr><td><code>agentId</code></td><td><code>string?</code></td><td>Agent ID for lock</td></tr>
-      <tr><td><code>limit</code></td><td><code>number?</code></td><td>Audit result limit</td></tr>
-      <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
-      <tr><td><code>guardCheck</code></td><td><code>"all" | "anti-pattern" | "loop" | "drift" | "context"?</code></td><td>Guard check type</td></tr>
-      <tr><td><code>command</code></td><td><code>string?</code></td><td>Command for check/policy/ast</td></tr>
-      <tr><td><code>reason</code></td><td><code>string?</code></td><td>Override reason</td></tr>
-      <tr><td><code>force</code></td><td><code>boolean?</code></td><td>Force bypass cache for verify</td></tr>
-      <tr><td><code>toolName</code></td><td><code>string?</code></td><td>Tool name for audit/override</td></tr>
-      <tr><td><code>riskLevel</code></td><td><code>string?</code></td><td>Filter audit by risk level</td></tr>
-      <tr><td><code>allowed</code></td><td><code>boolean?</code></td><td>Filter audit by allowed/blocked</td></tr>
-      <tr><td><code>lockAction</code></td><td><code>"acquire" | "release" | "list" | "clean"?</code></td><td>Lock sub-action</td></tr>
-    </tbody>
-  </table>
-</section>
+      <h3>kuma_safety</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>action</code></td><td><code>"guard" | "verify" | "check" | "audit" | "lock" | "health" | "override" | "security" | "gc" | "doctor" | "portability" | "gitignore" | "clean" | "policy" | "ast" | "validate"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
+          <tr><td><code>guardCheck</code></td><td><code>"anti-pattern" | "loop" | "drift" | "context" | "all"?</code></td><td>Guard check type</td></tr>
+          <tr><td><code>actionCheck</code></td><td><code>string?</code></td><td>Action type for check</td></tr>
+          <tr><td><code>filePath</code></td><td><code>string?</code></td><td>File for check/lock</td></tr>
+          <tr><td><code>toolName</code></td><td><code>string?</code></td><td>Tool name for check/override</td></tr>
+          <tr><td><code>reason</code></td><td><code>string?</code></td><td>Override reason</td></tr>
+          <tr><td><code>lockAction</code></td><td><code>"acquire" | "release" | "list" | "clean"?</code></td><td>Lock sub-action</td></tr>
+          <tr><td><code>lockFilePath</code></td><td><code>string?</code></td><td>File for lock</td></tr>
+          <tr><td><code>agentId</code></td><td><code>string?</code></td><td>Agent ID for lock</td></tr>
+          <tr><td><code>limit</code></td><td><code>number?</code></td><td>Audit result limit</td></tr>
+          <tr><td><code>command</code></td><td><code>string?</code></td><td>Command for check/policy/ast</td></tr>
+          <tr><td><code>force</code></td><td><code>boolean?</code></td><td>Force bypass cache for verify</td></tr>
+          <tr><td><code>riskLevel</code></td><td><code>string?</code></td><td>Filter audit by risk level</td></tr>
+          <tr><td><code>allowed</code></td><td><code>boolean?</code></td><td>Filter audit by allowed/blocked</td></tr>
+        </tbody>
+      </table></div>
+    </section>
 
-<!-- ─── V3 Changes ─── -->
-<section id="v3">
-  <h2>What Changed in V3</h2>
-  <p>Kuma V3 dropped ~15 tools that overlap with native AI agent capabilities:</p>
-  <table>
-    <thead><tr><th>Dropped Tool</th><th>Why</th></tr></thead>
-    <tbody>
-      <tr><td><code>precise_diff_editor</code></td><td>Agent has native edit tools</td></tr>
-      <tr><td><code>safe_terminal_exec</code></td><td>Agent executes commands natively</td></tr>
-      <tr><td><code>smart_grep</code></td><td>Agent searches natively (ripgrep, semantic)</td></tr>
-      <tr><td><code>batch_file_writer</code></td><td>Agent creates files natively</td></tr>
-      <tr><td><code>code_reviewer</code></td><td>Agent reviews code natively</td></tr>
-      <tr><td><code>static_analysis</code></td><td>Agent runs linters natively</td></tr>
-      <tr><td><code>git_log / git_diff</code></td><td>Agent has native git access</td></tr>
-      <tr><td><code>lsp_query</code></td><td>Agent uses LSP natively</td></tr>
-      <tr><td><code>project_structure</code></td><td>Agent can ls/glob natively</td></tr>
-      <tr><td><code>project_conventions</code></td><td>Merged into lightweight init</td></tr>
-    </tbody>
-  </table>
-  <p><strong>What stayed:</strong> Knowledge graph, session memory, self-heal, safety layer, audit, lock, config — refactored into 3 pipeline-driven tools with mandatory research enforcement.</p>
-</section>
+    <!-- ─── V3 Changes ─── -->
+    <section id="v3">
+      <h2><span class="hash">#</span>What Changed in V3</h2>
+      <p>Kuma V3 dropped ~15 tools that overlap with native AI agent capabilities:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Dropped Tool</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><code>precise_diff_editor</code></td><td>Agent has native edit tools</td></tr>
+          <tr><td><code>safe_terminal_exec</code></td><td>Agent executes commands natively</td></tr>
+          <tr><td><code>smart_grep</code></td><td>Agent searches natively (ripgrep, semantic)</td></tr>
+          <tr><td><code>batch_file_writer</code></td><td>Agent creates files natively</td></tr>
+          <tr><td><code>code_reviewer</code></td><td>Agent reviews code natively</td></tr>
+          <tr><td><code>static_analysis</code></td><td>Agent runs linters natively</td></tr>
+          <tr><td><code>git_log / git_diff</code></td><td>Agent has native git access</td></tr>
+          <tr><td><code>lsp_query</code></td><td>Agent uses LSP natively</td></tr>
+          <tr><td><code>project_structure</code></td><td>Agent can ls/glob natively</td></tr>
+          <tr><td><code>project_conventions</code></td><td>Merged into lightweight init</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout info"><span class="ico">💡</span><div><strong>What stayed:</strong> Knowledge graph, session memory, self-heal, safety layer, audit, lock, config — refactored into 3 pipeline-driven tools with mandatory research enforcement.</div></div>
+    </section>
 
-<!-- ─── Comparison ─── -->
-<section id="comparison">
-  <h2>Comparison</h2>
-  <table>
-    <thead><tr><th>Feature</th><th>Kuma</th><th>agentmemory</th><th>PMB</th><th>PLUR</th><th>Memex</th></tr></thead>
-    <tbody>
-      <tr><td>Research Protocol (WAJIB)</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-      <tr><td>Safety Policy</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-      <tr><td>Selective Undo</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-      <tr><td>Multi-Agent Lock</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-      <tr><td>Coarse-Grained Pipeline</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-      <tr><td>Impact Analysis</td><td>✅ SQLite</td><td>❌</td><td>❌</td><td>❌</td><td>🔶 Neo4j+Gemini</td></tr>
-      <tr><td>Local-First</td><td>✅ SQLite WASM</td><td>✅</td><td>✅</td><td>✅</td><td>❌ Needs Docker</td></tr>
-      <tr><td>Auto Memory</td><td>🔶 Trigger-based</td><td>✅ Auto</td><td>❌</td><td>✅</td><td>✅</td></tr>
-    </tbody>
-  </table>
-</section>
+    <!-- ─── Comparison ─── -->
+    <section id="comparison">
+      <h2><span class="hash">#</span>Comparison</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>Kuma</th><th>agentmemory</th><th>PMB</th><th>PLUR</th><th>Memex</th></tr></thead>
+        <tbody>
+          <tr><td>Research Protocol (required)</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+          <tr><td>Safety Policy</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+          <tr><td>Selective Undo</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+          <tr><td>Multi-Agent Lock</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+          <tr><td>Coarse-Grained Pipeline</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+          <tr><td>Impact Analysis</td><td>✅ SQLite</td><td>❌</td><td>❌</td><td>❌</td><td>🔶 Neo4j+Gemini</td></tr>
+          <tr><td>Local-First</td><td>✅ SQLite WASM</td><td>✅</td><td>✅</td><td>✅</td><td>❌ Needs Docker</td></tr>
+          <tr><td>Auto Memory</td><td>🔶 Trigger-based</td><td>✅ Auto</td><td>❌</td><td>✅</td><td>✅</td></tr>
+        </tbody>
+      </table></div>
+    </section>
 
-<!-- ─── Footer ─── -->
+  </main>
+</div>
+
+<!-- ═══ Footer ═══ -->
 <footer class="footer">
-  <p><a href="https://github.com/plumpslabs/kuma">GitHub</a> · <a href="https://www.npmjs.com/package/@plumpslabs/kuma">npm</a> · <a href="https://github.com/plumpslabs/kuma/issues">Issues</a> · MIT License</p>
-  <p style="margin-top: 0.5rem;">Made with 🐻 for AI agents everywhere</p>
+  <div class="foot-links">
+    <a href="https://github.com/plumpslabs/kuma" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.npmjs.com/package/@plumpslabs/kuma" target="_blank" rel="noopener">npm</a>
+    <a href="https://github.com/plumpslabs/kuma/issues" target="_blank" rel="noopener">Issues</a>
+    <a href="api.md">API Docs</a>
+    <a href="guide.md">Guide</a>
+  </div>
+  <p>MIT License · Made with 🐻 for AI agents everywhere</p>
 </footer>
 
-</main>
+<button id="back-top" aria-label="Back to top">↑</button>
+
+<script>
+// ─── Copy helpers (DOM-based — no inline payload strings, so no HTML escaping issues) ───
+function copyText(text, btn) {
+  flashCopied(btn);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(function () { fallbackCopy(text); });
+  } else {
+    fallbackCopy(text);
+  }
+}
+// Copy the contents of the nearest <pre><code> block relative to the button.
+function copyCode(btn) {
+  var block = btn.closest(".code-block");
+  var code = block ? block.querySelector("pre code") : null;
+  copyText(code ? code.textContent.trim() : "", btn);
+}
+function fallbackCopy(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+function flashCopied(btn) {
+  if (!btn) return;
+  var original = btn.textContent;
+  btn.textContent = "✅ Copied!";
+  btn.classList.add("done");
+  setTimeout(function () {
+    btn.textContent = original;
+    btn.classList.remove("done");
+  }, 1600);
+}
+
+// Scroll progress bar
+var progressBar = document.getElementById("scroll-progress");
+window.addEventListener("scroll", function () {
+  var h = document.documentElement;
+  var max = h.scrollHeight - h.clientHeight;
+  progressBar.style.width = (max > 0 ? (window.scrollY / max) * 100 : 0) + "%";
+}, { passive: true });
+
+// Back to top
+var backTop = document.getElementById("back-top");
+window.addEventListener("scroll", function () {
+  backTop.classList.toggle("show", window.scrollY > 500);
+}, { passive: true });
+backTop.addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+// Mobile menu toggle
+var menuToggle = document.getElementById("menu-toggle");
+var sidebar = document.getElementById("sidebar");
+menuToggle.addEventListener("click", function () {
+  sidebar.classList.toggle("open");
+});
+document.querySelectorAll("#sidebar a").forEach(function (a) {
+  a.addEventListener("click", function () { sidebar.classList.remove("open"); });
+});
+
+// Scroll-spy
+var sections = Array.from(document.querySelectorAll("main section[id]"));
+var navLinks = Array.from(document.querySelectorAll(".sidebar-nav a, .topnav a"));
+var spy = new IntersectionObserver(function (entries) {
+  entries.forEach(function (entry) {
+    if (entry.isIntersecting) {
+      var id = entry.target.id;
+      navLinks.forEach(function (link) {
+        var href = link.getAttribute("href");
+        link.classList.toggle("active", href === "#" + id);
+      });
+    }
+  });
+}, { rootMargin: "-20% 0px -70% 0px" });
+sections.forEach(function (s) { spy.observe(s); });
+</script>
 </body>
 </html>
