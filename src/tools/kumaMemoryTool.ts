@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature" | "graph_health" | "harvest" | "noise_policy";
+type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature" | "graph_health" | "harvest" | "noise_policy" | "goal_progress";
 
 const MEMORY_ALIASES: Record<string, string> = {
   // Session synonyms
@@ -200,6 +200,7 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "layers": return handleLayersSummary(params);
     case "add_node": return handleAddNode(params);
     case "feature": return handleFeature(params);
+    case "goal_progress": return handleGoalProgress(params);
     case "delete_node": return handleDeleteNode(params);
     case "graph_health": return handleGraphHealth(params);
     case "clear": {
@@ -208,7 +209,6 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
       return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, and gotchas have been wiped from disk and memory.";
     }
     case "harvest": return handleHarvest(params);
-    case "mine": return handleMine(params);
     case "session_mine": return handleSessionMine(params);
     case "noise_policy": return getNoiseFilterPolicy();
     default: return `Unknown action "${action}".`;
@@ -855,7 +855,7 @@ async function handleAddNode(params: MemoryParams): Promise<string> {
   try {
     const { upsertNode, nodeId, addEdge } = await import("../engine/kumaGraph.js");
     const nodeIdStr = filePath ? `${type}::${filePath}::${name}` : nodeId(type as "arch_flow" | "gotcha" | "decision" | "cross_service_link" | "feature_domain" | "file" | "research", name);
-    
+
     await upsertNode({
       id: nodeIdStr,
       type: type as any,
@@ -900,7 +900,7 @@ async function handleFeature(params: MemoryParams): Promise<string> {
     risk,
   });
 
-  sessionMemory.recordMemoryAction("research_save");
+  sessionMemory.recordMemoryAction("feature");
 
   return `✅ **Feature "${params.title}" recorded** — ${result.nodeCount} node(s), ${result.edgeCount} edge(s)\n⭐ Level: feature\n📁 Files: ${files.length}\n🏷️ Tags: ${tags.length}\n⚠️ Risk: ${risk}`;
 }
@@ -908,6 +908,16 @@ async function handleFeature(params: MemoryParams): Promise<string> {
 // ============================================================
 // GRAPH HEALTH — Monitor Graph Noise, Orphans & Duplicates
 // ============================================================
+
+async function handleGoalProgress(params: MemoryParams): Promise<string> {
+  const pct = params.confidence ?? 0;
+  const ms = params.content || params.title;
+  sessionMemory.setGoalProgress(pct, ms);
+  const p = sessionMemory.getGoalProgress();
+  if (!p) return "Error";
+  const bar = "█".repeat(Math.floor(p.percentage / 10)) + "░".repeat(10 - Math.floor(p.percentage / 10));
+  return `📊 ${bar} ${p.percentage}%${p.milestone ? " — " + p.milestone : ""}`;
+}
 
 async function handleGraphHealth(_params: MemoryParams): Promise<string> {
   const { getDb } = await import("../engine/kumaDb.js");

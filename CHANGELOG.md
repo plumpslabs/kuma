@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.3.33] — 2026-08-03
+
+### 🧠 Session Intelligence, Goal Progress & Studio Staleness
+
+- **Session Mining — 5 New Patterns (`kumaSessionMiner.ts`)**: Auto-extraction now detects directory exploration → `feature`, test-fail-then-edit → `gotcha`, import chains → `arch_flow`, API route discovery → `feature`, and component discovery → `arch_flow`. New `feature` insight type with ⭐ icon in previews.
+- **Goal Progress Tracking**: `sessionMemory.setGoalProgress()/getGoalProgress()` persisted to `.kuma/memory.json`. New `kuma_memory({ action: 'goal_progress', confidence: <0-100>, content: '<milestone>' })` renders a visual progress bar.
+- **Feature Recording Fix**: `kuma_memory({ action: 'feature' })` now records a dedicated `feature` counter (was miscounted as `research_save`). Guard adds a low-severity reminder when ≥5 file reads happen with 0 features recorded.
+- **Session Resume (`kuma_context({ action: 'resume' })`)**: Load previous session context — last persisted session from DB (goal, calls, edits, rollbacks, failures, safety score), current state from `.kuma/memory.json` (goal, progress %, modified files, completed steps, unresolved failures), recent changes and last 5 tool calls. Aliases: `continue`, `restore`, `reload`.
+- **Kuma Studio — Content-Hash Staleness Detection**: Staleness check now compares stored file content hashes (md5) against disk — files whose content changed are flagged `content_changed` (not just deleted files). Proper `initSqlJs()` initialization fixes sql.js WASM loading. Dashboard queries ordered by recency (nodes/gotchas/features by `updated_at`) and efficiency metrics reworked (gotchas, arch flows, decisions incl. node-type `decision`).
+- **Studio Activity Tab Fix**: `renderActivity` referenced undefined `passColor`/`rollbackRate` → `ReferenceError` left the tab stuck on "Loading...". Both are now derived (pass rate color + rollbacks/calls ratio) so the Agent Usage Intensity panel renders reliably, even on an empty DB.
+- **CLI `--version` / `--help`**: `kuma --version` (or `-v`) prints the version and exits; `kuma --help`/`-h` prints usage — previously unknown args fell through to MCP server mode and appeared to hang.
+- **Record Rules Update**: init quickref now lists `arch_flow`, `research_save`, `feature` as MUST-record actions and enforces "every node MUST have edges — no orphan nodes".
+- **Tool Description Cleanup**: `kuma_context` MCP tool description simplified (V3 coarse-grained), `resume` added to the action enum.
+- **Docs & README Overhaul**: `README.md` rewritten (+505/−294) with a dedicated `--version` section; `docs/guide.md` expanded (+61); `docs/index.html` redesigned with the Kuma logo and fuller layout.
+
 ## [2.3.32] — 2026-08-01
 
 ### 🌍 Multi-Language Support, Self-Learning Loop & Legacy Onboarding

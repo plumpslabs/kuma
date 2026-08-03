@@ -331,7 +331,7 @@ table tbody tr:last-child td { border-bottom: none; }
   <div class="topbar-inner">
     <a class="brand" href="#top">
       <img src="../public/kuma.png" alt="Kuma" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png';">
-      <span class="brand-name">Kuma<small>v2.3.32</small></span>
+      <span class="brand-name">Kuma<small>v2.3.33</small></span>
     </a>
     <nav class="topnav" id="topnav">
       <a href="#overview">Overview</a>
@@ -645,7 +645,13 @@ kuma_context({ action: "changes" })</code></pre>
           <tr><td><strong>Multi-Agent Lock</strong></td><td>File-level locks prevent simultaneous edits by multiple AI agents.</td></tr>
           <tr><td><strong>Decision Memory</strong></td><td>ADR-style: context → options → rationale → outcome. Trigger-based.</td></tr>
           <tr><td><strong>Session Memory</strong></td><td>Real-time state: modified files, failures, goal progress, tool history.</td></tr>
-          <tr><td><strong>13 Agent Support</strong></td><td>Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, and more.</td></tr>
+          <tr><td><strong>Kuma Studio</strong></td><td>Web-based dashboard with knowledge graph visualization, efficiency metrics, and activity tracking.</td></tr>
+          <tr><td><strong>Feature Recording</strong></td><td>Auto-detect and record high-level features with owns edges to files.</td></tr>
+          <tr><td><strong>Session Memory</strong></td><td>Track tool calls, recordings, and efficiency per session with enforcement.</td></tr>
+          <tr><td><strong>Guard System</strong></td><td>Real-time monitoring with blocking warnings for anti-patterns and missing recordings.</td></tr>
+          <tr><td><strong>Checkpoint/Rollback</strong></td><td>Atomic snapshots before major refactors with selective restore.</td></tr>
+          <tr><td><strong>Policy-as-Code</strong></td><td>Configurable safety rules in YAML for never_touch, require_review, and block_commands.</td></tr>
+          <tr><td><strong>15+ Agent Support</strong></td><td>Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, Zed, and more.</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -824,6 +830,19 @@ kuma_memory({ action: "heal" })</code></pre>
         </tbody>
       </table></div>
       <div class="callout info"><span class="ico">💡</span><div><strong>What stayed:</strong> Knowledge graph, session memory, self-heal, safety layer, audit, lock, config — refactored into 3 pipeline-driven tools with mandatory research enforcement.</div></div>
+      <h3>New in V3</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Kuma Studio</strong></td><td>Web-based dashboard with knowledge graph visualization, efficiency metrics, and activity tracking.</td></tr>
+          <tr><td><strong>Feature Recording</strong></td><td>Auto-detect and record high-level features with owns edges to files.</td></tr>
+          <tr><td><strong>Guard System</strong></td><td>Real-time monitoring with blocking warnings for anti-patterns and missing recordings.</td></tr>
+          <tr><td><strong>Session Memory</strong></td><td>Track tool calls, recordings, and efficiency per session with enforcement.</td></tr>
+          <tr><td><strong>Checkpoint/Rollback</strong></td><td>Atomic snapshots before major refactors with selective restore.</td></tr>
+          <tr><td><strong>Policy-as-Code</strong></td><td>Configurable safety rules in YAML for never_touch, require_review, and block_commands.</td></tr>
+          <tr><td><strong>3 Coarse-Grained Tools</strong></td><td>Simplified API: kuma_context, kuma_memory, kuma_safety with pipeline-driven actions.</td></tr>
+        </tbody>
+      </table></div>
     </section>
 
     <!-- ─── Comparison ─── -->

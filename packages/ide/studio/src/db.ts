@@ -9,6 +9,7 @@
 // safe alongside a running Kuma MCP server.
 // ============================================================
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -20,7 +21,8 @@ let sqlJs: any = null;
 /** Lazily load sql.js (WASM-backed SQLite). */
 async function getSqlJs(): Promise<any> {
   if (!sqlJs) {
-    sqlJs = await require("sql.js");
+    const initSqlJs = await require("sql.js");
+    sqlJs = await initSqlJs();
   }
   return sqlJs;
 }
@@ -123,26 +125,48 @@ function readSessionMetrics(dbPath: string): {
 function detectStaleNodes(db: any, dbPath: string): {
   checked: number;
   staleNodes: number;
-  missing: Array<{ filePath: string; nodeCount: number }>;
+  missing: Array<{ filePath: string; nodeCount: number; reason: string }>;
 } {
   try {
     const root = projectRootFromDb(dbPath);
     const stmt = db.prepare(
-      `SELECT file_path, COUNT(*) as cnt FROM nodes
+      `SELECT id, file_path, metadata, COUNT(*) as cnt FROM nodes
        WHERE file_path IS NOT NULL AND file_path != '' AND file_path NOT LIKE '%::%'
        GROUP BY file_path ORDER BY cnt DESC LIMIT 500`
     );
-    const missing: Array<{ filePath: string; nodeCount: number }> = [];
+    const missing: Array<{ filePath: string; nodeCount: number; reason: string }> = [];
     let checked = 0;
     let staleNodes = 0;
     while (stmt.step()) {
       const row = stmt.getAsObject();
       const fp = row.file_path as string;
+      const metadata = row.metadata as string || '{}';
       checked++;
-      if (!fs.existsSync(path.join(root, fp))) {
+      const fullPath = path.join(root, fp);
+      
+      if (!fs.existsSync(fullPath)) {
+        // File doesn't exist = STALE
         const count = Number(row.cnt ?? 1);
-        missing.push({ filePath: fp, nodeCount: count });
+        missing.push({ filePath: fp, nodeCount: count, reason: 'file_missing' });
         staleNodes += count;
+      } else {
+        // File exists, check if content changed (content hash comparison)
+        try {
+          const parsed = JSON.parse(metadata);
+          const storedHash = parsed.contentHash;
+          if (storedHash) {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const currentHash = crypto.createHash('md5').update(content).digest('hex');
+            if (currentHash !== storedHash) {
+              // Content changed = STALE
+              const count = Number(row.cnt ?? 1);
+              missing.push({ filePath: fp, nodeCount: count, reason: 'content_changed' });
+              staleNodes += count;
+            }
+          }
+        } catch {
+          // Ignore hash comparison errors
+        }
       }
     }
     stmt.free();
@@ -203,19 +227,19 @@ export async function getDashboardData() {
     };
 
     const nodes = jsonRows(
-      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path,'severity',COALESCE(severity,'medium'),'confidence',COALESCE(confidence,0.8),'metadata',COALESCE(metadata,'{}'))) FROM nodes ORDER BY updated_at DESC`
+      `SELECT json_group_array(json_object('id',id,'name',name,'type',type,'file_path',file_path,'severity',COALESCE(severity,'medium'),'confidence',COALESCE(confidence,0.8),'metadata',COALESCE(metadata,'{}'))) FROM (SELECT * FROM nodes ORDER BY updated_at DESC)`
     );
     const edges = jsonRows(
       `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type,'weight',weight)) FROM edges`
     );
     const gotchas = jsonRows(
-      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'created_at',created_at)) FROM known_gotchas ORDER BY severity DESC`
+      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'created_at',created_at)) FROM (SELECT * FROM known_gotchas ORDER BY created_at DESC)`
     );
     const features = jsonRows(
-      `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'))) FROM nodes WHERE type = 'feature' ORDER BY name`
+      `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'))) FROM (SELECT * FROM nodes WHERE type = 'feature' ORDER BY updated_at DESC)`
     );
     const health = jsonRows(
-      `SELECT json_group_array(json_object('score',score,'summary',REPLACE(REPLACE(COALESCE(summary,''),char(10),' '),char(13),''),'risk_level',risk_level,'created_at',created_at)) FROM health_snapshots ORDER BY created_at DESC LIMIT 10`
+      `SELECT json_group_array(json_object('score',score,'summary',REPLACE(REPLACE(COALESCE(summary,''),char(10),' '),char(13),''),'risk_level',risk_level,'created_at',created_at)) FROM (SELECT * FROM health_snapshots ORDER BY created_at DESC LIMIT 10)`
     );
 
     // ── Efficiency (GAP 1): prove "the more you use it, the more efficient it gets" ──
@@ -224,7 +248,7 @@ export async function getDashboardData() {
     const verifPassed = first(`SELECT COUNT(*) as c FROM verifications WHERE passed = 1`, "c");
     const recentSessions = run(
       `SELECT started_at, COALESCE(goal,'') as goal, tool_calls, edits, rollbacks, failures, safety_score
-       FROM sessions ORDER BY started_at DESC LIMIT 8`
+       FROM (SELECT * FROM sessions ORDER BY started_at DESC LIMIT 8)`
     ).map((r) => ({
       startedAt: Number(r.started_at ?? 0),
       goal: (r.goal as string) || "",
@@ -238,11 +262,10 @@ export async function getDashboardData() {
     const efficiency = {
       sessions: first(`SELECT COUNT(*) as c FROM sessions`, "c"),
       toolCalls: first(`SELECT COUNT(*) as c FROM tool_calls`, "c"),
-      totalEdits: first(`SELECT COALESCE(SUM(edits),0) as c FROM sessions`, "c"),
-      totalRollbacks: first(`SELECT COALESCE(SUM(rollbacks),0) as c FROM sessions`, "c"),
-      totalFailures: first(`SELECT COALESCE(SUM(failures),0) as c FROM sessions`, "c"),
+      gotchas: first(`SELECT COUNT(*) as c FROM known_gotchas`, "c"),
+      archFlows: sessionMetrics.recordings.archFlows,
+      decisions: first(`SELECT COUNT(*) as c FROM (SELECT id FROM decision_log UNION SELECT id FROM nodes WHERE type = 'decision')`, "c"),
       researchCacheScopes: first(`SELECT COUNT(*) as c FROM research_cache`, "c"),
-      decisions: first(`SELECT COUNT(*) as c FROM decision_log`, "c"),
       verifications: verifTotal,
       verificationPassRate: verifTotal > 0 ? Math.round((verifPassed / verifTotal) * 100) : null,
       metrics: sessionMetrics.metrics,

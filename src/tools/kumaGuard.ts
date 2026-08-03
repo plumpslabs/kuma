@@ -151,6 +151,16 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
         suggestion: "After tracing a flow, record it:\nkuma_memory({ action: 'arch_flow', content: 'domain: <Name> | hops: <file1> → <file2> → <file3>' })",
       });
     }
+
+    // Auto-feature reminder — detect when agent explores multiple related files (possible feature discovery)
+    if (readCalls >= 5 && recordingSummary.features === 0) {
+      warnings.push({
+        severity: "low",
+        pattern: "explore-without-feature",
+        message: `${readCalls} file reads but 0 features recorded. High-level module understanding helps future sessions.`,
+        suggestion: "After exploring a module/feature, record it:\nkuma_memory({ action: 'feature', title: '<FeatureName>', content: 'description', scope: 'file1.ts,file2.ts' })",
+      });
+    }
   }
 
   // 5. Context snapshot

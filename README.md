@@ -1,286 +1,423 @@
+
 <div align="center">
 
 <img src="https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png" alt="Kuma Logo" width="180" />
 
 # Kuma
 
-**Safety-first context & orchestration engine for AI coding agents**
+**Safety-first context & orchestration engine for AI coding agents.**
 
-[![npm](https://img.shields.io/npm/v/@plumpslabs/kuma.svg?logo=npm&color=red)](https://www.npmjs.com/package/@plumpslabs/kuma)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-18+-339933?logo=nodedotjs)](https://nodejs.org/)
+[![npm](https://img.shields.io/npm/v/@plumpslabs/kuma?color=amber)](https://npm.im/@plumpslabs/kuma)
+[![license: MIT](https://img.shields.io/badge/license-MIT-amber.svg)](LICENSE)
+[![node: >=18](https://img.shields.io/badge/node->=18-amber.svg)](https://nodejs.org)
 
-Works with **any MCP-compatible agent** — Claude Code, Cursor, Windsurf, Cline, Aider, OpenCode, Codex CLI, Qwen Code, Kiro, and more.
-
-</div>
+> Works with any MCP-compatible agent: Claude Code, Cursor, Windsurf, Zed, and more.
 
 ---
 
 ## What is Kuma?
 
-Kuma is an **MCP server** that sits alongside your AI coding agent and enforces a simple rule: *understand before you touch.*
+Kuma is an MCP (Model Context Protocol) server that acts as a **pre-modification safety layer** for AI coding agents. Before an agent touches your code, Kuma enforces a research and safety pipeline — like a pre-flight checklist for code changes.
 
-When an agent wants to modify code, Kuma won't let it work blind. It runs a deterministic pipeline: load the research cache, query the knowledge graph, analyze impact across the entire codebase, look up past decisions, and check safety policies — all in one MCP call. Only then does the agent have the context it needs to edit safely.
+**The Problem:** AI agents often modify code without understanding the full context — missing dependencies, breaking related features, or repeating past mistakes.
 
-Kuma is **not** an editor, search tool, linter, or terminal. Those are things your AI agent already does natively. Kuma is the **safety layer** that makes sure those actions are informed, tracked, and reversible.
-
-**Think of it this way:** Your AI agent is the surgeon. Kuma is the pre-op checklist, the patient history, the X-ray, and the post-op report — all in one.
+**The Solution:** Kuma ensures every modification is informed by:
+- 🧠 **Project-specific knowledge graph** — SQLite-based graph of nodes, edges, gotchas, and decisions
+- 🔍 **Mandatory research pipeline** — 5-step context gathering before any edit
+- 🛡️ **Safety policies** — Configurable rules that block risky operations
+- 📝 **Decision memory** — ADR-style decision tracking across sessions
+- 🔄 **Self-healing** — Automatic detection and repair of stale knowledge
+- ↩️ **Selective undo** — Symbol-level change tracking for precise reverts
+- 📊 **Kuma Studio** — Visual dashboard for knowledge graph, efficiency metrics, and activity tracking
 
 ---
 
-## Zero Setup?
-
-**Yes — to run Kuma, you need exactly zero configuration:**
+## Quick Start
 
 ```bash
+# Run with npx (zero setup)
 npx -y @plumpslabs/kuma
+
+# Or install globally
+npm install -g @plumpslabs/kuma
+kuma
 ```
 
-That's it. The MCP server starts. Your AI agent connects. Kuma auto-generates `.kuma/init.md` (behavioral rules), detects your AI agent, and creates its native skill file — automatically.
-
-The "setup" part is optional: `npx @plumpslabs/kuma init` generates config files for 13 AI agents, but that's just convenience. Kuma works with any MCP client out of the box.
+Kuma auto-generates:
+- `.kuma/init.md` — Project-specific behavioral rules
+- `.kuma/kuma.db` — SQLite knowledge graph (WASM, zero native build)
+- `.kuma/policy.yml` — Customizable safety policies
+- `.skills/` — Skill files for common patterns
 
 ---
 
-## Core Features
+## Core Architecture: 3 Pipeline-Driven Tools
 
-### 🧠 Knowledge Graph (SQLite)
-
-Every project gets its own SQLite database (pure WASM, no native build). Kuma builds a graph of **nodes** (files, functions, classes, tests, API routes) and **edges** (calls, imports, defines, tests). This graph is what powers all research, impact analysis, and flow navigation.
-
-- FTS5 full-text search with graceful fallback
-- Auto-built, auto-healed, queryable
-- Per-project — your context stays with your codebase
-
-### 🔬 Mandatory Research Pipeline
-
-Before an agent edits unfamiliar code, Kuma enforces a 5-step research pipeline:
-
-| Step | What happens |
-|------|-------------|
-| **1. Load Cache** | Check `.kuma/research/<scope>.json` — fresh or stale? |
-| **2. Graph Query** | Find all related nodes and edges in the knowledge graph |
-| **3. Impact Analysis** | "If I change X, what breaks?" — references, files, tests, API routes |
-| **4. Decision Lookup** | Check past ADR-style decisions and known issues |
-| **5. Safety Check** | Policy compliance, active locks, risk level |
-
-All in one MCP call: `kuma_context({ action: "research", scope: "auth" })`. No chaining. No guesswork.
-
-### 🛡️ Safety Layer
-
-| Feature | What it does |
-|---------|-------------|
-| **Safety Guard** | Anti-pattern detection, drift (edits without tests), tool-loop prevention, unresolved failure checks |
-| **Safety Policy** | YAML policy file (`.kuma/policy.yml`) — `never_touch`, `require_review`, `block_commands` |
-| **Safety Audit** | Every tool call recorded in SQLite. Queryable trail. Override logging with reasons. |
-| **Multi-Agent Lock** | File-level locks prevent multiple AI agents from editing the same file simultaneously |
-
-### 📝 Decision Memory
-
-When Kuma detects a significant change, it can suggest recording an **ADR-style decision**:
-
-```
-Context:  "We need stateless tokens that expire in 15min"
-Options:  "JWT vs opaque tokens vs session store"
-Rationale: "JWT is mobile-compatible, no server-side store needed"
-Outcome:  "Implemented JwtPasswordResetService"
-```
-
-Saved to the knowledge graph + `.kuma/memories/decisions.md`. Survives across sessions. Readable by both humans and future AI agents.
-
-### 🔄 Self-Healing
-
-The knowledge graph automatically detects stale nodes, repairs via git history (tracks renames), and reduces stale edge weights — all without manual intervention.
-
-### ↩️ Selective Undo
-
-Kuma tracks **symbol-level changes** per session. Instead of file-level rollback, you can see exactly what changed and revert specific modifications without affecting unrelated work:
-
-```
-kuma_context({ action: "changes" })  → "Session 3 modified routes.ts:42-67 and db.ts"
-```
-
----
-
-## 3 Tools
-
-Kuma consolidates everything into **3 coarse-grained tools**. Each action triggers a complete workflow internally — one MCP call, not a chain of micro-tools.
+Kuma V3 consolidates 46+ micro-tools into **3 coarse-grained tools**. Each action triggers an internal multi-step workflow — the agent doesn't chain individual calls.
 
 ### 🧠 `kuma_context` — Context & Research
 
-| Action | Pipeline | Use case |
-|--------|----------|----------|
-| `init` | Project brief | **Call first every session.** Load graph, detect stack, show structure. |
-| `research` | 5-step pipeline | **WAJIB before editing.** Cache → staleness → graph → impact → decisions. |
-| `impact` | Graph traversal | "Change validateToken → 42 refs, 15 files, 3 tests, 2 API routes." |
-| `navigate` | BFS traversal | "How does login work?" — full call chain from route to database. |
-| `changes` | Change log query | "What changed this session?" — selective undo support. |
-| `health` | Aggregate scoring | Project health dashboard 0-100 across 9 dimensions. |
-| `rollback` | File restore | Rollback a specific change by ID from the change log. |
-| `researches` | Cache list | List all cached research scopes with confidence & age. |
-| `sync` | Unified batch | Combines init + health + memory state in single roundtrip (~60-70% token savings). |
-| `visualize` | Mermaid diagram | Generate interactive knowledge graph diagrams (flowchart, dependency, mindmap). |
-| `digest` | Ultra-compact brief | <500 token project briefing — fastest way to bootstrap context (Issue #18). |
-| `drift` | Staleness detection | Detect memory staleness & code drift between graph and actual filesystem (Issue #20). |
+| Action | Purpose | Impact |
+|--------|---------|--------|
+| `init` | Load project brief, restore session | 🔴 Required first |
+| `research` | 5-step pipeline: cache → graph → impact → decision → safety | 🔴 Required before edits |
+| `impact` | Analyze change effects on related code | 🔴 High |
+| `navigate` | Trace code flow across files | 🟡 Linear |
+| `changes` | View change log for current session | 🟡 Linear |
+| `health` | Project health score (0-100) | 🟡 Linear |
+| `rollback` | Undo a specific change by ID | 🟡 Linear |
+| `sync` | Unified batch state query | 🟢 Skip (agent native) |
+| `digest` | Ultra-compact <500 token project briefing | 🟡 Linear |
+| `drift` | Detect memory staleness & code drift | 🟡 Linear |
+| `progressive` | Progressive context loading | 🟡 Linear |
 
-### 📝 `kuma_memory` — Decision & Knowledge
+### 💾 `kuma_memory` — Decision & Knowledge
 
-| Action | Use case |
-|--------|----------|
-| `decision` | ADR-style recording: template, suggest, or record. |
-| `mine` | Mine historical decisions from git log & inline code comments. |
-| `research_save` | Persist research to graph + `.kuma/research/<scope>.json`. |
-| `session` | "What happened this session?" — files, failures, progress. |
-| `heal` | Self-heal knowledge graph — stale detection, git repair. |
-| `search` | Search across memories + knowledge graph (with TF-IDF hybrid semantic search). |
-| `changes` | Change log for selective undo. |
-| `todo` | Persistent todo CRUD — add, list, update status with scope & success criteria. |
-| `context` | Inject context notes from external sources (Slack, Jira, meetings). |
-| `benchmark` | Before/after metric capture & diff (e.g., type errors, test count). |
-| `decision_log` | Living decision document with status tracking (active/superseded/deprecated). |
-| `domain_rules` | Layer 1 — Business/domain rules knowledge (Issue #17). |
-| `arch_flow` | Layer 2 — Architecture flow mapping (Issue #17). |
-| `gotcha` | Layer 3 — Known gotchas & anti-regression shield (Issue #17/#21). |
-| `layers` | Show all 3 memory layers summary. |
-| `delete_node` | Delete specific node or record from disk & RAM immediately. |
-| `graph_health` | Monitor knowledge graph health, orphan nodes, and duplicate groups. |
+| Action | Purpose | Impact |
+|--------|---------|--------|
+| `research_save` | Save research findings to cache | 🔴 Exponential |
+| `gotcha` | Record bugs/quirks IMMEDIATELY | 🔴 Exponential |
+| `arch_flow` | Record architecture flow (max 5 core files) | 🔴 Exponential |
+| `decision` | Record ADR-style decision with rationale | 🔴 Exponential |
+| `feature` | Record high-level feature with owns edges | 🔴 Exponential |
+| `mine` | Mine git history for hidden decisions | 🟡 Linear |
+| `session` | View session summary | 🟢 Skip |
+| `heal` | Repair stale graph entries | 🟡 Linear |
+| `search` | Search knowledge graph | 🟡 Linear |
+| `todo` | Manage persistent todos | 🟡 Linear |
+| `context` | Inject notes into context | 🟡 Linear |
+| `benchmark` | Capture/diff performance metrics | 🟡 Linear |
+| `domain_rules` | Layer 1: Business rules | 🟡 Linear |
+| `layers` | View all 3 memory layers | 🟢 Skip |
 
 ### 🛡️ `kuma_safety` — Safety & Policy
 
-| Action | Use case |
-|--------|----------|
-| `guard` | Anti-pattern, drift, tool-loop, and failure checks. |
-| `verify` | **SAFETY-GUARDED** on-demand test verification — only runs via explicit tool call. Auto-detects runner (pnpm/npm/yarn/pytest/cargo/go), scopes to session changes, rate-limited (30s handler + 60s verifier cooldown), concurrency-locked (intra-process + cross-process file lock), cached (< 5 min returns stale result), runaway-protected (> 3 calls in 5 min auto-blocks), hard timeout (30s + SIGKILL). ⚠️ NEVER auto-triggered — only via explicit `kuma_safety({ action: "verify" })`. |
-| `check` | Pre-execution safety: policy, path, lock, risk level. |
-| `audit` | Query audit trail + stats + override log. |
-| `lock` | Multi-agent file locking. |
-| `health` | Safety score 0-100 with dimension breakdown. |
-| `override` | Logged safety bypass with reason. |
-| `security` | Security leak scanner — regex-based credential/token detection. |
-| `gc` | Kuma garbage collection — orphan cleanup, VACUUM, index maintenance. |
-| `doctor` | Kuma health diagnostics — DB integrity, schema health, process status, verification history. |
-| `portability` | Check path portability — no absolute paths in stored data. |
-| `gitignore` | Auto-configure `.gitignore` to include `.kuma/`. |
-| `clean` | Purge scratch directory + reset drift warnings. |
-| `policy` | Policy-as-Code engine — evaluate commands against `.kuma/policy.yml` (Issue #24). |
-| `ast` / `validate` | AST-based code validation — validate JS/TS code structure & patterns (Issue #22). |
+| Action | Purpose | Impact |
+|--------|---------|--------|
+| `guard` | Detect anti-patterns, drift, runaway loops | 🔴 Required |
+| `verify` | Auto-run scoped tests + AST validation | 🔴 High |
+| `check` | Pre-execution safety check | 🟡 Linear |
+| `audit` | Query safety audit trail | 🟡 Linear |
+| `lock` | Multi-agent coordination lock | 🟡 Linear |
+| `health` | Safety health score | 🟡 Linear |
+| `override` | Bypass safety (recorded in audit) | 🟡 Linear |
+| `security` | Scan for leaked secrets | 🟡 Linear |
+| `gc` | Garbage collect stale data | 🟢 Skip |
+| `doctor` | Full health check | 🟡 Linear |
+| `policy` | Policy-as-Code engine | 🟡 Linear |
+| `ast` / `validate` | AST-based code validation | 🟡 Linear |
+| `checkpoint` | Atomic snapshot before refactors | 🟡 Linear |
+| `rollback_label` | Restore from checkpoint | 🟡 Linear |
+| `contract` | Pre/post-condition checks | 🟡 Linear |
 
 ---
 
-## 🔥 Power Curve — What Matters Most
+## V3 Changes: What's New
 
-Not all recordings are equal. Kuma categorizes actions by their long-term impact:
+Kuma V3 is a major evolution focusing on **simplicity, safety, and agent-native workflows**.
 
-| Tier | Actions | Impact | Why |
-|------|---------|--------|-----|
-| 🔥 **Exponential** | `arch_flow` + `gotcha` | **High signal architecture & bug shield** | Complete architecture flows (max 5 core files) save massive file-reading next session. Gotchas prevent bug re-discovery. |
-| 🟡 **Linear** | `decision` + `research_save` | **Useful but not multiplicative** | Decisions preserve rationale context. Research saves create searchable cache. |
-| 🟢 **SKIP** | Function/class/component nodes | **Not worth MCP call — grep is faster** | Use `grep funcName(`, `grep class ClassName`, `glob **/*Component*` instead |
+### Dropped Tools (Now Handled by Agents)
 
-**Rule of thumb:**
-- **Record `arch_flow`** after tracing a complete flow (max 5 core files) & **`gotcha`** inline when bugs are found
-- **Record** `decision` + `research_save` when relevant
-- **NEVER record** function/class/component nodes via MCP — native grep is faster
-- Let the auto-scanner handle structural nodes during research step 3
+| Dropped Tool | Why Dropped |
+|--------------|-------------|
+| `precise_diff_editor` | Agent has native edit tools |
+| `safe_terminal_exec` | Agent executes commands natively |
+| `smart_grep` | Agent searches natively (ripgrep, semantic) |
+| `batch_file_writer` | Agent creates files natively |
+| `ast_validator` (standalone) | Merged into `kuma_safety` as `ast`/`validate` action |
+| `git_diff_analyzer` | Merged into `kuma_context` as `impact` action |
+
+### New Features in V3
+
+| Feature | Description |
+|---------|-------------|
+| **3 Coarse-Grained Tools** | Simplified API: `kuma_context`, `kuma_memory`, `kuma_safety` |
+| **Pipeline-Driven Actions** | Each action triggers internal multi-step workflows |
+| **Knowledge Graph** | SQLite + FTS5 full-text search with WASM engine |
+| **Feature Recording** | Auto-detect and record high-level features with `owns` edges |
+| **Session Memory** | Track tool calls, recordings, and efficiency per session |
+| **Guard System** | Real-time monitoring with blocking warnings for anti-patterns |
+| **Self-Healing** | Automatic detection and repair of stale nodes |
+| **Kuma Studio** | Visual dashboard with graph, efficiency, and activity tracking |
+| **Policy-as-Code** | Configurable safety rules in `.kuma/policy.yml` |
+| **Checkpoint/Rollback** | Atomic snapshots before major refactors |
 
 ---
 
-## VPS / Collective — What Is It?
+## Kuma Studio
 
-Kuma has an optional feature called **Kolektif** — collective intelligence. It lets multiple Kuma instances across different projects share anonymized patterns to your own VPS.
+Kuma Studio is a **web-based dashboard** for visualizing and managing your knowledge graph.
 
-**This is entirely optional.** You never need to set it up. Kuma works perfectly fine with zero infrastructure — just local SQLite.
+### Features
 
-What it does:
-- Syncs **anonymized** patterns (error types, tool names, language — no source code, no file names, no git history)
-- Helps Kuma learn patterns across projects ("this error pattern is common in Go projects")
-- Data goes to **your own VPS**, not a public server
+- **📊 Knowledge Graph** — Interactive node-edge visualization with physics simulation
+- **⭐ Features** — High-level module tracking with owns edges to files
+- **⚠️ Gotchas** — Known bugs and quirks with severity levels
+- **💚 Health** — Project health scores over time
+- **⚡ Efficiency** — Session metrics, time saved, verification pass rates
+- **📈 Staleness** — Detection of stale nodes with missing file references
+- **🤖 Activity** — Agent usage intensity, success rates, and session history
 
-When not configured, Kuma is 100% local. No data leaves your machine.
+### Usage
 
----
+```bash
+# Start Kuma Studio
+kuma studio
 
-## Context Model: Per-Project
-
-Kuma stores context **per project** in a `.kuma/` directory at your project root:
-
+# Or via npx
+npx -y @plumpslabs/kuma studio
 ```
-your-project/
-├── src/
-├── tests/
-└── .kuma/              ← Auto-generated by Kuma
-    ├── kuma.db         ← Knowledge graph, research cache, audit trail, change log
-    ├── init.md         ← Behavioral rules for the AI agent
-    ├── config.json     ← Per-project settings
-    ├── policy.yml      ← Safety policy
-    ├── research/       ← Research records (one JSON per scope)
-    └── memories/       ← Persistent decisions, conventions, glossary
+
+Studio runs at `http://localhost:3322` and provides:
+- Real-time graph visualization
+- Copy report functionality for activity analysis
+- Node detail modals with relations and gotchas
+- Search and filter capabilities
+- Physics-based graph layout with depth controls
+
+---
+
+## Knowledge Graph Schema
+
+Kuma builds a comprehensive knowledge graph with these node types:
+
+| Node Type | Description |
+|-----------|-------------|
+| `feature` | High-level module (e.g., Auth, Billing) |
+| `arch_flow` | Architecture flow between files |
+| `gotcha` | Known bug or quirk |
+| `decision` | ADR-style decision with rationale |
+| `function` | Function or method |
+| `class` | Class definition |
+| `component` | UI component |
+| `file` | Source file |
+| `api_route` | API endpoint |
+| `test` | Test file |
+| `research` | Research cache entry |
+
+Edge types include: `calls`, `imports`, `defines`, `tests`, `routes`, `implements`, `extends`, `depends_on`, `owns`, `modified_by`, `contains`, `composes`, `flows_through`, `triggers`, `syncs_with`, `affects`.
+
+---
+
+## Safety Layer
+
+### Policy Engine
+
+Configure safety rules in `.kuma/policy.yml`:
+
+```yaml
+rules:
+  - name: "No production databases"
+    pattern: "DROP TABLE|DELETE FROM.*WHERE 1"
+    action: block
+    message: "Production database modifications blocked"
+    
+  - name: "Require tests before deploy"
+    pattern: "git push"
+    require: "kuma_safety({ action: 'verify' })"
+    message: "Run tests before pushing"
 ```
 
-This means **every project has its own context**. The auth flow in Project A is different from Project B. The knowledge graph, decisions, and research are all project-specific — never mixed.
+### Audit Trail
 
-The VPS collective (optional) is the only cross-project feature, and it only shares anonymized patterns — never code or project-specific context.
+Every safety check is logged to the audit trail:
+- Tool name and parameters
+- Risk level (low/medium/high/critical)
+- Policy violations
+- Allowed/blocked decision
+- Duration and metadata
+
+### Multi-Agent Lock
+
+Prevent conflicts when multiple agents work on the same project:
+```bash
+kuma_safety({ action: 'lock', acquire: true })
+# ... work ...
+kuma_safety({ action: 'lock', release: true })
+```
 
 ---
 
 ## Workflow
 
-A typical Kuma-powered session:
+A typical Kuma-powered session follows this flow:
 
 ```
-# 1. Understand the project
-kuma_context({ action: "init", goal: "add password reset" })
+1. INIT          → kuma_context({ action: 'init' })
+                   Load project brief, restore session context
 
-# 2. Research before touching code (WAJIB)
-kuma_context({ action: "research", scope: "auth" })
-  → Returns: entry points, flow, 42 refs in 15 files, 3 tests, 2 decisions
+2. RESEARCH      → kuma_context({ action: 'research', scope: '<area>' })
+                   5-step pipeline: cache → graph → impact → decision → safety
 
-# 3. Agent edits using native tools (Claude Code / Cursor / etc.)
+3. GUARD         → kuma_safety({ action: 'guard' })
+                   Check for anti-patterns, drift, runaway loops
 
-# 4. Save what you learned
-kuma_memory({ action: "research_save", scope: "auth", confidence: 0.85 })
+4. EDIT          → Agent modifies code (native tools)
 
-# 5. Record significant decisions
-kuma_memory({
-  action: "decision",
-  decisionAction: "record",
-  title: "Use JWT for password reset tokens",
-  context: "Need stateless tokens that expire in 15min",
-  rationale: "No session store needed, mobile-compatible",
-  outcome: "Implemented JwtPasswordResetService"
-})
+5. RECORD        → kuma_memory({ action: 'gotcha' | 'arch_flow' | 'decision' })
+                   Record what was learned for future sessions
 
-# 6. Verify nothing broke
-kuma_safety({ action: "guard", guardGoal: "add password reset" })
+6. VERIFY        → kuma_safety({ action: 'verify' })
+                   Auto-run scoped tests + AST validation
 
-# 7. Check changes for selective undo awareness
-kuma_context({ action: "changes" })
+7. REVIEW        → kuma_context({ action: 'changes' })
+                   Review what was modified this session
 ```
+
+---
+
+## Per-Project Context Model
+
+Kuma stores all context locally in `.kuma/`:
+
+```
+.kuma/
+├── kuma.db          # SQLite knowledge graph (WASM)
+├── init.md          # Project-specific behavioral rules
+├── policy.yml       # Safety policies
+├── memory.json      # Session metrics and recordings
+├── research/        # Research cache files
+├── memories/        # Memory layer files (domain_rules, arch_flow, gotcha)
+└── checkpoints/     # Atomic snapshots for rollback
+```
+
+**Key principle:** Context is per-project, per-agent. No shared state between projects.
 
 ---
 
 ## Why Kuma?
 
-| Need | Problem | Kuma's Answer |
-|------|---------|---------------|
-| Context | AI agent forgets what happened last session | Knowledge graph + session memory survive across sessions |
-| Safety | AI agent edits the wrong file | Policy enforcement + path validation + audit trail |
-| Impact | "If I change this, what breaks?" | Graph-based impact analysis — references, tests, API routes |
-| Coordination | Two agents editing the same file | Multi-agent file lock |
-| Memory | "Why was this decision made?" | ADR-style decision recording, trigger-based |
-| Reversibility | "Undo this change, but not that one" | Selective undo via change log |
-| Staleness | Graph data is months old | Self-healing with content hash + git-aware repair |
+| Problem | Without Kuma | With Kuma |
+|---------|--------------|-----------|
+| **Context** | Agent forgets project-specific patterns | Knowledge graph persists across sessions |
+| **Safety** | Agent may break critical code | Policy engine blocks risky operations |
+| **Impact** | Agent doesn't know what's affected | Impact analysis traces dependencies |
+| **Coordination** | Multiple agents conflict | Multi-agent lock prevents collisions |
+| **Memory** | Agent repeats past mistakes | Decision memory + gotchas prevent loops |
+| **Reversibility** | Hard to undo changes | Selective undo at symbol level |
+| **Staleness** | Knowledge becomes outdated | Self-healing detects and repairs stale data |
+
+---
+
+## Installation
+
+```bash
+# Global install
+npm install -g @plumpslabs/kuma
+
+# Or use npx (no install needed)
+npx -y @plumpslabs/kuma
+
+# With pnpm
+pnpm add -g @plumpslabs/kuma
+```
+
+### Requirements
+
+- Node.js >= 18.0.0
+- No native dependencies (uses WASM for SQLite)
+
+---
+
+## CLI Commands
+
+```bash
+# Start MCP server (default)
+kuma
+
+# Start Kuma Studio dashboard
+kuma studio
+
+# Initialize a project
+kuma init
+
+# Show version
+kuma --version
+
+# Show help
+kuma --help
+```
+
+---
+
+## Configuration
+
+### MCP Client Configuration
+
+Add to your MCP client config (e.g., Claude Desktop):
+
+```json
+{
+  "mcpServers": {
+    "kuma": {
+      "command": "npx",
+      "args": ["-y", "@plumpslabs/kuma"]
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KUMA_DB_PATH` | Custom database path | `.kuma/kuma.db` |
+| `KUMA_POLICY_PATH` | Custom policy file | `.kuma/policy.yml` |
+| `KUMA_STUDIO_PORT` | Studio server port | `3322` |
+
+---
+
+## Development
+
+```bash
+# Clone the repo
+git clone https://github.com/plumpslabs/kuma.git
+cd kuma
+
+# Install dependencies
+pnpm install
+
+# Build
+pnpm run build:all
+
+# Run tests
+pnpm test
+
+# Start studio in dev mode
+pnpm run studio:dev
+```
+
+---
+
+## Power Curve: What to Record
+
+| What to Record | When | Why | Impact |
+|----------------|------|-----|--------|
+| `arch_flow` | After tracing a complete flow | Saves 5-10 files next session | 🔴 Exponential |
+| `gotcha` | IMMEDIATELY when finding bugs | Prevents re-discovery | 🔴 Exponential |
+| `decision` | When choosing between options | Preserves rationale | 🔴 Exponential |
+| `feature` | When identifying a module | Creates owns edges to files | 🔴 Exponential |
+| `research_save` | After exploring an area | Creates search cache | 🔴 Exponential |
+| Function/class nodes | Skip | Agent can grep/glob | 🟢 Skip |
+| Import edges | Skip | Agent can read imports | 🟢 Skip |
+| Visual graph | Skip | For humans, not AI | 🟢 Skip |
 
 ---
 
 ## License
 
-MIT
+MIT — use freely in personal and commercial projects.
 
-<div align="center">
+---
 
-**Made with 🐻 for AI agents everywhere**
+## Community
 
-[Report Bug](https://github.com/plumpslabs/kuma/issues) · [Request Feature](https://github.com/plumpslabs/kuma/issues)
+- **GitHub:** [github.com/plumpslabs/kuma](https://github.com/plumpslabs/kuma)
+- **Issues:** [github.com/plumpslabs/kuma/issues](https://github.com/plumpslabs/kuma/issues)
+- **npm:** [npm.im/@plumpslabs/kuma](https://npm.im/@plumpslabs/kuma)
 
-</div>
+---
+
+<p align="center">
+  <sub>Built with 🧠 by the Kuma community</sub>
+</p>

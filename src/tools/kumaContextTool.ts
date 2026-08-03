@@ -7,7 +7,7 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift" | "progressive";
+type ContextAction = "init" | "research" | "impact" | "navigate" | "changes" | "health" | "rollback" | "researches" | "sync" | "visualize" | "digest" | "drift" | "progressive" | "resume";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   // Research synonyms
@@ -28,6 +28,11 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "init": "init",
   "start": "init",
   "load": "init",
+  // Resume synonyms
+  "resume": "resume",
+  "continue": "resume",
+  "restore": "resume",
+  "reload": "resume",
   "brief": "init",
   "project": "init",
   "summary": "init",
@@ -109,8 +114,88 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "digest": return handleDigest(params);
     case "drift": return handleDrift(params);
     case "progressive": return handleProgressive(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize, digest, drift, progressive`;
+    case "resume": return handleResume(params);
+    default: return `Unknown action "${action}". Use: init, research, impact, navigate, changes, rollback, researches, health, sync, visualize, digest, drift, progressive, resume`;
   }
+}
+
+// ============================================================
+// RESUME — Load Previous Session Context (goal, progress, changes)
+// ============================================================
+
+async function handleResume(_params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_resume", {});
+  const lines: string[] = [
+    "🔄 **Kuma — Session Resume**",
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    "",
+  ];
+
+  // 1. Last persisted session (kuma.db sessions table)
+  try {
+    const db = await getDb();
+    const res = db.exec(
+      "SELECT goal, tool_calls, edits, rollbacks, failures, safety_score, started_at FROM sessions ORDER BY started_at DESC LIMIT 1"
+    );
+    if (res[0]?.values.length) {
+      const row = res[0].values[0];
+      const goal = (row[0] as string) || "no goal";
+      const calls = (row[1] as number) || 0;
+      const edits = (row[2] as number) || 0;
+      const rollbacks = (row[3] as number) || 0;
+      const failures = (row[4] as number) || 0;
+      const safety = row[5] == null ? null : (row[5] as number);
+      const time = new Date((row[6] as number) * 1000).toLocaleString();
+      lines.push("**Last Session**");
+      lines.push(`  🎯 Goal: ${goal.substring(0, 80)}`);
+      lines.push(`  🕐 ${time}`);
+      lines.push(`  🔧 ${calls} calls · 📝 ${edits} edits · ↩ ${rollbacks} rollbacks · ❌ ${failures} failures${safety != null ? ` · 🛡 safety ${safety}` : ""}`);
+      lines.push("");
+    }
+  } catch { /* non-critical */ }
+
+  // 2. Current in-memory state (persisted to .kuma/memory.json)
+  const summary = sessionMemory.getSummary();
+  lines.push("**Current State**");
+  lines.push(`  🎯 Goal: ${(summary.currentGoal as string) || "not set"}`);
+  const progress = sessionMemory.getGoalProgress();
+  if (progress) {
+    lines.push(`  📊 Progress: ${progress.percentage}%${progress.milestone ? ` — ${progress.milestone}` : ""}`);
+  }
+  lines.push(`  📝 Modified: ${(summary.modifiedFiles as unknown[])?.length || 0} file(s)`);
+  lines.push(`  ✅ Completed steps: ${(summary.completedSteps as string[])?.length || 0}`);
+  lines.push(`  🛠️ Tool calls: ${summary.toolCallCount}`);
+  lines.push(`  ⏱️ Session duration: ${summary.sessionDuration}`);
+  const failures = summary.unresolvedFailures as Array<{ task: string; error: string }> | undefined;
+  if (failures?.length) {
+    lines.push(`  ⚠️ Unresolved failures: ${failures.length}`);
+  }
+  lines.push("");
+
+  // 3. Recent changes (formatted change log from DB)
+  try {
+    const changes = await getChanges({ limit: 5 });
+    if (changes && !changes.startsWith("No changes")) {
+      lines.push("**Recent Changes**");
+      lines.push(changes);
+      lines.push("");
+    }
+  } catch { /* non-critical */ }
+
+  // 4. Recent tool history (last 5)
+  const history = sessionMemory.getToolCallHistory(5);
+  if (history.length) {
+    lines.push("**Recent Tool Calls**");
+    for (const h of history) {
+      const action = (h.params as Record<string, unknown>)?.action || "";
+      lines.push(`  🛠 ${h.toolName}${action ? ` (${action})` : ""}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("💡 Continue: kuma_context({ action: 'research', scope: '<area>' }) to pick up where you left off.");
+
+  return lines.join("\n");
 }
 
 // ============================================================

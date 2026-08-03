@@ -35,6 +35,11 @@ interface SessionState {
   projectRoot: string;
   startTime: number;
   currentGoal: string;
+  goalProgress?: {
+    percentage: number; // 0-100
+    milestone?: string; // current milestone description
+    updatedAt: number; // timestamp
+  };
   completedSteps: string[];
   modifiedFiles: Map<string, FileModification>;
   failedFiles: Map<string, TestFailure[]>;
@@ -48,6 +53,7 @@ interface SessionState {
     gotchas: number;
     decisions: number;
     researchSaves: number;
+    features: number;
     total: number;
   };
   // Session metrics
@@ -100,7 +106,7 @@ class SessionMemory {
           dependencyGraph: new Map(parsed.dependencyGraph || []),
           toolCalls: parsed.toolCalls || [],
           conventions: parsed.conventions,
-          recordings: parsed.recordings || { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, total: 0 },
+          recordings: parsed.recordings || { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, features: 0, total: 0 },
           metrics: parsed.metrics || { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 },
         };
         this.initialized = true;
@@ -121,7 +127,7 @@ class SessionMemory {
       searchResults: new Map(),
       dependencyGraph: new Map(),
       toolCalls: [],
-      recordings: { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, total: 0 },
+      recordings: { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, features: 0, total: 0 },
       metrics: { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 },
     };
     this.initialized = true;
@@ -288,6 +294,20 @@ class SessionMemory {
     this.ensureInit();
     this.state.currentGoal = goal;
     this.save();
+  }
+
+  setGoalProgress(percentage: number, milestone?: string): void {
+    this.ensureInit();
+    this.state.goalProgress = {
+      percentage: Math.min(100, Math.max(0, percentage)),
+      milestone,
+      updatedAt: Date.now(),
+    };
+    this.save();
+  }
+
+  getGoalProgress(): { percentage: number; milestone?: string; updatedAt: number } | null {
+    return this.state.goalProgress || null;
   }
 
   addCompletedStep(step: string): void {
@@ -792,13 +812,14 @@ class SessionMemory {
    * Increment recording counter for a specific type.
    * Called by kumaMemoryTool after successful record operations.
    */
-  recordMemoryAction(type: "arch_flow" | "gotcha" | "decision" | "research_save"): void {
+  recordMemoryAction(type: "arch_flow" | "gotcha" | "decision" | "research_save" | "feature"): void {
     this.ensureInit();
     switch (type) {
       case "arch_flow": this.state.recordings.archFlows++; break;
       case "gotcha": this.state.recordings.gotchas++; break;
       case "decision": this.state.recordings.decisions++; break;
       case "research_save": this.state.recordings.researchSaves++; break;
+      case "feature": this.state.recordings.features++; break;
     }
     this.state.recordings.total++;
     this.save();
@@ -813,6 +834,7 @@ class SessionMemory {
     gotchas: number;
     decisions: number;
     researchSaves: number;
+    features: number;
     total: number;
     hasAnyRecordings: boolean;
     missingRecordings: string[];
@@ -824,6 +846,7 @@ class SessionMemory {
     if (r.gotchas === 0) missing.push("gotcha");
     if (r.decisions === 0) missing.push("decision");
     if (r.researchSaves === 0) missing.push("research_save");
+    if (r.features === 0) missing.push("feature");
     return {
       ...r,
       hasAnyRecordings: r.total > 0,

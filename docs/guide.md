@@ -368,3 +368,64 @@ Kuma pairs with [Matcha](https://github.com/plumpslabs/matcha) — an engineerin
 
 - **Kuma**: Runtime safety (rollback, circuit breaker, sandbox)
 - **Matcha**: Session discipline (planning gate, cleanup scan, intensity levels)
+
+---
+
+## Kuma Studio
+
+Kuma Studio is a web-based dashboard for visualizing and managing your knowledge graph.
+
+### Starting Studio
+
+```bash
+# Start Kuma Studio
+kuma studio
+
+# Or via npx
+npx -y @plumpslabs/kuma studio
+```
+
+Studio runs at `http://localhost:3322` and provides:
+
+- **Knowledge Graph** — Interactive node-edge visualization with physics simulation
+- **Features** — High-level module tracking with owns edges to files
+- **Gotchas** — Known bugs and quirks with severity levels
+- **Health** — Project health scores over time
+- **Efficiency** — Session metrics, time saved, verification pass rates
+- **Staleness** — Detection of stale nodes with missing file references
+- **Activity** — Agent usage intensity, success rates, and session history
+
+### Copy Report
+
+The Activity tab includes a **Copy Report** button that exports all activity data to clipboard for analysis.
+
+---
+
+## Feature Recording
+
+Features are high-level modules (e.g., Auth, Billing, Dashboard) that own multiple files.
+
+### Recording Features
+
+```bash
+kuma_memory({
+  action: "feature",
+  title: "Authentication",
+  content: "User login, logout, session management",
+  scope: "src/auth/login.ts,src/auth/session.ts,src/auth/middleware.ts",
+  tags: "security,core",
+  status: "high"
+})
+```
+
+### Auto-Detection
+
+Kuma automatically suggests feature recording when:
+- Agent explores 3+ files in the same directory
+- Session miner detects directory exploration patterns
+
+### Benefits
+
+- Creates `owns` edges from feature to files
+- Helps future sessions understand module boundaries
+- Improves impact analysis accuracy

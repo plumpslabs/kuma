@@ -15,7 +15,8 @@ let sqlJs: any = null;
  */
 async function getSqlJs(): Promise<any> {
   if (!sqlJs) {
-    sqlJs = await require("sql.js");
+    const initSqlJs = await require("sql.js");
+    sqlJs = await initSqlJs();
   }
   return sqlJs;
 }

@@ -9,7 +9,7 @@
 import { sessionMemory } from "./sessionMemory.js";
 
 export interface MinedInsight {
-  type: "gotcha" | "decision" | "arch_flow";
+  type: "gotcha" | "decision" | "arch_flow" | "feature";
   scope: string;
   content: string;
   confidence: number;
@@ -113,6 +113,112 @@ export function mineSessionInsights(): MinedInsight[] {
     }
   }
 
+  // Pattern 5: Multiple reads in same directory = possible feature exploration
+  const dirReads: Record<string, string[]> = {};
+  for (const call of toolCalls) {
+    if (call.toolName === "read" || call.toolName === "browser_read") {
+      const file = (call.params.filePath as string) || "";
+      if (file) {
+        const dir = file.split("/").slice(0, -1).join("/") || "root";
+        if (!dirReads[dir]) dirReads[dir] = [];
+        dirReads[dir].push(file.split("/").pop() || file);
+      }
+    }
+  }
+  for (const [dir, files] of Object.entries(dirReads)) {
+    if (files.length >= 3) {
+      const dirName = dir.split("/").pop() || dir;
+      insights.push({
+        type: "feature",
+        scope: dir,
+        content: `${dirName} — ${files.length} files explored: ${files.slice(0, 5).join(", ")}${files.length > 5 ? "..." : ""}`,
+        confidence: 0.6,
+        source: `directory_exploration:${files.length}_files`,
+      });
+    }
+  }
+
+  // Pattern 6: Test failure analysis — test fails then file is edited = bug fix
+  for (let i = 0; i < toolCalls.length - 1; i++) {
+    const a = toolCalls[i];
+    const b = toolCalls[i + 1];
+    if (a.toolName === "test" && b.toolName === "edit") {
+      const file = (b.params.filePath as string) || "";
+      if (file) {
+        insights.push({
+          type: "gotcha",
+          scope: file,
+          content: `Test failed then ${file.split("/").pop()} was edited — likely a bug fix needed`,
+          confidence: 0.7,
+          source: `test_fail_fix`,
+        });
+      }
+    }
+  }
+
+  // Pattern 7: Import chain detection — multiple imports traced = architecture flow
+  const importChain: string[] = [];
+  for (const call of toolCalls) {
+    if (call.toolName === "read" || call.toolName === "browser_read") {
+      const file = (call.params.filePath as string) || "";
+      if (file && file.endsWith(".ts")) {
+        importChain.push(file);
+      }
+    }
+  }
+  if (importChain.length >= 4) {
+    const uniqueFiles = [...new Set(importChain)];
+    if (uniqueFiles.length >= 3) {
+      insights.push({
+        type: "arch_flow",
+        scope: uniqueFiles[0],
+        content: `Import chain traced: ${uniqueFiles.slice(0, 5).map(f => f.split("/").pop() || f).join(" → ")}`,
+        confidence: 0.6,
+        source: `import_chain:${uniqueFiles.length}_files`,
+      });
+    }
+  }
+
+  // Pattern 8: API route discovery — reading route files = API understanding
+  const routeFiles: string[] = [];
+  for (const call of toolCalls) {
+    if (call.toolName === "read" || call.toolName === "browser_read") {
+      const file = (call.params.filePath as string) || "";
+      if (file && (file.includes("route") || file.includes("api") || file.includes("controller"))) {
+        routeFiles.push(file.split("/").pop() || file);
+      }
+    }
+  }
+  if (routeFiles.length >= 2) {
+    insights.push({
+      type: "feature",
+      scope: "api",
+      content: `API routes explored: ${routeFiles.slice(0, 5).join(", ")}`,
+      confidence: 0.5,
+      source: `api_route_discovery`,
+    });
+  }
+
+  // Pattern 9: Component relationship — reading multiple component files = UI architecture
+  const componentFiles: string[] = [];
+  for (const call of toolCalls) {
+    if (call.toolName === "read" || call.toolName === "browser_read") {
+      const file = (call.params.filePath as string) || "";
+      if (file && (file.includes("component") || file.includes(".tsx") || file.includes(".jsx"))) {
+        componentFiles.push(file.split("/").pop() || file);
+      }
+    }
+  }
+  if (componentFiles.length >= 3) {
+    insights.push({
+      type: "arch_flow",
+      scope: "ui",
+      content: `UI components explored: ${componentFiles.slice(0, 5).join(", ")}`,
+      confidence: 0.6,
+      source: `component_discovery:${componentFiles.length}_files`,
+    });
+  }
+
   return insights;
 }
 
@@ -134,12 +240,12 @@ export function formatMinedInsights(insights: MinedInsight[]): string {
 
   for (let i = 0; i < insights.length; i++) {
     const ins = insights[i];
-    const icon = ins.type === "gotcha" ? "⚠️" : ins.type === "decision" ? "📌" : "🔀";
+    const icon = ins.type === "gotcha" ? "⚠️" : ins.type === "decision" ? "📌" : ins.type === "feature" ? "⭐" : "🔀";
     const conf = Math.round(ins.confidence * 100);
     lines.push(`${i + 1}. ${icon} **${ins.type}** (${conf}% confidence)`);
     lines.push(`   Scope: ${ins.scope}`);
     lines.push(`   ${ins.content}`);
-    lines.push(`   → \`kuma_memory({ action: "${ins.type}", ${ins.type === "arch_flow" ? "content" : "scope: \\\"${ins.scope}\\\", content"}: "${ins.content.substring(0, 60)}..." })\``);
+    lines.push(`   → \`kuma_memory({ action: "${ins.type}", ${ins.type === "arch_flow" ? "content" : ins.type === "feature" ? "title: \"${ins.scope.split('/').pop() || ins.scope}\", content" : "scope: \\\"${ins.scope}\\\", content"}: "${ins.content.substring(0, 60)}..." })\``);
     lines.push("");
   }
 

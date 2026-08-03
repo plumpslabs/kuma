@@ -60,6 +60,22 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   // ============================================================
+  // CLI MODE: kuma --version / -v
+  // ============================================================
+  if (args[0] === "--version" || args[0] === "-v" || args[0] === "version") {
+    console.log(`🐻 Kuma v${SERVER_VERSION}`);
+    process.exit(0);
+  }
+
+  // ============================================================
+  // CLI MODE: kuma --help / -h
+  // ============================================================
+  if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
+    printHelp();
+    process.exit(0);
+  }
+
+  // ============================================================
   // CLI MODE: kuma stop --force (kill switch)
   // ============================================================
   if (args[0] === "stop" && (args[1] === "--force" || args[1] === "-f")) {

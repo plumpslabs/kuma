@@ -4,14 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kuma Studio</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♢</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23D97706'/><circle cx='50' cy='50' r='44' fill='%23F59E0B'/><circle cx='50' cy='45' r='30' fill='%2392400E'/><circle cx='35' cy='38' r='5' fill='%231F2937'/><circle cx='65' cy='38' r='5' fill='%231F2937'/><ellipse cx='50' cy='50' rx='10' ry='6' fill='%23B45309'/><path d='M35 58 Q50 72 65 58' stroke='%231F2937' stroke-width='3.5' fill='none' stroke-linecap='round'/></svg>">
 <script src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js"></script>
 <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
 <style>
 :root {
-  --bg: #1a1a2e; --surface: #16213e; --border: #2a2a4a;
-  --text: #e0e0e0; --muted: #888; --accent: #7c3aed; --accent2: #06b6d4;
-  --green: #22c55e; --yellow: #eab308; --orange: #f97316; --red: #ef4444;
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #f1f5f9; --muted: #94a3b8; --accent: #a78bfa; --accent2: #22d3ee;
+  --green: #34d399; --yellow: #fbbf24; --orange: #fb923c; --red: #f87171;
+  --accent-bright: #c4b5fd; --accent2-bright: #67e8f9;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -20,46 +21,44 @@ html, body {
   touch-action: none; -webkit-user-select: none; user-select: none;
 }
 header {
-  display: flex; align-items: center; gap: 16px; padding: 12px 24px;
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
   background: var(--surface); border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
-header {
-  display: flex; align-items: center; gap: 16px; padding: 12px 24px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
-}
-header h1 { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+header h1 { font-size: 15px; font-weight: 700; color: var(--accent-bright); letter-spacing: -0.5px; text-shadow: 0 0 12px rgba(167,139,250,0.3); }
 header .status { font-size: 12px; color: var(--muted); }
 header .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 header .status .dot.on { background: var(--green); }
 header .status .dot.off { background: var(--red); }
 .stats-bar {
-  display: flex; gap: 8px; padding: 8px 24px; background: var(--surface);
-  border-bottom: 1px solid var(--border); font-size: 12px;
-  overflow-x: auto;
+  display: flex; gap: 6px; padding: 6px 16px; background: var(--surface);
+  border-bottom: 1px solid var(--border); font-size: 11px;
+  overflow-x: auto; flex-wrap: nowrap;
 }
-.stat { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; background: var(--bg); white-space: nowrap; }
-.stat .num { font-weight: 700; color: var(--accent2); }
-.stat .lbl { color: var(--muted); }
-#main { display: flex; height: calc(100vh - 100px); }
+.stat { display: flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 5px; background: var(--bg); white-space: nowrap; }
+.stat .num { font-weight: 700; color: var(--accent2); font-size: 12px; }
+.stat .lbl { color: var(--muted); font-size: 10px; }
+#main { display: flex; height: calc(100vh - 80px); }
 #graph-panel { flex: 1; position: relative; min-width: 0; overflow: hidden; }
 #graph-container { width: 100%; height: 100%; background: radial-gradient(ellipse at center, #1e1e3a 0%, var(--bg) 70%); }
-#sidebar { width: 360px; min-width: 360px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-.tabs { display: flex; border-bottom: 1px solid var(--border); }
+#sidebar { width: 320px; min-width: 320px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+.tabs { display: flex; gap: 3px; padding: 8px 12px 4px; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; flex-wrap: nowrap; }
 .tab {
-  flex: 1; padding: 10px; text-align: center; cursor: pointer; font-size: 12px;
-  color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.2s;
+  padding: 5px 10px; text-align: center; cursor: pointer; font-size: 11px;
+  color: var(--muted); border-radius: 6px; transition: all 0.15s; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; border: 1px solid transparent;
 }
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.tab-content { flex: 1; overflow-y: auto; padding: 12px; }
+.tab:hover { color: var(--text); background: rgba(167,139,250,0.08); }
+.tab.active { color: var(--accent-bright); background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.25); }
+.tab-content { flex: 1; overflow-y: auto; padding: 10px 12px; }
 .panel { display: none; }
-.panel.active { display: block; }
+.panel.active { display: block; animation: fadeIn 0.15s; }
+.tab-label { font-size: 11px; }
+@media (max-width: 400px) { .tab-label { display: none; } .tab { padding: 5px 8px; } }
 
 /* Gotcha items */
 .gotcha-item {
-  padding: 10px 12px; margin-bottom: 8px; border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 6px; border-radius: 6px;
   background: var(--bg); border-left: 3px solid var(--muted); cursor: pointer;
   transition: background 0.15s;
 }
@@ -74,19 +73,19 @@ header .status .dot.off { background: var(--red); }
 
 /* Feature items */
 .feature-item {
-  padding: 10px 12px; margin-bottom: 8px; border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 6px; border-radius: 6px;
   background: var(--bg); border-left: 3px solid var(--accent); cursor: pointer;
   transition: background 0.15s;
 }
 .feature-item:hover { background: #1e293b; }
-.feature-item .name { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+.feature-item .name { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 2px; }
 .feature-item .meta { font-size: 11px; color: var(--muted); }
 .feature-item .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-.feature-item .tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: rgba(124,58,237,0.15); color: var(--accent); }
+.feature-item .tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: rgba(167,139,250,0.15); color: var(--accent-bright); }
 
 /* Health items */
-.health-item { padding: 8px 12px; margin-bottom: 6px; background: var(--bg); border-radius: 6px; }
-.health-item .score { font-size: 20px; font-weight: 700; }
+.health-item { padding: 6px 10px; margin-bottom: 5px; background: var(--bg); border-radius: 5px; }
+.health-item .score { font-size: 18px; font-weight: 700; }
 .health-item .score.good { color: var(--green); }
 .health-item .score.ok { color: var(--yellow); }
 .health-item .score.bad { color: var(--red); }
@@ -96,7 +95,7 @@ header .status .dot.off { background: var(--red); }
 
 /* Legend */
 #legend {
-  position: fixed; bottom: 16px; left: 16px; background: rgba(22,33,62,0.95);
+  position: fixed; bottom: 16px; left: 16px; background: rgba(15,23,42,0.95);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
   font-size: 11px; z-index: 10; max-height: 200px; overflow-y: auto;
   backdrop-filter: blur(8px); color: #f8fafc;
@@ -130,45 +129,45 @@ header .status .dot.off { background: var(--red); }
   border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text);
   transition: background 0.1s;
 }
-#ctx-menu .ctx-item:hover { background: rgba(124,58,237,0.15); color: var(--accent); }
+#ctx-menu .ctx-item:hover { background: rgba(167,139,250,0.15); color: var(--accent-bright); }
 #ctx-menu .ctx-item i { width: 14px; height: 14px; flex-shrink: 0; }
 #ctx-menu .ctx-sep { height: 1px; background: var(--border); margin: 4px 8px; }
 #search-box input {
-  background: rgba(22,33,62,0.92); border: 1px solid var(--border);
+  background: rgba(15,23,42,0.92); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 12px;
   width: 200px; outline: none; backdrop-filter: blur(8px);
   transition: border-color 0.2s;
 }
-#search-box input:focus { border-color: var(--accent); }
+#search-box input:focus { border-color: var(--accent-bright); box-shadow: 0 0 8px rgba(167,139,250,0.3); }
 #search-box input::placeholder { color: var(--muted); }
 
 /* Graph controls */
 #graph-controls {
-  position: fixed; bottom: 16px; right: 376px; z-index: 10;
+  position: fixed; bottom: 16px; right: 336px; z-index: 10;
   display: flex; gap: 6px;
 }
 #graph-controls button {
-  background: rgba(22,33,62,0.92); border: 1px solid var(--border);
+  background: rgba(15,23,42,0.92); border: 1px solid var(--border);
   border-radius: 6px; color: var(--text); padding: 6px 10px;
   font-size: 11px; cursor: pointer; backdrop-filter: blur(8px);
   transition: background 0.2s;
 }
-#graph-controls button:hover { background: var(--accent); border-color: var(--accent); }
+#graph-controls button:hover { background: var(--accent); border-color: var(--accent-bright); }
 #graph-controls button.active {
-  background: var(--accent) !important; border-color: var(--accent) !important;
-  color: #ffffff !important; box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+  background: var(--accent) !important; border-color: var(--accent-bright) !important;
+  color: #ffffff !important; box-shadow: 0 0 12px rgba(167,139,250,0.5);
 }
 #graph-controls .ctrl-sep { width: 1px; background: var(--border); margin: 0 2px; }
 .depth-btn { min-width: 28px !important; padding: 4px 6px !important; font-size: 11px !important; font-weight: 600; }
-.depth-btn.active { background: rgba(124,58,237,0.3) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
+.depth-btn.active { background: rgba(167,139,250,0.25) !important; border-color: var(--accent-bright) !important; color: var(--accent-bright) !important; }
 
 /* Loading */
 #loading {
   position: fixed; inset: 0; background: var(--bg); display: flex;
   align-items: center; justify-content: center; z-index: 100;
-  font-size: 18px; color: var(--accent); flex-direction: column; gap: 16px;
+  font-size: 18px; color: var(--accent-bright); flex-direction: column; gap: 16px;
 }
-#loading .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+#loading .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent-bright); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Node Detail Modal */
@@ -179,31 +178,31 @@ header .status .dot.off { background: var(--red); }
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  width: 560px; max-width: 90vw; max-height: 85vh; overflow: hidden; box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  width: 520px; max-width: 90vw; max-height: 85vh; overflow: hidden; box-shadow: 0 16px 64px rgba(0,0,0,0.5);
   display: flex; flex-direction: column; animation: slideUp 0.2s;
 }
 @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
-.modal-header h2 { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.modal-header h2 { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .modal-header .close {
   background: none; border: none; color: var(--muted); font-size: 18px;
   cursor: pointer; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
   border-radius: 6px; transition: all 0.15s; flex-shrink: 0;
 }
 .modal-header .close:hover { background: rgba(255,255,255,0.1); color: var(--text); }
-.modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
-.modal-section { margin-bottom: 14px; }
-.modal-section h3 { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-.modal-kv { display: flex; gap: 8px; margin-bottom: 5px; font-size: 12px; line-height: 1.4; }
-.modal-kv .key { color: var(--muted); min-width: 72px; flex-shrink: 0; }
+.modal-body { padding: 12px 16px; overflow-y: auto; flex: 1; min-height: 0; }
+.modal-section { margin-bottom: 10px; }
+.modal-section h3 { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.modal-kv { display: flex; gap: 6px; margin-bottom: 3px; font-size: 11px; line-height: 1.3; }
+.modal-kv .key { color: var(--muted); min-width: 64px; flex-shrink: 0; }
 .modal-kv .val { color: var(--text); word-break: break-word; overflow-wrap: anywhere; min-width: 0; }
 .relation-item {
-  display: flex; align-items: center; gap: 6px; padding: 5px 8px;
-  margin-bottom: 3px; border-radius: 6px; background: var(--bg);
+  display: flex; align-items: center; gap: 5px; padding: 4px 7px;
+  margin-bottom: 2px; border-radius: 5px; background: var(--bg);
   font-size: 11px; cursor: pointer; transition: background 0.15s;
 }
 .relation-item:hover { background: #1e293b; }
@@ -212,20 +211,20 @@ header .status .dot.off { background: var(--red); }
 .relation-item .type { color: var(--muted); font-size: 10px; flex-shrink: 0; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relation-item .weight { color: var(--accent2); font-size: 10px; flex-shrink: 0; }
 
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 </style>
 </head>
 <body>
 <div id="loading"><div class="spinner"></div>Connecting to Kuma...</div>
 <header>
-  <h1><i data-lucide="brain" style="width:20px;height:20px;vertical-align:middle;margin-right:6px"></i> Kuma Studio</h1>
+  <h1><svg width="22" height="22" viewBox="0 0 100 100" style="vertical-align:middle;margin-right:6px"><circle cx="50" cy="50" r="48" fill="#D97706"/><circle cx="50" cy="50" r="44" fill="#F59E0B"/><circle cx="50" cy="45" r="30" fill="#92400E"/><circle cx="35" cy="38" r="5" fill="#1F2937"/><circle cx="65" cy="38" r="5" fill="#1F2937"/><ellipse cx="50" cy="50" rx="10" ry="6" fill="#B45309"/><path d="M35 58 Q50 72 65 58" stroke="#1F2937" stroke-width="3.5" fill="none" stroke-linecap="round"/></svg> Kuma Studio</h1>
   <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">connecting...</span></div>
   <div style="margin-left:auto;display:flex;gap:8px;-webkit-app-region:no-drag">
-    <button onclick="refetch()" id="refetch-btn" style="background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:6px;color:var(--accent);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s"><i data-lucide="refresh-cw" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Refetch</button>
-    <button onclick="resetKumaDb()" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:var(--red);padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s"><i data-lucide="trash-2" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Reset DB</button>
-    <button onclick="stopKumaStudio()" style="background:rgba(148,163,184,0.15);border:1px solid rgba(148,163,184,0.3);border-radius:6px;color:#94a3b8;padding:5px 12px;font-size:11px;cursor:pointer;transition:all 0.2s"><i data-lucide="square" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Stop</button>
+    <button onclick="refetch()" id="refetch-btn" style="background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.25);border-radius:5px;color:var(--accent-bright);padding:4px 10px;font-size:10px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:3px"><i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Refetch</button>
+    <button onclick="resetKumaDb()" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.25);border-radius:5px;color:var(--red);padding:4px 10px;font-size:10px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:3px"><i data-lucide="trash-2" style="width:11px;height:11px"></i> Reset</button>
+    <button onclick="stopKumaStudio()" style="background:rgba(148,163,184,0.12);border:1px solid rgba(148,163,184,0.25);border-radius:5px;color:#94a3b8;padding:4px 10px;font-size:10px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:3px"><i data-lucide="square" style="width:11px;height:11px"></i> Stop</button>
   </div>
 </header>
 <div class="stats-bar" id="stats-bar"></div>
@@ -249,11 +248,12 @@ header .status .dot.off { background: var(--red); }
   </div>
   <div id="sidebar">
     <div class="tabs">
-      <div class="tab active" data-tab="features"><i data-lucide="star" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Features</div>
-      <div class="tab" data-tab="gotchas"><i data-lucide="alert-triangle" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Gotchas</div>
-      <div class="tab" data-tab="health"><i data-lucide="heart-pulse" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Health</div>
-      <div class="tab" data-tab="efficiency"><i data-lucide="zap" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Efficiency</div>
-      <div class="tab" data-tab="staleness"><i data-lucide="activity" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Staleness</div>
+      <div class="tab active" data-tab="features" title="Features"><i data-lucide="star" style="width:12px;height:12px"></i><span class="tab-label">Features</span></div>
+      <div class="tab" data-tab="gotchas" title="Gotchas"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i><span class="tab-label">Gotchas</span></div>
+      <div class="tab" data-tab="health" title="Health"><i data-lucide="heart-pulse" style="width:12px;height:12px"></i><span class="tab-label">Health</span></div>
+      <div class="tab" data-tab="efficiency" title="Efficiency"><i data-lucide="zap" style="width:12px;height:12px"></i><span class="tab-label">Efficiency</span></div>
+      <div class="tab" data-tab="staleness" title="Staleness"><i data-lucide="activity" style="width:12px;height:12px"></i><span class="tab-label">Staleness</span></div>
+      <div class="tab" data-tab="activity" title="Activity"><i data-lucide="bar-chart-3" style="width:12px;height:12px"></i><span class="tab-label">Activity</span></div>
     </div>
     <div class="tab-content" id="tab-content"></div>
   </div>
@@ -340,10 +340,13 @@ async function init() {
   renderHealth(data);
   renderEfficiency(data);
   renderStaleness(data);
+  renderActivity(data);
   setupSearch();
   lucide.createIcons();
 }
 init();
+
+
 
 function showError(msg) {
   document.getElementById("graph-container").innerHTML = '<div class="empty"><i data-lucide="alert-circle" style="width:18px;height:18px;vertical-align:middle;margin-right:4px"></i> '+msg+'</div>';
@@ -357,7 +360,7 @@ function renderStats(data) {
   document.getElementById("stats-bar").innerHTML =
     '<div class="stat"><span class="num">'+(s.node_count||0)+'</span><span class="lbl">nodes</span></div>'+
     '<div class="stat"><span class="num">'+(s.edge_count||0)+'</span><span class="lbl">edges</span></div>'+
-    '<div class="stat"><span class="num" style="color:var(--accent)">'+(s.feature_count||0)+'</span><span class="lbl">features</span></div>'+
+    '<div class="stat"><span class="num" style="color:var(--accent-bright)">'+(s.feature_count||0)+'</span><span class="lbl">features</span></div>'+
     '<div class="stat"><span class="num">'+(s.gotcha_count||0)+'</span><span class="lbl">gotchas</span></div>'+
     '<div class="stat"><span class="num" style="color:var(--accent)">'+currentDbSize+'</span><span class="lbl">kuma.db</span></div>'+
     '<div class="stat"><span class="num" style="color:'+hcColor+'">'+(hc||0)+'</span><span class="lbl">health</span></div>';
@@ -439,7 +442,7 @@ function renderGraph(data) {
     var color = isGotcha ? '#f97316' : (colors[n.type] || '#64748b');
     return {
       id: n.id, label: label,
-      color: { background: color, border: color, highlight: { background: color, border: '#38bdf8' }, hover: { background: color, border: '#a855f7' } },
+      color: { background: color, border: color, highlight: { background: color, border: '#67e8f9' }, hover: { background: color, border: '#c4b5fd' } },
       shape: shape,
       font: { color: '#ffffff', size: Math.min(13, Math.max(10, size * 0.55)), face: 'sans-serif', multi: false, bold: true },
       borderWidth: 0, size: size, mass: 1 + (size / 40),
@@ -469,7 +472,7 @@ function renderGraph(data) {
       id: 'e'+idx, from: e.source, to: e.target,
       label: e.relation || '',
       arrows: { to: { enabled: true, scaleFactor: 0.7, type: 'arrow' } },
-      color: { color: edgeColor, highlight: '#a855f7', hover: '#38bdf8', opacity: 0.85 },
+      color: { color: edgeColor, highlight: '#c4b5fd', hover: '#67e8f9', opacity: 0.85 },
       font: { size: 10, color: '#94a3b8', strokeWidth: 0, background: 'transparent' },
       dashes: dashes,
       smooth: { type: 'continuous', roundness: 0.3 },
@@ -486,7 +489,7 @@ function renderGraph(data) {
     },
     interaction: { hover: true, tooltipDelay: 300, zoomView: true, dragView: true, dragNodes: true, keyboard: true, multiselect: true, selectable: true, selectConnectedEdges: false },
     nodes: { borderWidth: 0, font: { color: '#ffffff', size: 11, face: 'sans-serif' }, margin: { top: 6, bottom: 6, left: 10, right: 10 }, shapeProperties: { borderRadius: 6 } },
-    edges: { smooth: { type: 'continuous', roundness: 0.2 }, width: 1, color: { color: '#4a4a6a', highlight: '#7c3aed' } },
+    edges: { smooth: { type: 'continuous', roundness: 0.2 }, width: 1, color: { color: '#4a4a6a', highlight: '#a78bfa' } },
     configure: { enabled: false },
   });
 
@@ -610,7 +613,7 @@ function resetHighlight() {
   network.body.data.nodes.update(nUp);
   network.body.data.edges.forEach(function(e) {
     var def = edgeDefaults[e.id];
-    eUp.push({ id: e.id, color: { color: def ? def.color : '#64748b', highlight: '#a855f7', hover: '#38bdf8', opacity: 0.85 }, width: def ? def.width : 1 });
+    eUp.push({ id: e.id, color: { color: def ? def.color : '#64748b', highlight: '#c4b5fd', hover: '#67e8f9', opacity: 0.85 }, width: def ? def.width : 1 });
   });
   network.body.data.edges.update(eUp);
   document.getElementById("graph-tooltip").style.display = 'none';
@@ -788,7 +791,7 @@ async function refetch() {
     if (status.ok) { dot.className = 'dot on'; txt.textContent = status.project || 'connected'; } else { dot.className = 'dot off'; txt.textContent = 'no kuma.db found'; }
     var data = await fetch(API+'/dashboard').then(function(r){return r.json()});
     if (data.error) { showError(data.error); return; }
-    renderStats(data); renderGraph(data); renderFeatures(data); renderGotchas(data); renderHealth(data); renderEfficiency(data); renderStaleness(data);
+    renderStats(data); renderGraph(data); renderFeatures(data); renderGotchas(data); renderHealth(data); renderEfficiency(data); renderStaleness(data); renderActivity(data);
     lucide.createIcons();
   } catch(e) { showError('Refetch failed: ' + e.message); }
   btn.innerHTML = '<i data-lucide="refresh-cw" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Refetch';
@@ -808,7 +811,8 @@ function setupTabs(){
     '<div class="panel" id="panel-gotchas"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-health"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-efficiency"><div class="empty">Loading...</div></div>' +
-    '<div class="panel" id="panel-staleness"><div class="empty">Loading...</div></div>';
+    '<div class="panel" id="panel-staleness"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-activity"><div class="empty">Loading...</div></div>';
   document.querySelectorAll('.tab').forEach(function(tab){
     tab.onclick = function(){
       document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
@@ -892,7 +896,7 @@ function renderEfficiency(data){
   var r = eff.recordings || {};
   var savedSec = m.researchTimeSaved ? Math.round(m.researchTimeSaved/1000) : 0;
   var passRate = eff.verificationPassRate;
-  var passColor = passRate == null ? 'var(--muted)' : passRate >= 80 ? 'var(--green)' : passRate >= 50 ? 'var(--yellow)' : 'var(--red)';
+  var passColor = passRate >= 80 ? 'var(--green)' : passRate >= 50 ? 'var(--yellow)' : 'var(--red)';
 
   var stat = function(num, lbl, color){
     return '<div style="flex:1;min-width:110px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)"><div style="font-size:20px;font-weight:700;color:'+(color||'var(--accent2)')+'">'+num+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+lbl+'</div></div>';
@@ -902,7 +906,7 @@ function renderEfficiency(data){
   html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
     stat(eff.sessions||0, 'sessions') +
     stat(eff.toolCalls||0, 'tool calls') +
-    stat(eff.totalEdits||0, 'file edits') +
+    stat(eff.gotchas||0, 'gotchas', 'var(--orange)') +
     stat(eff.researchCacheScopes||0, 'research cached', 'var(--green)') +
     stat(eff.decisions||0, 'decisions', 'var(--accent)') +
     stat(eff.verifications||0, 'verifications', passRate==null?'var(--muted)':'var(--green)') +
@@ -1056,6 +1060,277 @@ function setupSearch() {
       }
     }, 150);
   };
+}
+
+// ============ ACTIVITY PANEL — Agent Usage Intensity ============
+// Shows how intensely agents use Kuma: tool calls per day, sessions frequency,
+// and activity heatmap to understand adoption patterns.
+
+function renderActivity(data) {
+  var el = document.getElementById("panel-activity");
+  if (!el) return;
+  var eff = data.efficiency || {};
+  var sess = eff.recentSessions || [];
+  var totalSessions = eff.sessions || 0;
+  var totalToolCalls = eff.toolCalls || 0;
+  var totalGotchas = eff.gotchas || 0;
+  var totalArchFlows = eff.archFlows || 0;
+  var totalDecisions = eff.decisions || 0;
+  var totalEdits = eff.metrics ? (eff.metrics.filesEdited || 0) : 0;
+
+  var html = '';
+
+  // === COPY REPORT BUTTON ===
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+  html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">🤖 Agent Usage Intensity</div>';
+  html += '<button onclick="copyActivityReport()" id="copy-report-btn" style="background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.25);border-radius:6px;color:var(--accent2);padding:4px 10px;font-size:10px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:4px"><i data-lucide="copy" style="width:11px;height:11px"></i> Copy Report</button>';
+  html += '</div>';
+
+  // Intensity score: tool_calls per session
+  var avgCallsPerSession = totalSessions > 0 ? (totalToolCalls / totalSessions).toFixed(1) : '0';
+  var intensityLevel = totalToolCalls > 100 ? 'High' : totalToolCalls > 30 ? 'Medium' : totalToolCalls > 0 ? 'Low' : 'None';
+  var intensityColor = totalToolCalls > 100 ? 'var(--green)' : totalToolCalls > 30 ? 'var(--yellow)' : totalToolCalls > 0 ? 'var(--orange)' : 'var(--muted)';
+  var intensityIcon = totalToolCalls > 100 ? '🔥' : totalToolCalls > 30 ? '⚡' : totalToolCalls > 0 ? '💤' : '⚫';
+
+  html += '<div class="health-item" style="margin-bottom:12px;border-left:3px solid ' + intensityColor + '">';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+  html += '<span style="font-size:24px">' + intensityIcon + '</span>';
+  html += '<div><div style="font-size:16px;font-weight:700;color:' + intensityColor + '">' + intensityLevel + '</div>';
+  html += '<div style="font-size:11px;color:var(--muted)">' + avgCallsPerSession + ' calls/session average</div></div>';
+  html += '</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">';
+  html += '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(34,211,238,0.15);color:var(--accent2)">' + totalToolCalls + ' total calls</span>';
+  html += '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(52,211,153,0.15);color:var(--green)">' + totalSessions + ' sessions</span>';
+  html += '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(251,191,36,0.15);color:var(--yellow)">' + totalEdits + ' edits</span>';
+  html += '</div>';
+  html += '</div>';
+
+  // === HEALTH SCORE TREND ===
+  html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px">📈 Activity Summary</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
+
+  var summaryCard = function(val, label, color) {
+    return '<div style="flex:1;min-width:90px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border);text-align:center">' +
+      '<div style="font-size:20px;font-weight:700;color:' + (color || 'var(--accent2)') + '">' + val + '</div>' +
+      '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + label + '</div></div>';
+  };
+
+  html += summaryCard(totalSessions, 'Sessions', 'var(--accent2)');
+  html += summaryCard(totalToolCalls, 'Tool Calls', 'var(--accent)');
+  html += summaryCard(totalGotchas, 'Gotchas', 'var(--orange)');
+  html += summaryCard(totalArchFlows, 'Arch Flows', 'var(--accent)');
+  html += summaryCard(totalDecisions, 'Decisions', 'var(--accent2)');
+  html += '</div>';
+
+  // === RECENT SESSION ACTIVITY (last 8) ===
+  if (sess.length) {
+    html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px">🕐 Recent Activity</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">';
+
+    var maxCalls = Math.max.apply(null, sess.map(function(s) { return s.toolCalls || 0; }).concat([1]));
+
+    sess.forEach(function(s) {
+      var calls = s.toolCalls || 0;
+      var edits = s.edits || 0;
+      var rollbacks = s.rollbacks || 0;
+      var failures = s.failures || 0;
+      var barWidth = Math.round((calls / maxCalls) * 100);
+      var barColor = failures > 0 ? 'var(--red)' : rollbacks > 0 ? 'var(--yellow)' : 'var(--accent)';
+      var goal = s.goal || 'No goal';
+      var date = s.startedAt ? new Date(s.startedAt * 1000) : null;
+      var dateStr = date ? date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '-';
+
+      html += '<div style="background:var(--bg);border-radius:6px;padding:8px 10px;border:1px solid var(--border)">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+      html += '<span style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px" title="' + escapeHtml(goal) + '">' + escapeHtml(goal) + '</span>';
+      html += '<span style="font-size:10px;color:var(--muted);flex-shrink:0;margin-left:8px">' + dateStr + '</span>';
+      html += '</div>';
+      // Activity bar
+      html += '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:4px">';
+      html += '<div style="height:100%;width:' + barWidth + '%;background:' + barColor + ';border-radius:3px;transition:width 0.3s"></div>';
+      html += '</div>';
+      // Metrics row
+      html += '<div style="display:flex;gap:8px;font-size:10px;color:var(--muted)">';
+      html += '<span>🔧 ' + calls + ' calls</span>';
+      if (edits > 0) html += '<span>📝 ' + edits + ' edits</span>';
+      if (rollbacks > 0) html += '<span style="color:var(--yellow)">↩ ' + rollbacks + '</span>';
+      if (failures > 0) html += '<span style="color:var(--red)">❌ ' + failures + '</span>';
+      if (s.safetyScore != null) html += '<span style="color:var(--green)">🛡 ' + s.safetyScore + '</span>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // === EFFICIENCY TRENDS ===
+  var successRate = eff.verificationPassRate || 100;
+  var passColor = successRate >= 90 ? 'var(--green)' : successRate >= 70 ? 'var(--yellow)' : 'var(--red)';
+  var recordingRate = totalToolCalls > 0 ? Math.round(((totalGotchas + totalArchFlows + totalDecisions) / totalToolCalls) * 100) : 0;
+  // Rollback rate from recent sessions (rollbacks / calls, %)
+  var totalRollbacks = sess.reduce(function(a, s) { return a + (s.rollbacks || 0); }, 0);
+  var totalCalls = sess.reduce(function(a, s) { return a + (s.toolCalls || 0); }, 0);
+  var rollbackRate = totalCalls > 0 ? Math.round((totalRollbacks / totalCalls) * 100) : 0;
+
+  html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px">📊 Efficiency Trends</div>';
+  html += '<div class="health-item" style="margin-bottom:8px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+  html += '<span style="font-size:12px;color:var(--text)">Verification Pass Rate</span>';
+  html += '<span style="font-size:14px;font-weight:700;color:' + passColor + '">' + (successRate || '—') + '%</span>';
+  html += '</div>';
+  html += '<div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">';
+  html += '<div style="height:100%;width:' + (successRate || 0) + '%;background:' + passColor + ';border-radius:4px"></div>';
+  html += '</div>';
+  html += '</div>';
+
+  html += '<div class="health-item" style="margin-bottom:8px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+  html += '<span style="font-size:12px;color:var(--text)">Recording Rate</span>';
+  html += '<span style="font-size:14px;font-weight:700;color:' + (recordingRate >= 10 ? 'var(--green)' : recordingRate >= 5 ? 'var(--yellow)' : 'var(--orange)') + '">' + recordingRate + '%</span>';
+  html += '</div>';
+  html += '<div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">';
+  html += '<div style="height:100%;width:' + Math.min(recordingRate, 100) + '%;background:' + (recordingRate >= 10 ? 'var(--green)' : recordingRate >= 5 ? 'var(--yellow)' : 'var(--orange)') + ';border-radius:4px"></div>';
+  html += '</div>';
+  html += '</div>';
+
+  // === INSIGHT ===
+  html += '<div style="margin-top:12px;padding:10px 12px;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.2);border-radius:8px;font-size:11px;color:var(--accent-bright)">';
+  html += '💡 <b>Activity Insight:</b> ';
+  if (totalSessions === 0) {
+    html += 'No sessions recorded yet. Start using Kuma tools to track activity!';
+  } else if (totalToolCalls < 10) {
+    html += 'Getting started! Kuma learns more with each tool call.';
+  } else if (successRate >= 90) {
+    html += 'Excellent! High success rate shows Kuma is well-calibrated for your workflow.';
+  } else if (rollbackRate > 10) {
+    html += 'High rollback rate — Kuma gotchas may help avoid repeated mistakes.';
+  } else {
+    html += 'Healthy usage pattern. The more you use Kuma, the smarter it gets!';
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ============ COPY ACTIVITY REPORT ============
+function copyActivityReport() {
+  var btn = document.getElementById('copy-report-btn');
+  if (!btn) return;
+
+  // Find the data from the last render
+  var panel = document.getElementById('panel-activity');
+  if (!panel) return;
+
+  // Build a clean text report
+  var report = [];
+  report.push('=== KUMA STUDIO — ACTIVITY REPORT ===');
+  report.push('Generated: ' + new Date().toLocaleString());
+  report.push('');
+
+  // Get all stat cards
+  var stats = panel.querySelectorAll('[style*="font-size:20px"]');
+  var labels = panel.querySelectorAll('[style*="font-size:10px;color:var(--muted)"]');
+
+  // Extract intensity info
+  var intensityEl = panel.querySelector('[style*="font-size:16px;font-weight:700"]');
+  var intensity = intensityEl ? intensityEl.textContent : 'Unknown';
+  var avgCallsEl = panel.querySelector('[style*="font-size:11px;color:var(--muted)"]');
+  var avgCalls = avgCallsEl ? avgCallsEl.textContent : '';
+
+  report.push('INTENSITY: ' + intensity);
+  if (avgCalls) report.push('Average: ' + avgCalls);
+  report.push('');
+
+  // Get all section headers and content
+  var sections = panel.querySelectorAll('[style*="text-transform:uppercase"]');
+  sections.forEach(function(section) {
+    var title = section.textContent.trim();
+    report.push('--- ' + title + ' ---');
+
+    // Get next sibling content
+    var next = section.nextElementSibling;
+    if (next) {
+      // Extract text content, cleaning up HTML
+      var text = next.textContent.trim()
+        .replace(/\s+/g, ' ')
+        .replace(/([0-9]+) sessions/g, '$1 sessions')
+        .replace(/([0-9]+) tool calls/g, '$1 tool calls')
+        .replace(/([0-9]+) file edits/g, '$1 file edits')
+        .replace(/([0-9]+) rollbacks/g, '$1 rollbacks')
+        .replace(/([0-9]+) failures/g, '$1 failures')
+        .replace(/([0-9]+) total calls/g, '$1 total calls');
+      report.push(text);
+    }
+    report.push('');
+  });
+
+  // Get recent sessions
+  var sessionItems = panel.querySelectorAll('[style*="background:var(--bg);border-radius:6px"]');
+  if (sessionItems.length > 0) {
+    report.push('--- RECENT SESSIONS ---');
+    sessionItems.forEach(function(item) {
+      var goal = item.querySelector('[style*="font-size:11px"]');
+      var metrics = item.querySelector('[style*="font-size:10px"]');
+      if (goal) report.push('• ' + goal.textContent.trim());
+      if (metrics) report.push('  ' + metrics.textContent.trim());
+    });
+    report.push('');
+  }
+
+  // Get efficiency trends
+  var trends = panel.querySelectorAll('.health-item');
+  if (trends.length > 0) {
+    report.push('--- EFFICIENCY TRENDS ---');
+    trends.forEach(function(trend) {
+      var label = trend.querySelector('[style*="font-size:12px"]');
+      var value = trend.querySelector('[style*="font-size:14px"]');
+      if (label && value) {
+        report.push(label.textContent.trim() + ': ' + value.textContent.trim());
+      }
+    });
+    report.push('');
+  }
+
+  // Get insight
+  var insight = panel.querySelector('[style*="rgba(167,139,250,0.1)"]');
+  if (insight) {
+    report.push('--- INSIGHT ---');
+    report.push(insight.textContent.trim());
+  }
+
+  var reportText = report.join('\n');
+
+  // Copy to clipboard
+  navigator.clipboard.writeText(reportText).then(function() {
+    btn.innerHTML = '<i data-lucide="check" style="width:11px;height:11px"></i> Copied!';
+    btn.style.background = 'rgba(52,211,153,0.15)';
+    btn.style.borderColor = 'rgba(52,211,153,0.3)';
+    btn.style.color = 'var(--green)';
+    lucide.createIcons();
+    setTimeout(function() {
+      btn.innerHTML = '<i data-lucide="copy" style="width:11px;height:11px"></i> Copy Report';
+      btn.style.background = 'rgba(34,211,238,0.12)';
+      btn.style.borderColor = 'rgba(34,211,238,0.25)';
+      btn.style.color = 'var(--accent2)';
+      lucide.createIcons();
+    }, 2000);
+  }).catch(function() {
+    // Fallback: select text for manual copy
+    var textarea = document.createElement('textarea');
+    textarea.value = reportText;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    btn.innerHTML = '<i data-lucide="check" style="width:11px;height:11px"></i> Copied!';
+    lucide.createIcons();
+    setTimeout(function() {
+      btn.innerHTML = '<i data-lucide="copy" style="width:11px;height:11px"></i> Copy Report';
+      lucide.createIcons();
+    }, 2000);
+  });
 }
 </script>
 </body>

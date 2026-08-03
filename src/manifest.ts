@@ -36,13 +36,13 @@ export function resolveToolName(name: string): string {
 
 export function registerAllTools(server: McpServer): void {
   // ============================================================
-  // kuma_context — Context & Understanding (V3 Coarse-Grained)
+  // kuma_context — Context & Understanding
   // ============================================================
   server.tool(
     "kuma_context",
     "**Call FIRST every session.** Understand your project before making changes.\n\nWORKFLOW:\n• STEP 1 (ALWAYS): `init` — load project brief, restore session\n• STEP 3 (BEFORE edits): `research` — 5-step pipeline (cache→staleness→graph→impact→decision)\n• STEP 8 (END of session): `changes` — review what you modified\n\nOther actions: impact (analyze changes), navigate (trace flow), health (score 0-100), digest (compact briefing), drift (detect staleness).",
     {
-      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize", "digest", "drift", "progressive"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, digest=ultra-compact <500 token project briefing (Issue #18), drift=detect memory staleness & code drift (Issue #20), progressive=progressive context loading (Issue #25), health=project health score"),
+      action: z.enum(["init", "research", "impact", "navigate", "changes", "health", "rollback", "researches", "sync", "visualize", "digest", "drift", "progressive", "resume"]).describe("Action: init=project brief, research=5-step research pipeline (REQUIRED before edits), impact=analyze change effects, navigate=trace code flow, changes=view change log, rollback=undo a change by ID, researches=list all cached research, sync=unified batch state, visualize=Mermaid knowledge graph diagram, digest=ultra-compact <500 token project briefing (Issue #18), drift=detect memory staleness & code drift (Issue #20), progressive=progressive context loading (Issue #25), health=project health score, resume=load previous session context (goal, progress, changes)"),
       scope: z.string().optional().describe("Research scope for research/progressive action"),
       target: z.string().optional().describe("Target symbol/file for impact/navigate/changes"),
       goal: z.string().optional().describe("Current goal (for init/health)"),
@@ -72,13 +72,13 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // kuma_memory — Decision & Knowledge (V3 Coarse-Grained)
+  // kuma_memory — Decision & Knowledge
   // ============================================================
   server.tool(
     "kuma_memory",
-    "**Call after research/editing** (including research-only). Record what matters, skip what doesn't.\n\n🔴 MUST RECORD — High Impact (saves agent time next session):\n• STEP 5: `research_save` — after exploring area (creates search cache).\n• STEP 6: `gotcha` — IMMEDIATELY when you discover bugs/quirks. No re-research.\n• STEP 7: `arch_flow` — AFTER tracing COMPLETE flow (max 5 core files).\n• STEP 8: `decision` — IMMEDIATELY when choosing between options. Preserves rationale.\n\n🟢 SKIP using MCP (agent native tools are faster):\n• Function/class nodes → grep\n• Component/route nodes → glob or check directly\n• Import edges → read imports directly\n• Visual graph → for humans, not AI agents\n\nOther actions: session, heal, search, changes, benchmark, layers.",
+    "**Call after research/editing** (including research-only). Record what matters, skip what doesn't.\n\n🔴 MUST RECORD — High Impact (saves agent time next session):\n• STEP 5: `research_save` — after exploring area (creates search cache).\n• STEP 6: `gotcha` — IMMEDIATELY when you discover bugs/quirks. No re-research.\n• STEP 7: `arch_flow` — AFTER tracing COMPLETE flow (max 5 core files).\n• STEP 8: `decision` — IMMEDIATELY when choosing between options. Preserves rationale.\n• STEP 9: `feature` — WHEN identifying a high-level feature/module (e.g. Auth, Billing). Creates owns edges to files.\n\n🟢 SKIP using MCP (agent native tools are faster):\n• Function/class nodes → grep\n• Component/route nodes → glob or check directly\n• Import edges → read imports directly\n• Visual graph → for humans, not AI agents\n\nOther actions: session, heal, search, changes, benchmark, layers.",
     {
-      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers", "add_node", "delete_node", "clear", "feature"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save (creates file + graph node), session=summary, heal=repair, search=search (now with task retrieval + impact analysis), changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules, arch_flow=Layer 2 architecture flow (now auto-creates affects edges), gotcha=Layer 3 known gotchas, layers=all 3 layers summary, add_node=manually create function/class/component structural nodes, delete_node=delete a specific node/gotcha/todo/decision by ID or scope+target, clear=wipe all nodes/edges/gotchas, feature=record high-level feature with owns edges to files"),
+      action: z.enum(["decision", "mine", "research_save", "session", "heal", "search", "changes", "todo", "context", "benchmark", "decision_log", "domain_rules", "arch_flow", "gotcha", "layers", "add_node", "delete_node", "clear", "feature", "goal_progress"]).describe("Memory action: decision=ADR, mine=mine git log & comments, research_save=save (creates file + graph node), session=summary, heal=repair, search=search (now with task retrieval + impact analysis), changes=log, todo=manage todos, context=inject notes, benchmark=capture/diff, decision_log=manage decisions, domain_rules=Layer 1 business rules, arch_flow=Layer 2 architecture flow (now auto-creates affects edges), gotcha=Layer 3 known gotchas, layers=all 3 layers summary, add_node=manually create function/class/component structural nodes, delete_node=delete a specific node/gotcha/todo/decision by ID or scope+target, clear=wipe all nodes/edges/gotchas, feature=record high-level feature with owns edges to files, goal_progress=update goal completion percentage"),
       scope: z.string().optional().describe("Scope for research_save/search/todo/context/mine"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / context"),
@@ -145,7 +145,7 @@ export function registerAllTools(server: McpServer): void {
   );
 
   // ============================================================
-  // kuma_safety — Safety & Policy (V3 Coarse-Grained)
+  // kuma_safety — Safety & Policy
   // ============================================================
   server.tool(
     "kuma_safety",
