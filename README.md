@@ -2,7 +2,7 @@
 <div align="center">
 
 <img src="https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png" alt="Kuma Logo" width="180" />
-
+</div>
 # Kuma
 
 **Safety-first context & orchestration engine for AI coding agents.**
