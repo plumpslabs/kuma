@@ -1,5 +1,46 @@
 # Changelog
 
+## [2.3.34] — 2026-08-04
+
+### 🐻 Core Architecture Maturity — Zero Gimmicks, Maximum Impact
+
+This release is the **full architecture restructure**: every low-impact feature was removed, the surface was cut from 46+ actions to **28 impactful ones**, and Kuma is now a focused *shadow memory system* — inject context before edits, record only what pays back.
+
+**Net result: 31 files changed, +1,140 / −4,690 lines.**
+
+#### 🧹 Gimmick Elimination (the big cleanup)
+- **6 dead engine files deleted**: `kumaGitHarvester.ts`, `kumaLegacyOnboard.ts`, `kumaLock.ts`, `kumaNoiseFilter.ts`, `kumaProgressiveContext.ts`, `kumaSessionMiner.ts` (+ `tests/kumaLock.test.ts`, `docs/rfc-enterprise-roadmap.md`).
+- **Actions trimmed to 28 impactful**: `kuma_context` (11) · `kuma_memory` (11) · `kuma_safety` (13). Anything a native tool (grep/glob/git) does faster was removed — no gimmicks.
+- **Dead code removed**: `safetyOverride` fn + "File Lock" check in `kumaSafetyLayer.ts` (no lock creators existed), CRUD `todos` in `kumaDb.ts`, obsolete `autoHeal`/`detectStaleNodes` pipeline in `kumaSelfHeal.ts` (kept live `healOnQuery` + gotcha staleness).
+- **Tool code slimmed**: `kumaMemoryTool` −798, `kumaContextTool` −626, `kumaSafetyTool` −244 lines — tools now ~2,200 lines total (was ~5,100).
+
+#### 💉 Auto-Inject Hooks (`kumaInject.ts`) — the core superpower
+- **`kuma hook pre-edit` + `kuma hook pre-bash`** for Claude Code PreToolUse: gotchas, decisions & history injected automatically before every file edit — zero extra agent steps, ~400 token budget.
+- **Freshness (F3)**: gotchas validated via content hash — stale ones excluded from inject.
+- **Dedupe (I5)**: same file not re-injected within the dedupe window.
+- **Loop capture (I3)**: 4+ edits in 30 min auto-records a low-severity gotcha.
+- **Verify hint (I6)**: suggests `kuma_safety verify` after editing gotcha'd files.
+- **Injection metrics (I4)**: `recordInjection()` / `getInjectionStats()` in `kumaGotchas.ts` — the north-star metric (injections + time saved).
+
+#### 🧠 Smarter Retrieval
+- **Hash-verified flow cache (`kumaFlowCache.ts`)**: `deriveHopsFromImports()` caches import hops verified by content hash — stale cache auto-invalidated.
+- **`kumaMaintenance.ts`**: new lightweight maintenance engine.
+
+#### 🗂️ Manifest = Tool = Docs (100% sync)
+- **17 stale params removed** from manifest (`decisionAction`, `healAction`, `deps`, `success_criteria`, `todoId`, `source`, `label`, `metrics`, `labelB`, `uri`, `compact`, `section`, `lockAction`, `lockFilePath`, `agentId`, `reason`, `phase`).
+- **Missing params added** that handlers actually use (`status`, `description`, `force`).
+- **Hidden action exposed**: `gotcha_staleness` (had a handler but was never advertised).
+- Tool interfaces synced with manifest: dead params removed from all 3 tool files.
+
+#### 🎨 Kuma Studio
+- **Gimmicky Health Score removed** → replaced with **injection metrics** (count, time saved, multiplier) + **hooks status** panel.
+
+#### 📚 Docs Truth-Sync (everything now matches code)
+- **`docs/CORE_WORKFLOW.md`**: new canonical architecture doc — philosophy, workflow, per-project model, tool reference, north-star metric.
+- **`.kuma/` structure corrected**: research cache lives inside `kuma.db` (NOT a `research/` folder), hooks live in `.claude/settings.json` (NOT `.kuma/hooks/`), `policy.yml` is **optional** (only read if you create it), added `auto-gotcha.json` + `scratch/`.
+- **Stale `.kuma/` files deleted**: `MODE.md`, `SKIP_RULES.md`, `STALENESS.md`, `quickref.md`, empty `hooks/`.
+- README, `docs/index.html`, `docs/api.md`, `docs/guide.md` swept clean of removed-feature references (locks, self-healing, policy-as-code, health scores, etc.).
+
 ## [2.3.33] — 2026-08-03
 
 ### 🧠 Session Intelligence, Goal Progress & Studio Staleness

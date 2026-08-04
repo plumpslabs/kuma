@@ -1,138 +1,25 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { saveResearchCache, getChanges, addTodo, listTodos, updateTodoStatus, addContextNote, listContextNotes, saveBenchmark, getBenchmarkDiff, recordDecisionLog, listDecisionLog, updateDecisionStatus } from "../engine/kumaDb.js";
-import { autoHeal, detectStaleNodes, formatHealReport } from "../engine/kumaSelfHeal.js";
-import { recordDecision, formatDecisionTemplate } from "../engine/kumaMemory.js";
-import { isNodeTypeAllowed, getNoiseFilterPolicy } from "../engine/kumaNoiseFilter.js";
+import { saveResearchCache, getChanges } from "../engine/kumaDb.js";
+import { recordDecision } from "../engine/kumaMemory.js";
 import { normalizeScope } from "../utils/pathValidator.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "heal" | "search" | "changes" | "todo" | "context" | "benchmark" | "decision_log" | "mine" | "domain_rules" | "arch_flow" | "gotcha" | "layers" | "add_node" | "delete_node" | "clear" | "feature" | "graph_health" | "harvest" | "noise_policy" | "goal_progress";
+type MemoryAction = "decision" | "research_save" | "session" | "search" | "changes" | "mine" | "arch_flow" | "gotcha" | "delete_node" | "clear" | "goal_progress";
 
 const MEMORY_ALIASES: Record<string, string> = {
-  // Session synonyms
-  "session": "session",
-  "summary": "session",
-  "status": "session",
-  "get": "session",
-  "read": "session",
-  "fetch": "session",
-  "current": "session",
-  // Graph health synonyms
-  "graph_health": "graph_health",
-  "graph-health": "graph_health",
-  "health-check": "graph_health",
-  "graph-status": "graph_health",
-  // Decision synonyms
-  "decision": "decision",
-  "adr": "decision",
-  "record-decision": "decision",
-  // Research save synonyms
-  "research_save": "research_save",
-  "save": "research_save",
-  "store": "research_save",
-  "write": "research_save",
-  "persist": "research_save",
-  "cache": "research_save",
-  // Mine synonyms
-  "mine": "mine",
-  "mine-decisions": "mine",
-  "git-mine": "mine",
-  "dig": "mine",
-  // Heal synonyms
-  "heal": "heal",
-  "repair": "heal",
-  "fix-graph": "heal",
-  "clean-graph": "heal",
-  // Search synonyms
-  "search": "search",
-  "find": "search",
-  "query": "search",
-  "lookup": "search",
-  // Todo synonyms
-  "todo": "todo",
-  "task": "todo",
-  "todos": "todo",
-  "tasks": "todo",
-  "context": "context",
-  "notes": "context",
-  "note": "context",
-  "inject": "context",
-  // Harvest synonyms
-  "harvest": "harvest",
-  "session_mining": "harvest",
-  // Session mine synonyms
-  "session_mine": "session_mine",
-  "mine-session": "session_mine",
-  "extract-session": "session_mine",
-  "context-note": "context",
-  // Benchmark synonyms
-  "benchmark": "benchmark",
-  "perf": "benchmark",
-  "metrics": "benchmark",
-  "measure": "benchmark",
-  // Decision log synonyms
-  "decision_log": "decision_log",
-  "decisions": "decision_log",
-  "log": "decision_log",
-  "decision-log": "decision_log",
-  // Changes synonyms
-  "changes": "changes",
-  "change-log": "changes",
-  "history": "changes",
-  // Layer 1: Domain Rules (Issue #17)
-  "domain_rules": "domain_rules",
-  "domain-rules": "domain_rules",
-  "domain": "domain_rules",
-  "business-rules": "domain_rules",
-  // Layer 2: Architecture Flow (Issue #17)
-  "arch_flow": "arch_flow",
-  "arch-flow": "arch_flow",
-  "architecture": "arch_flow",
-  "flow-map": "arch_flow",
-  // Layer 3: Gotchas (Issue #17 / #21)
-  "gotcha": "gotcha",
-  "gotchas": "gotcha",
-  "known-gotchas": "gotcha",
-  "legacy": "gotcha",
-  "quirk": "gotcha",
-  // Layers summary
-  "layers": "layers",
-  "3-layer": "layers",
-  "memory-layers": "layers",
-  // Add node synonyms
-  "add-node": "add_node",
-  "create-node": "add_node",
-  // Feature synonyms
-  "feature": "feature",
-  "features": "feature",
-  "record-feature": "feature",
-  "define-feature": "feature",
-  "record-node": "add_node",
-  // Delete node synonyms
-  "delete_node": "delete_node",
-  "delete-node": "delete_node",
-  "remove-node": "delete_node",
-  "delete": "delete_node",
-  "remove": "delete_node",
-  "destroy": "delete_node",
-  // Clear synonyms
-  "clear": "clear",
-  "clear-graph": "clear",
-  "wipe": "clear",
-  "reset": "clear",
-  "purge-all": "clear",
-  // Harvest synonyms (Pilar 5)
-  "git-harvest": "harvest",
-  "auto-harvest": "harvest",
-  "git": "harvest",
-  // Noise policy synonyms (Pilar 4)
-  "noise_policy": "noise_policy",
-  "noise-policy": "noise_policy",
-  "noise": "noise_policy",
-  "anti-ast": "noise_policy",
-  "filter": "noise_policy",
+  "session": "session", "summary": "session", "status": "session", "get": "session",
+  "decision": "decision", "adr": "decision",
+  "research_save": "research_save", "save": "research_save", "store": "research_save",
+  "mine": "mine", "dig": "mine",
+  "search": "search", "find": "search", "query": "search", "lookup": "search",
+  "changes": "changes", "change-log": "changes", "history": "changes",
+  "arch_flow": "arch_flow", "arch-flow": "arch_flow", "architecture": "arch_flow",
+  "gotcha": "gotcha", "gotchas": "gotcha", "quirk": "gotcha",
+  "delete_node": "delete_node", "delete-node": "delete_node", "remove-node": "delete_node",
+  "clear": "clear", "clear-graph": "clear", "wipe": "clear", "reset": "clear",
+  "goal_progress": "goal_progress", "progress": "goal_progress",
 };
 
 interface MemoryParams {
@@ -143,40 +30,20 @@ interface MemoryParams {
   record?: string;
   confidence?: number;
   confirm?: boolean;
-
-  decisionAction?: "template" | "suggest" | "record";
   title?: string;
   context?: string;
   rationale?: string;
   outcome?: string;
-  healAction?: "check" | "heal";
   topic?: string;
-  goal?: string;
   limit?: number;
   since?: number | string;
   target?: string;
-
-  // Todo params
   description?: string;
-  deps?: string;
-  success_criteria?: string;
   status?: string;
-  todoId?: number;
-
-  // Feature params
-  tags?: string;
-
-  // Context params
-  source?: string;
-
-  // Benchmark params
-  label?: string;
-  metrics?: string;
-  labelB?: string;
+  trigger_command?: string;
 }
 
 export async function handleMemory(params: MemoryParams): Promise<string> {
-  // Resolve action with default + aliases
   const rawAction = params.action || "session";
   const key = rawAction.toLowerCase().replace(/[\s_-]+/g, "-");
   const action = MEMORY_ALIASES[key] || rawAction;
@@ -187,65 +54,38 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "mine": return handleMine(params);
     case "research_save": return handleResearchSave(params);
     case "session": return handleSession(params);
-    case "heal": return handleHeal(params);
     case "search": return handleSearch(params);
     case "changes": return handleChanges(params);
-    case "todo": return handleTodo(params);
-    case "context": return handleContext(params);
-    case "benchmark": return handleBenchmark(params);
-    case "decision_log": return handleDecisionLog(params);
-    case "domain_rules": return handleLayerAction("domain_rules", params);
-    case "arch_flow": return handleLayerAction("arch_flow", params);
+    case "arch_flow": return handleArchFlow(params);
     case "gotcha": return handleGotchaAction(params);
-    case "layers": return handleLayersSummary(params);
-    case "add_node": return handleAddNode(params);
-    case "feature": return handleFeature(params);
     case "goal_progress": return handleGoalProgress(params);
     case "delete_node": return handleDeleteNode(params);
-    case "graph_health": return handleGraphHealth(params);
     case "clear": {
       const { clearGraph } = await import("../engine/kumaGraph.js");
       await clearGraph();
       return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, and gotchas have been wiped from disk and memory.";
     }
-    case "harvest": return handleHarvest(params);
-    case "session_mine": return handleSessionMine(params);
-    case "noise_policy": return getNoiseFilterPolicy();
     default: return `Unknown action "${action}".`;
   }
 }
 
 // ============================================================
-// DECISION — ADR-style recording (trigger-based)
+// DECISION — ADR-style recording
 // ============================================================
 
 async function handleDecision(params: MemoryParams): Promise<string> {
-  const subAction = params.decisionAction || "template";
-  switch (subAction) {
-    case "template": return formatDecisionTemplate();
-    case "suggest": {
-      const { shouldRecordDecision } = await import("../engine/kumaMemory.js");
-      const check = shouldRecordDecision();
-      return check.worth
-        ? `💡 Decision suggested: "${check.title}"\nUse kuma_memory({ action: 'decision', title: '...', context: '...', rationale: '...', outcome: '...' }) to record.`
-        : "✅ No decision needed at this time.";
-    }
-    case "record":
-      if (!params.title) return `❌ **decision format error:** title is required.\n\n✅ Correct: kuma_memory({ action: "decision", decisionAction: "record", title: "Use bcrypt vs argon2", rationale: "bcrypt is battle-tested, argon2 is newer but less adoption", context: "Login system security", outcome: "Chose bcrypt" })`;
-      if (!params.rationale) return `❌ **decision format error:** rationale is required.\n\n✅ Correct: kuma_memory({ action: "decision", decisionAction: "record", title: "${params.title}", rationale: "WHY you chose this option", context: "optional context", outcome: "optional outcome" })`;
-      const decisionResult = await recordDecision({
-        title: params.title,
-        context: params.context || "",
-        options: [],
-        rationale: params.rationale,
-        outcome: params.outcome || "implemented",
-        timestamp: new Date().toISOString(),
-      });
-      // Track in session memory
-      sessionMemory.recordMemoryAction("decision");
-      return decisionResult;
-    default: return formatDecisionTemplate();
-  }
+  if (!params.title) return "⚠️ `title` is required. Use: kuma_memory({ action: 'decision', title: '...', rationale: '...' })";
+  if (!params.rationale) return "⚠️ `rationale` is required. Why did you choose this option?";
+  const result = await recordDecision({
+    title: params.title,
+    context: params.context || "",
+    options: [],
+    rationale: params.rationale,
+    outcome: params.outcome || "implemented",
+    timestamp: new Date().toISOString(),
+  });
+  sessionMemory.recordMemoryAction("decision");
+  return result;
 }
 
 // ============================================================
@@ -254,51 +94,24 @@ async function handleDecision(params: MemoryParams): Promise<string> {
 
 async function handleResearchSave(params: MemoryParams): Promise<string> {
   const rawScope = params.scope || "project";
-  // Normalize scope to prevent duplicate nodes from path variants
   const scope = normalizeScope(rawScope) || rawScope;
   const record = params.record || JSON.stringify({
     scope, confidence: params.confidence || 0.8, notes: params.content || "", validatedAt: new Date().toISOString(),
   });
   await saveResearchCache(scope, record, undefined, params.confidence);
 
-  // Idempotent graph node update: avoid creating duplicate file & research nodes
   try {
     const { getDb, flushDb } = await import("../engine/kumaDb.js");
     const db = await getDb();
     const researchId = `research::${scope}`;
     const now = Math.floor(Date.now() / 1000);
-
-    // Only create file node if scope looks like a file path (contains / or has extension)
-    const looksLikeFile = scope.includes("/") || /\.\w{1,5}$/.test(scope);
-
+    const looksLikeFile = scope.includes("/") || /\.[\w]{1,5}$/.test(scope);
     if (looksLikeFile) {
       const fileId = `file::${scope}`;
-      // Upsert file node
-      db.run(`
-        INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
-        VALUES (?, 'file', ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          metadata = json_patch(COALESCE(nodes.metadata, '{}'), excluded.metadata),
-          updated_at = excluded.updated_at
-      `, [fileId, scope, scope, JSON.stringify({ findings: [params.content || ""], confidence: params.confidence || 0.8 }), now]);
-
-      // Create edge connecting file -> contains -> research node
-      db.run(`
-        INSERT INTO edges (source_id, target_id, type, weight, metadata, created_at)
-        VALUES (?, ?, 'contains', 1.0, '{}', ?)
-        ON CONFLICT DO NOTHING
-      `, [fileId, researchId, now]);
+      db.run(`INSERT INTO nodes (id, type, name, file_path, metadata, updated_at) VALUES (?, 'file', ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET metadata = json_patch(COALESCE(nodes.metadata, '{}'), excluded.metadata), updated_at = excluded.updated_at`, [fileId, scope, scope, JSON.stringify({ findings: [params.content || ""], confidence: params.confidence || 0.8 }), now]);
+      db.run(`INSERT OR IGNORE INTO edges (source_id, target_id, type, weight, metadata, created_at) VALUES (?, ?, 'contains', 1.0, '{}', ?)`, [fileId, researchId, now]);
     }
-
-    // Upsert research node (always created)
-    db.run(`
-      INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
-      VALUES (?, 'research', ?, null, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        metadata = json_patch(COALESCE(nodes.metadata, '{}'), excluded.metadata),
-        updated_at = excluded.updated_at
-    `, [researchId, `research:${scope}`, JSON.stringify({ confidence: params.confidence || 0.8, last_findings: params.content || "" }), now]);
-
+    db.run(`INSERT INTO nodes (id, type, name, file_path, metadata, updated_at) VALUES (?, 'research', ?, null, ?, ?) ON CONFLICT(id) DO UPDATE SET metadata = json_patch(COALESCE(nodes.metadata, '{}'), excluded.metadata), updated_at = excluded.updated_at`, [researchId, `research:${scope}`, JSON.stringify({ confidence: params.confidence || 0.8, last_findings: params.content || "" }), now]);
     flushDb(db);
     try { const { rebuildFtsIndex } = await import("../engine/kumaDb.js"); rebuildFtsIndex(); } catch {}
   } catch {}
@@ -309,9 +122,7 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
     fs.writeFileSync(path.join(researchDir, `${scope}.json`), JSON.stringify(JSON.parse(record), null, 2), "utf-8");
   } catch {}
 
-  // Track in session memory
   sessionMemory.recordMemoryAction("research_save");
-
   return `✅ Research "${scope}" saved.`;
 }
 
@@ -323,7 +134,6 @@ async function handleSession(params: MemoryParams): Promise<string> {
   const topic = params.topic as any;
   const summary = sessionMemory.getSummary(topic);
   if (topic) return typeof summary.content === "string" ? summary.content : JSON.stringify(summary, null, 2);
-
   const modifiedFiles = (summary.modifiedFiles as Array<{ filePath: string; status: string }>) || [];
   const failures = (summary.unresolvedFailures as Array<{ task: string; error: string }>) || [];
   const recordingSummary = sessionMemory.getRecordingSummary();
@@ -334,10 +144,7 @@ async function handleSession(params: MemoryParams): Promise<string> {
     `🕐 Duration: ${summary.sessionDuration}`,
     `🛠️ Tool calls: ${summary.toolCallCount}\n`,
     `🧠 **Recordings:** ${recordingSummary.total} total — ` +
-      `${recordingSummary.archFlows} arch_flow, ` +
-      `${recordingSummary.gotchas} gotcha, ` +
-      `${recordingSummary.decisions} decision, ` +
-      `${recordingSummary.researchSaves} research_save`,
+      `${recordingSummary.archFlows} arch_flow, ${recordingSummary.gotchas} gotcha, ${recordingSummary.decisions} decision, ${recordingSummary.researchSaves} research_save`,
     `📊 **Metrics:** ${metricsSummary.filesRead} files read, ${metricsSummary.filesEdited} files edited`,
     `⏱️ **Time saved:** ~${metricsSummary.researchTimeSavedFormatted} (from research cache)`,
   ];
@@ -351,28 +158,12 @@ async function handleSession(params: MemoryParams): Promise<string> {
       lines.push(`  ${f.status === "created" ? "✨" : f.status === "modified" ? "📝" : "❌"} ${f.filePath}`);
     }
     if (modifiedFiles.length > 10) lines.push(`  ... and ${modifiedFiles.length - 10} more`);
-    lines.push("");
   }
   if (failures.length > 0) {
     lines.push(`**Unresolved Issues** (${failures.length}):`);
     for (const f of failures.slice(0, 5)) lines.push(`  ❌ ${f.task}: ${f.error.substring(0, 80)}`);
-    lines.push("");
   }
   return lines.join("\n");
-}
-
-// ============================================================
-// HEAL — Self-heal graph
-// ============================================================
-
-async function handleHeal(params: MemoryParams): Promise<string> {
-  if (params.healAction === "check") {
-    const stale = await detectStaleNodes();
-    if (stale.length === 0) return "✅ No stale entries found.";
-    return `🔍 ${stale.length} stale entr${stale.length > 1 ? "ies" : "y"} found. Use kuma_memory({ action: 'heal' }) to repair.`;
-  }
-  const result = await autoHeal();
-  return formatHealReport(result);
 }
 
 // ============================================================
@@ -383,24 +174,20 @@ async function handleSearch(params: MemoryParams): Promise<string> {
   const query = params.query || params.scope;
   if (!query) return "⚠️ query or scope parameter required.";
   const limit = params.limit || 20;
-  // ISSUE #13: Hybrid search — combines keyword + vector similarity
   const memResults = sessionMemory.searchMemory(query, limit);
   const { searchGraph } = await import("../engine/kumaGraph.js");
   const graphResults = await searchGraph(query, Math.min(limit, 10));
 
-  // Graph-as-retrieval: focused context for task
   let taskContext = "";
   try {
     const { retrieveForTask } = await import("../engine/kumaGraph.js");
     taskContext = await retrieveForTask(query, 10);
   } catch {}
 
-  // Impact analysis: if query matches a node, show what it affects
   let impactAnalysis = "";
   try {
     const { propagateImpact, searchGraph: sg } = await import("../engine/kumaGraph.js");
     const searchRes = await sg(query, 1);
-    // Extract node ID from search results if available
     const nodeIdMatch = searchRes.match(/\*\*([^*]+)\*\* \(([^)]+)\)/);
     if (nodeIdMatch) {
       const nodeType = nodeIdMatch[2];
@@ -408,22 +195,17 @@ async function handleSearch(params: MemoryParams): Promise<string> {
       const nid = `${nodeType}::${nodeName}`;
       const impacts = await propagateImpact(nid, 3, 0.2);
       if (impacts.length > 0) {
-        const impactLines = impacts.slice(0, 5).map(i =>
-          `  • ${i.name} (${i.type}) — depth ${i.depth}, weight ${i.weight}`
-        );
+        const impactLines = impacts.slice(0, 5).map(i => `  • ${i.name} (${i.type}) — depth ${i.depth}, weight ${i.weight}`);
         impactAnalysis = `\n💥 **Impact Analysis** — ${impacts.length} node(s) affected by "${nodeName}":\n${impactLines.join("\n")}`;
       }
     }
   } catch {}
 
-  // Hybrid semantic search with graph connectivity (Pilar 3)
   let hybridResults = "";
   try {
     const { enhancedHybridSearch, formatHybridResults } = await import("../engine/kumaSearch.js");
     const semanticResults = await enhancedHybridSearch(query, 8);
-    if (semanticResults.length > 0) {
-      hybridResults = "\n" + formatHybridResults(query, semanticResults);
-    }
+    if (semanticResults.length > 0) hybridResults = "\n" + formatHybridResults(query, semanticResults);
   } catch {}
 
   const lines: string[] = [`🔍 **Search Results** — "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`];
@@ -432,18 +214,10 @@ async function handleSearch(params: MemoryParams): Promise<string> {
     for (const r of memResults.slice(0, 5)) lines.push(`  • ${r.content.substring(0, 120)}`);
     lines.push("");
   }
-  if (taskContext) {
-    lines.push(taskContext);
-    lines.push("");
-  }
+  if (taskContext) { lines.push(taskContext); lines.push(""); }
   lines.push("**Knowledge Graph:\n" + graphResults);
-  if (impactAnalysis) {
-    lines.push(impactAnalysis);
-  }
-  if (hybridResults) {
-    lines.push("");
-    lines.push(hybridResults);
-  }
+  if (impactAnalysis) lines.push(impactAnalysis);
+  if (hybridResults) { lines.push(""); lines.push(hybridResults); }
   return lines.join("\n");
 }
 
@@ -457,91 +231,7 @@ async function handleChanges(params: MemoryParams): Promise<string> {
 }
 
 // ============================================================
-// TODO — Persistent Todo (Part 2 #6)
-// ============================================================
-
-async function handleTodo(params: MemoryParams): Promise<string> {
-  // If todoId is provided, update status
-  if (params.todoId && params.status) {
-    return await updateTodoStatus(params.todoId, params.status);
-  }
-  // If title is provided, add new todo
-  if (params.title) {
-    return await addTodo({
-      title: params.title,
-      description: params.description,
-      scope: params.scope,
-      deps: params.deps,
-      successCriteria: params.success_criteria,
-    });
-  }
-  // Otherwise list todos
-  return await listTodos(params.scope, params.status);
-}
-
-// ============================================================
-// CONTEXT — Injected Context Notes (Part 3 #4)
-// ============================================================
-
-async function handleContext(params: MemoryParams): Promise<string> {
-  // If content + source provided, add note
-  if (params.content && params.source) {
-    return await addContextNote({
-      source: params.source,
-      content: params.content,
-      scope: params.scope,
-      filePaths: params.target ? JSON.stringify([params.target]) : undefined,
-    });
-  }
-  // Otherwise list notes
-  return await listContextNotes(params.scope);
-}
-
-// ============================================================
-// BENCHMARK — Before/After Benchmarking (Part 3 #6)
-// ============================================================
-
-async function handleBenchmark(params: MemoryParams): Promise<string> {
-  if (params.label) {
-    if (params.metrics) {
-      try {
-        const metrics = JSON.parse(params.metrics);
-        return await saveBenchmark(params.label, metrics);
-      } catch {
-        return `⚠️ Invalid metrics JSON: "${params.metrics.substring(0, 100)}"`;
-      }
-    }
-    return await getBenchmarkDiff(params.label, params.labelB);
-  }
-  return "⚠️ label required. Use: kuma_memory({ action: 'benchmark', label: 'phase-3', metrics: '{\"tsc_errors\": 245}' })";
-}
-
-// ============================================================
-// DECISION_LOG — Living Document (Part 4 #8)
-// ============================================================
-
-async function handleDecisionLog(params: MemoryParams): Promise<string> {
-  // If status + todoId/params.id provided, update status
-  if (params.target && params.status) {
-    const id = parseInt(params.target, 10);
-    if (!isNaN(id)) return await updateDecisionStatus(id, params.status);
-  }
-  // If title provided, record new decision
-  if (params.title && params.rationale) {
-    return await recordDecisionLog({
-      title: params.title,
-      context: params.context,
-      rationale: params.rationale,
-      outcome: params.outcome,
-      status: params.status,
-    });
-  }
-  // Otherwise list decisions
-  return await listDecisionLog(params.status);
-}
-
-// ============================================================
-// MINE — Decision Mining from Git History & Comments (Proposal 2)
+// MINE — Decision Mining from Git History
 // ============================================================
 
 async function handleMine(params: MemoryParams): Promise<string> {
@@ -556,19 +246,14 @@ async function handleMine(params: MemoryParams): Promise<string> {
 }
 
 // ============================================================
-// LAYER ACTIONS — 3-Layer Memory Engine (Issue #17)
+// ARCH_FLOW — 3-Layer Memory Engine (Issue #17)
 // ============================================================
 
-async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: MemoryParams): Promise<string> {
+async function handleArchFlow(params: MemoryParams): Promise<string> {
   const { readLayer, writeLayer } = await import("../engine/domainRules.js");
 
-  if (layer === "arch_flow" && params.content) {
-    // ENHANCED: recordDomainFlow - creates interconnected Domain-level graph nodes
-    // Format: "domain: <name> | hops: <hop1> → <hop2> → <hop3> | gotchas: <g1>, <g2>"
-    // Or plain text: just save to text-based layer (backward compat)
+  if (params.content) {
     const content = params.content;
-
-    // Try to detect structured format
     const domainMatch = content.match(/domain\s*[:]\s*([^|\n]+)/i);
     const hopsMatch = content.match(/hops\s*[:]\s*([^|\n]+)/i);
     const gotchasMatch = content.match(/gotchas?\s*[:]\s*([^|\n]+)/i);
@@ -580,90 +265,46 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
       const hopsStr = hopsMatch ? hopsMatch[1].trim() : "";
       const gotchasStr = gotchasMatch ? gotchasMatch[1].trim() : "";
       const decisionsStr = decisionsMatch ? decisionsMatch[1].trim() : "";
-      const filesStr = filesMatch ? filesMatch[1].trim() : "";
 
-      // VALIDATE: hops must use → separator, not newlines or commas
       if (hopsStr && !content.includes("→")) {
-        return `❌ **arch_flow format error:** hops must use → separator.\n\n❌ Wrong: hops: file1.js, file2.js\n❌ Wrong: hops: file1.js\\nfile2.js\n✅ Correct: domain: <name> | hops: file1.js → file2.js → file3.js`;
+        return "❌ **arch_flow format error:** hops must use → separator.\n\n✅ Correct: domain: <name> | hops: file1.js → file2.js → file3.js";
       }
 
-      // Filter & limit hops: core logic files only (max 5)
       const rawHops = hopsStr ? hopsStr.split("→").map(h => h.trim()).filter(Boolean) : [];
       const coreHops = rawHops.filter(file => {
         if (file.endsWith(".tsx") || file.endsWith(".jsx")) return false;
         if (file.includes("Controller")) return false;
-        if (file.includes("Schema") || file.includes("RequestSchema")) return false;
+        if (file.includes("Schema")) return false;
         return true;
-      });
-      const limitedHopsList = coreHops.slice(0, 5);
+      }).slice(0, 5);
 
-      const hops = limitedHopsList.map((h, i, arr) => ({
+      const hops = coreHops.map((h, i, arr) => ({
         from: i === 0 ? domain : arr[i - 1],
-        to: h,
-        relation: "flows",
-        description: h,
+        to: h, relation: "flows", description: h,
       }));
 
       if (hops.length === 0) {
-        return `❌ **arch_flow format error:** no hops found after → separator.\n\n✅ Correct: domain: <name> | hops: file1.js → file2.js`;
+        return "❌ **arch_flow format error:** no hops found after → separator.\n\n✅ Correct: domain: <name> | hops: file1.js → file2.js";
       }
 
       const gotchas = gotchasStr ? gotchasStr.split(",").map(g => g.trim()).filter(Boolean) : [];
       const decisions = decisionsStr ? decisionsStr.split(",").map(d => d.trim()).filter(Boolean) : [];
-      const filePaths = filesStr ? filesStr.split(",").map(f => f.trim()).filter(Boolean) : [];
+      const filePaths = filesMatch ? filesMatch[1].trim().split(",").map(f => f.trim()).filter(Boolean) : [];
 
       try {
         const { recordDomainFlow } = await import("../engine/kumaGraph.js");
         const flow = await recordDomainFlow({ domain, hops, gotchas, decisions, filePaths });
-
-        // Also save to text-based layer for backward compat
         await writeLayer("arch_flow", content);
-
-        // SEMANTIC LAYER: Auto-generate prose explanation node
-        try {
-          const { upsertNode, addEdge, nodeId: gNodeId } = await import("../engine/kumaGraph.js");
-          const proseId = `flow_explanation::${domain}::prose`;
-          const prose = [
-            `This is the ${domain} flow.`,
-            `It starts at ${hops[0]?.from || "entry point"}.`,
-            ...hops.map((h, i) => `Step ${i + 1}: ${h.from} → ${h.to} (${h.description || h.relation})`),
-            gotchas.length > 0 ? `Watch out for: ${gotchas.join(", ")}` : "",
-            decisions.length > 0 ? `Decisions made: ${decisions.join(", ")}` : "",
-          ].filter(Boolean).join(" ");
-          await upsertNode({
-            id: proseId,
-            type: "flow_explanation",
-            name: `prose:${domain}`,
-            metadata: { prose, hopsCount: hops.length, domain },
-          });
-          await addEdge({
-            sourceId: proseId,
-            targetId: gNodeId("feature_domain", domain),
-            type: "explains",
-            metadata: { autoGenerated: true },
-          });
-        } catch {}
-
-        // Track in session memory
         sessionMemory.recordMemoryAction("arch_flow");
-
-        return `✅ Domain flow "${domain}" recorded — ${flow.nodeCount} nodes, ${flow.edgeCount} edges created.\n🏛️ **Domain Anchor:** ${domain}\n🔄 **Hops:** ${hops.length}\n⚠️ **Gotchas:** ${gotchas.length}\n📁 **Files:** ${filePaths.length}`;
+        return `✅ Domain flow "${domain}" recorded — ${flow.nodeCount} nodes, ${flow.edgeCount} edges created.\n🏛️ **Domain Anchor:** ${domain}\n🔄 **Hops:** ${hops.length}\n⚠️ **Gotchas:** ${gotchas.length}`;
       } catch (err) {
-        // Fallback to text-only if graph recording fails
         await writeLayer("arch_flow", content);
         return `✅ Architecture flow saved (text only). Graph recording failed: ${err}`;
       }
     }
-
-    // No structured format detected — return error with format guide
-    return `❌ **arch_flow format not recognized.** Use this format:\n\ndomain: <DomainName> | hops: <file1.tsx> → <file2.js> → <file3.ts>\n\nFields:\n- domain: short name (e.g. InviteUserFlow)\n- hops: file names separated by → (NOT commas, NOT newlines)\n- gotchas: optional, comma-separated\n- decisions: optional, comma-separated`;
+    return "❌ **arch_flow format not recognized.** Use format:\n\ndomain: <DomainName> | hops: <file1.ts> → <file2.js> → <file3.ts>";
   }
-
-  // domain_rules or reading arch_flow
-  if (params.content) {
-    return writeLayer(layer, params.content);
-  }
-  return readLayer(layer);
+  return readLayer("arch_flow");
 }
 
 // ============================================================
@@ -671,242 +312,96 @@ async function handleLayerAction(layer: "domain_rules" | "arch_flow", params: Me
 // ============================================================
 
 async function handleGotchaAction(params: MemoryParams): Promise<string> {
-  // If adding a new gotcha
   if (params.content && params.scope) {
-    // VALIDATE: scope must be a file path, content must be non-empty
-    if (!params.scope.trim()) {
-      return `❌ **gotcha format error:** scope (file path) is required.\n\n✅ Correct: kuma_memory({ action: "gotcha", scope: "path/to/file.ts", content: "bug description", status: "high" })`;
-    }
-    if (!params.content.trim()) {
-      return `❌ **gotcha format error:** content (description) is required.\n\n✅ Correct: kuma_memory({ action: "gotcha", scope: "path/to/file.ts", content: "bug description", status: "high" })`;
-    }
-
-    // Normalize scope to prevent duplicate nodes from path variants
+    if (!params.scope.trim()) return "❌ **gotcha format error:** scope (file path) is required.";
+    if (!params.content.trim()) return "❌ **gotcha format error:** content (description) is required.";
     const normalizedScope = normalizeScope(params.scope) || params.scope;
-
     const { addGotcha } = await import("../engine/kumaGotchas.js");
     const result = await addGotcha({
       filePath: normalizedScope,
       description: params.content,
       severity: (params.status as "low" | "medium" | "high" | "critical") || "medium",
       workaround: params.description,
+      triggerCommand: params.trigger_command,
     });
-
-    // Track in session memory
     sessionMemory.recordMemoryAction("gotcha");
-
     return result;
   }
-
-  // If listing gotchas (optionally filtered by filePath)
   const { listGotchas, syncGotchasToDb } = await import("../engine/kumaGotchas.js");
   await syncGotchasToDb();
-  return await listGotchas({
-    filePath: params.scope,
-    severity: params.status,
-  });
+  return await listGotchas({ filePath: params.scope, severity: params.status });
 }
 
 // ============================================================
-// DELETE NODE — Remove specific nodes/gotchas/todos/decisions
+// DELETE NODE — Remove specific nodes/gotchas/decisions
 // ============================================================
 
 async function handleDeleteNode(params: MemoryParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_memory_delete", { scope: params.scope, target: params.target });
-
   const { getDb, saveDb } = await import("../engine/kumaDb.js");
   const db = await getDb();
 
-  // Pattern 1: scope + target (delete a specific record by scope + ID)
   if (params.scope && params.target) {
     const id = parseInt(params.target, 10);
     if (isNaN(id)) return `⚠️ target "${params.target}" is not a valid numeric ID.`;
-
     switch (params.scope) {
       case "gotcha":
       case "gotchas": {
-        // Get gotcha details before deleting (to also remove graph node)
         const gotchaRow = db.prepare("SELECT file_path, description FROM known_gotchas WHERE id = ?");
         gotchaRow.bind([id]);
-        let gotchaFilePath = "";
-        let gotchaDesc = "";
+        let gotchaFilePath = "", gotchaDesc = "";
         if (gotchaRow.step()) {
           const row = gotchaRow.getAsObject() as { file_path: string; description: string };
-          gotchaFilePath = row.file_path;
-          gotchaDesc = row.description;
+          gotchaFilePath = row.file_path; gotchaDesc = row.description;
         }
         gotchaRow.free();
-
-        // Delete from known_gotchas table
         db.run("DELETE FROM known_gotchas WHERE id = ?", [id]);
-
-        // Also delete corresponding graph node + edges
         if (gotchaFilePath && gotchaDesc) {
           const gotchaNodeId = `gotcha::${gotchaFilePath}::${gotchaDesc.substring(0, 30)}`;
           db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [gotchaNodeId, gotchaNodeId]);
           db.run("DELETE FROM nodes WHERE id = ?", [gotchaNodeId]);
         }
-
         saveDb(db);
         return `🗑️ **Gotcha #${id} deleted** (table + graph).`;
       }
-      case "todo":
-      case "todos": {
-        db.run("DELETE FROM todos WHERE id = ?", [id]);
-        saveDb(db);
-        return `🗑️ **Todo #${id} deleted.**`;
-      }
-      case "decision":
-      case "decision_log":
-      case "decisions": {
-        db.run("DELETE FROM decision_log WHERE id = ?", [id]);
-        saveDb(db);
-        return `🗑️ **Decision #${id} deleted.**`;
-      }
-      case "checkpoint": {
-        db.run("DELETE FROM health_snapshots WHERE id = ?", [id]);
-        saveDb(db);
-        return `🗑️ **Checkpoint #${id} deleted.**`;
-      }
       default:
-        return `⚠️ Unknown scope "${params.scope}". Supported: gotcha, todo, decision, checkpoint`;
+        return `⚠️ Unknown scope "${params.scope}". Supported: gotcha`;
     }
   }
 
-  // Pattern 2: target is a graph node ID (e.g. "function::sendMessage" or "feature_domain::omnichannel-conversation-flow")
   if (params.target || params.scope) {
     const { flushDb } = await import("../engine/kumaDb.js");
-
     const targetStr = params.target || "";
     const targetId = params.scope && !targetStr.includes("::") ? `${targetStr}::${params.scope}` : targetStr;
     if (targetId && (targetId.includes("::") || targetId.includes(":") || targetId.includes("-") || isNaN(parseInt(targetId, 10)))) {
       try {
-        const domainName = targetId.startsWith("feature_domain::") ? targetId.replace("feature_domain::", "") : targetId;
-
-        // Cascade delete if deleting a feature_domain
         if (targetId.startsWith("feature_domain::")) {
-          db.run("DELETE FROM nodes WHERE id LIKE ? OR id LIKE ? OR id LIKE ?", [
-            `feature_domain::${domainName}`,
-            `cross_service_link::${domainName}::%`,
-            `gotcha::${domainName}::%`,
-          ]);
+          const domainName = targetId.replace("feature_domain::", "");
+          db.run("DELETE FROM nodes WHERE id LIKE ? OR id LIKE ? OR id LIKE ?", [`feature_domain::${domainName}`, `cross_service_link::${domainName}::%`, `gotcha::${domainName}::%`]);
           db.run("DELETE FROM edges WHERE source_id LIKE ? OR target_id LIKE ?", [`%${domainName}%`, `%${domainName}%`]);
         } else if (targetId.startsWith("gotcha::")) {
-          // Cascade: delete gotcha graph node + known_gotchas table entry
           db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [targetId, targetId]);
           db.run("DELETE FROM nodes WHERE id = ?", [targetId]);
-          // Also delete from known_gotchas (single source of truth)
           const parts = targetId.split("::");
           if (parts.length >= 3) {
-            const gotchaFilePath = parts[1];
-            const gotchaDesc = parts.slice(2).join("::");
-            db.run("DELETE FROM known_gotchas WHERE file_path = ? AND description LIKE ?", [gotchaFilePath, `${gotchaDesc}%`]);
+            db.run("DELETE FROM known_gotchas WHERE file_path = ? AND description LIKE ?", [parts[1], `${parts.slice(2).join("::")}%`]);
           }
         } else {
           db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [targetId, targetId]);
           db.run("DELETE FROM nodes WHERE id = ?", [targetId]);
         }
-
         flushDb(db);
-        return `🗑️ **Node & relations deleted instantly from RAM and Disk:** ${targetId}`;
-      } catch (err) {
-        return `❌ Failed to delete node: ${err}`;
-      }
+        return `🗑️ **Node & relations deleted:** ${targetId}`;
+      } catch (err) { return `❌ Failed to delete node: ${err}`; }
     }
-
-    // Try as numeric ID
-    if (targetId) {
-      const id = parseInt(targetId, 10);
-      if (!isNaN(id)) {
-        db.run("DELETE FROM nodes WHERE rowid = ?", [id]);
-        flushDb(db);
-        return `🗑️ **Node #${id} deleted.**`;
-      }
-    }
+    const id = parseInt(targetId, 10);
+    if (!isNaN(id)) { db.run("DELETE FROM nodes WHERE rowid = ?", [id]); flushDb(db); return `🗑️ **Node #${id} deleted.**`; }
   }
-
-  return "⚠️ Provide `target` (node ID) to delete, or `scope` + `target` (numeric ID) for gotcha/todo/decision/checkpoint.\n\nExamples:\n- `delete_node`, target: 'function::sendMessage'\n- `delete_node`, scope: 'gotcha', target: '42'\n- `delete_node`, scope: 'todo', target: '7'\n- `delete_node`, scope: 'decision', target: '3'\n- `delete_node`, scope: 'checkpoint', target: '1'";
+  return "⚠️ Provide `target` (node ID) to delete.\n\nExamples:\n- `delete_node`, target: 'function::sendMessage'\n- `delete_node`, scope: 'gotcha', target: '42'";
 }
 
 // ============================================================
-// ADD NODE — Manual Structural Node Creation
-// ============================================================
-
-async function handleAddNode(params: MemoryParams): Promise<string> {
-  const type = params.title as string;
-  const name = params.content;
-  // Normalize scope to prevent duplicate nodes from path variants
-  const rawFilePath = params.scope;
-  const filePath = rawFilePath ? (normalizeScope(rawFilePath) || rawFilePath) : undefined;
-
-  if (!type || !name) {
-    return "⚠️ `title` (node type) and `content` (node name) required.\n\n✅ Allowed types: arch_flow, gotcha, decision, cross_service_link, feature_domain, file, research, flow_explanation\n❌ Rejected: function, class, component, variable, method\n\nExample: kuma_memory({ action: 'arch_flow', content: 'domain: AuthFlow | hops: auth.ts → middleware.ts' })";
-  }
-
-  // Pilar 4: Noise Filter — reject AST-level node types
-  if (!isNodeTypeAllowed(type)) {
-    return [
-      `❌ **Noise Filter:** Type "${type}" is not allowed.`,
-      "",
-      getNoiseFilterPolicy(),
-    ].join("\n");
-  }
-
-  try {
-    const { upsertNode, nodeId, addEdge } = await import("../engine/kumaGraph.js");
-    const nodeIdStr = filePath ? `${type}::${filePath}::${name}` : nodeId(type as "arch_flow" | "gotcha" | "decision" | "cross_service_link" | "feature_domain" | "file" | "research", name);
-
-    await upsertNode({
-      id: nodeIdStr,
-      type: type as any,
-      name,
-      filePath,
-    });
-
-    // If filePath provided, also create contains edge
-    if (filePath) {
-      const fileNodeId = nodeId("file", filePath);
-      await upsertNode({ id: fileNodeId, type: "file", name: filePath });
-      try { await addEdge({ sourceId: fileNodeId, targetId: nodeIdStr, type: "contains" }); } catch {}
-    }
-
-    return `✅ Node created: **${name}** (${type})${filePath ? ` — ${filePath}` : ""}`;
-  } catch (err) {
-    return `❌ Failed to create node: ${err}`;
-  }
-}
-
-// ============================================================
-// FEATURE — Record high-level feature with owns edges
-// ============================================================
-
-async function handleFeature(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_feature", { title: params.title, scope: params.scope });
-
-  if (!params.title) {
-    return "⚠️ `title` (feature name) required.\n\n✅ Correct: kuma_memory({ action: 'feature', title: 'Authentication', content: 'description', scope: 'src/auth/login.ts,src/auth/session.ts' })\n\n• title = feature name (e.g. 'Authentication', 'Billing')\n• content = description (optional)\n• scope = comma-separated file paths (optional)\n• tags = comma-separated tags (optional)\n• status = risk level: low/medium/high/critical (optional)";
-  }
-
-  const { recordFeature } = await import("../engine/kumaGraph.js");
-  const files = params.scope ? params.scope.split(",").map(f => f.trim()).filter(Boolean) : [];
-  const tags = params.tags ? params.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : [];
-  const risk = (params.status as "low" | "medium" | "high" | "critical") || "medium";
-
-  const result = await recordFeature({
-    name: params.title,
-    description: params.content,
-    files,
-    tags,
-    risk,
-  });
-
-  sessionMemory.recordMemoryAction("feature");
-
-  return `✅ **Feature "${params.title}" recorded** — ${result.nodeCount} node(s), ${result.edgeCount} edge(s)\n⭐ Level: feature\n📁 Files: ${files.length}\n🏷️ Tags: ${tags.length}\n⚠️ Risk: ${risk}`;
-}
-
-// ============================================================
-// GRAPH HEALTH — Monitor Graph Noise, Orphans & Duplicates
+// GOAL PROGRESS — Track goal completion
 // ============================================================
 
 async function handleGoalProgress(params: MemoryParams): Promise<string> {
@@ -917,155 +412,4 @@ async function handleGoalProgress(params: MemoryParams): Promise<string> {
   if (!p) return "Error";
   const bar = "█".repeat(Math.floor(p.percentage / 10)) + "░".repeat(10 - Math.floor(p.percentage / 10));
   return `📊 ${bar} ${p.percentage}%${p.milestone ? " — " + p.milestone : ""}`;
-}
-
-async function handleGraphHealth(_params: MemoryParams): Promise<string> {
-  const { getDb } = await import("../engine/kumaDb.js");
-  const db = await getDb();
-
-  const getRows = (sql: string) => {
-    try {
-      const res = db.exec(sql);
-      if (!res.length) return [];
-      const cols = res[0].columns;
-      return res[0].values.map(val => {
-        const obj: Record<string, any> = {};
-        cols.forEach((c, idx) => obj[c] = val[idx]);
-        return obj;
-      });
-    } catch { return []; }
-  };
-
-  const totalNodesRow = getRows("SELECT COUNT(*) as count FROM nodes")[0];
-  const totalNodes = totalNodesRow ? totalNodesRow.count : 0;
-
-  const totalEdgesRow = getRows("SELECT COUNT(*) as count FROM edges")[0];
-  const totalEdges = totalEdgesRow ? totalEdgesRow.count : 0;
-
-  const orphanRows = getRows(`
-    SELECT COUNT(*) as count FROM nodes
-    WHERE id NOT IN (SELECT DISTINCT source_id FROM edges UNION SELECT DISTINCT target_id FROM edges)
-  `);
-  const totalOrphans = orphanRows[0] ? orphanRows[0].count : 0;
-
-  const duplicateGroups = getRows(`
-    SELECT name, COUNT(*) as count FROM nodes GROUP BY name HAVING count > 1
-  `);
-
-  const typeStats = getRows(`
-    SELECT type, COUNT(*) as count FROM nodes GROUP BY type ORDER BY count DESC
-  `);
-
-  const lines = [
-    "📊 **Kuma Knowledge Graph Health Report**",
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    `• **Total Nodes:** ${totalNodes}`,
-    `• **Total Edges:** ${totalEdges}`,
-    `• **Orphan Nodes:** ${totalOrphans}`,
-    `• **Duplicate Groups:** ${duplicateGroups.length}`,
-    "",
-    "**Nodes by Type:**",
-    ...typeStats.map(s => `  - \`${s.type}\`: ${s.count}`),
-    "",
-    "**Recommendations:**"
-  ];
-
-  const recs: string[] = [];
-  const crossLinks = typeStats.find(s => s.type === "cross_service_link");
-  if (crossLinks && crossLinks.count > 50) {
-    recs.push("⚠️ Too many `cross_service_link` nodes. Run cleanup or delete obsolete feature domains.");
-  }
-  if (duplicateGroups.length > 0) {
-    recs.push(`⚠️ ${duplicateGroups.length} duplicate node groups detected. Delete duplicates using \`delete_node\`.`);
-  }
-  if (totalOrphans > 10) {
-    recs.push(`⚠️ ${totalOrphans} orphan nodes found (0 edges). Consider running \`heal\` or \`clear\`.`);
-  }
-
-  if (recs.length === 0) {
-    recs.push("✅ Graph health is optimal! Low noise, good signal-to-noise ratio.");
-  }
-
-  lines.push(...recs.map(r => `  ${r}`));
-  return lines.join("\n");
-}
-
-// ============================================================
-// LAYERS SUMMARY — Show all 3 layers status
-// ============================================================
-
-async function handleLayersSummary(_params: MemoryParams): Promise<string> {
-  const { getLayersSummary } = await import("../engine/domainRules.js");
-  return getLayersSummary();
-}
-
-// ============================================================
-// HARVEST — Git Auto-Harvesting (Pilar 5)
-// ============================================================
-
-async function handleHarvest(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_harvest", { scope: params.scope });
-  const { harvestGitHistory, installGitHook } = await import("../engine/kumaGitHarvester.js");
-
-  // If scope is "install", just install the hook
-  if (params.scope === "install") {
-    return installGitHook();
-  }
-
-  const count = params.limit || 10;
-  const dryRun = params.status === "dry-run" || params.status === "preview";
-  return await harvestGitHistory({ commitCount: count, dryRun });
-}
-
-/**
- * Session mining — auto-extract gotchas/decisions/arch_flows from transcript.
- * Scope: "preview" (default) shows suggestions, "approve" runs them.
- */
-async function handleSessionMine(_params: MemoryParams): Promise<string> {
-  const { mineSessionInsights, formatMinedInsights } = await import("../engine/kumaSessionMiner.js");
-  const insights = mineSessionInsights();
-  if (insights.length === 0) {
-    return formatMinedInsights(insights);
-  }
-  // Auto-approve if scope is "approve" or limit is -1
-  if (_params.scope === "approve" || _params.limit === -1) {
-    let approved = 0;
-    for (const ins of insights) {
-      try {
-        if (ins.type === "gotcha") {
-          const { addGotcha } = await import("../engine/kumaGotchas.js");
-          await addGotcha({ filePath: ins.scope, description: ins.content, severity: ins.confidence > 0.7 ? "high" : "medium" });
-        } else if (ins.type === "decision") {
-          const { recordDecision } = await import("../engine/kumaMemory.js");
-          await recordDecision({
-            title: ins.content.substring(0, 80),
-            context: ins.source,
-            options: [],
-            rationale: ins.content,
-            outcome: "session_mined",
-            timestamp: new Date().toISOString(),
-          });
-        } else if (ins.type === "arch_flow") {
-          const { recordDomainFlow } = await import("../engine/kumaGraph.js");
-          const hops = ins.content.split("→").map((h: string) => h.trim()).filter(Boolean);
-          if (hops.length >= 2) {
-            await recordDomainFlow({
-              domain: ins.scope.split("/").pop()?.replace(/\.\w+$/, "") || "Unknown",
-              hops: hops.map((h: string, i: number) => ({
-                from: i === 0 ? "entry" : hops[i - 1],
-                to: h,
-                relation: "flows",
-                description: h,
-              })),
-            });
-          }
-        }
-        approved++;
-      } catch {}
-    }
-    sessionMemory.recordToolCall("kuma_memory_session_mine_approve", { count: approved });
-    return `✅ **Session Mining** — ${approved}/${insights.length} insights auto-recorded to Knowledge Graph.`;
-  }
-  sessionMemory.recordToolCall("kuma_memory_session_mine_preview", { count: insights.length });
-  return formatMinedInsights(insights);
 }

@@ -483,9 +483,36 @@ function createSchema(db: SqlJsDatabase): void {
       workaround TEXT,
       added_by TEXT DEFAULT 'agent',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      content_hash TEXT,
+      trigger_command TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active','resolved')),
+      last_verified_at INTEGER
     );
   `);
+
+  // F3/F3b (Roadmap): migrations for legacy DBs missing the newer columns
+  try {
+    const info = db.exec("PRAGMA table_info(known_gotchas)");
+    const cols = (info[0]?.values ?? []).map((v: unknown[]) => String(v[1]));
+    if (!cols.includes("content_hash")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN content_hash TEXT`);
+    }
+    if (!cols.includes("trigger_command")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN trigger_command TEXT`);
+    }
+    if (!cols.includes("status")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+    }
+    if (!cols.includes("last_verified_at")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN last_verified_at INTEGER`);
+    }
+  } catch { /* non-critical */ }
+
+  // Note: injection metrics live in .kuma/injections.jsonl (append-only) —
+  // never the shared DB (hook processes must not race the server on writes).
+
   db.exec(`CREATE INDEX IF NOT EXISTS idx_gotchas_file ON known_gotchas(file_path)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_gotchas_severity ON known_gotchas(severity)`);
 
@@ -734,53 +761,6 @@ export async function getChanges(params: { sessionId?: number; filePath?: string
     }
     return lines.join("\n");
   } catch (err) { return `Error: ${err}`; }
-}
-
-// ============================================================
-// Part 2 #6: Persistent Todo CRUD
-// ============================================================
-
-export async function addTodo(params: { title: string; description?: string; scope?: string; deps?: string; successCriteria?: string }): Promise<string> {
-  try {
-    const db = await getDb();
-    db.run(`INSERT INTO todos (title, description, scope, deps, success_criteria) VALUES (?, ?, ?, ?, ?)`,
-      [params.title, params.description || "", params.scope || "", params.deps || "[]", params.successCriteria || ""]);
-    saveDb();
-    return `✅ Todo added: "${params.title}"`;
-  } catch (err) { return `❌ Failed to add todo: ${err}`; }
-}
-
-export async function listTodos(scope?: string, status?: string): Promise<string> {
-  try {
-    const db = await getDb();
-    let sql = `SELECT * FROM todos WHERE 1=1`;
-    const bind: unknown[] = [];
-    if (scope) { sql += ` AND scope = ?`; bind.push(scope); }
-    if (status) { sql += ` AND status = ?`; bind.push(status); }
-    sql += ` ORDER BY created_at DESC LIMIT 50`;
-    const stmt = db.prepare(sql); stmt.bind(bind);
-    const results: Array<Record<string, unknown>> = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
-    stmt.free();
-    if (results.length === 0) return `📋 No todos found.`;
-    const lines: string[] = [`📋 Todo List — ${results.length} item(s)\n`];
-    for (const t of results) {
-      const icon = t.status === "done" ? "✅" : t.status === "active" ? "🔄" : t.status === "cancelled" ? "❌" : "⏳";
-      lines.push(`  ${icon} [#${t.id}] ${t.title} (${t.status})`);
-      if (t.scope) lines.push(`     Scope: ${t.scope}`);
-      if (t.success_criteria) lines.push(`     Success: ${t.success_criteria}`);
-    }
-    return lines.join("\n");
-  } catch (err) { return `Error: ${err}`; }
-}
-
-export async function updateTodoStatus(id: number, status: string): Promise<string> {
-  try {
-    const db = await getDb();
-    db.run(`UPDATE todos SET status = ?, updated_at = strftime('%s','now') WHERE id = ?`, [status, id]);
-    saveDb();
-    return `✅ Todo #${id} updated to "${status}"`;
-  } catch (err) { return `❌ Failed: ${err}`; }
 }
 
 // ============================================================

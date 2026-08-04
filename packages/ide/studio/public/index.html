@@ -250,7 +250,7 @@ header .status .dot.off { background: var(--red); }
     <div class="tabs">
       <div class="tab active" data-tab="features" title="Features"><i data-lucide="star" style="width:12px;height:12px"></i><span class="tab-label">Features</span></div>
       <div class="tab" data-tab="gotchas" title="Gotchas"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i><span class="tab-label">Gotchas</span></div>
-      <div class="tab" data-tab="health" title="Health"><i data-lucide="heart-pulse" style="width:12px;height:12px"></i><span class="tab-label">Health</span></div>
+      <div class="tab" data-tab="injections" title="Shadow Memory"><i data-lucide="zap" style="width:12px;height:12px"></i><span class="tab-label">Injections</span></div>
       <div class="tab" data-tab="efficiency" title="Efficiency"><i data-lucide="zap" style="width:12px;height:12px"></i><span class="tab-label">Efficiency</span></div>
       <div class="tab" data-tab="staleness" title="Staleness"><i data-lucide="activity" style="width:12px;height:12px"></i><span class="tab-label">Staleness</span></div>
       <div class="tab" data-tab="activity" title="Activity"><i data-lucide="bar-chart-3" style="width:12px;height:12px"></i><span class="tab-label">Activity</span></div>
@@ -337,7 +337,7 @@ async function init() {
   renderGraph(data);
   renderFeatures(data);
   renderGotchas(data);
-  renderHealth(data);
+  renderInjections(data);
   renderEfficiency(data);
   renderStaleness(data);
   renderActivity(data);
@@ -355,15 +355,15 @@ function showError(msg) {
 
 function renderStats(data) {
   var s = data.stats || {};
-  var hc = s.health_score;
-  var hcColor = hc >= 80 ? "var(--green)" : hc >= 50 ? "var(--yellow)" : "var(--red)";
+  var inj = data.injections || {};
+  var savedMin = inj.savedFormatted || '0 min';
   document.getElementById("stats-bar").innerHTML =
     '<div class="stat"><span class="num">'+(s.node_count||0)+'</span><span class="lbl">nodes</span></div>'+
     '<div class="stat"><span class="num">'+(s.edge_count||0)+'</span><span class="lbl">edges</span></div>'+
-    '<div class="stat"><span class="num" style="color:var(--accent-bright)">'+(s.feature_count||0)+'</span><span class="lbl">features</span></div>'+
     '<div class="stat"><span class="num">'+(s.gotcha_count||0)+'</span><span class="lbl">gotchas</span></div>'+
     '<div class="stat"><span class="num" style="color:var(--accent)">'+currentDbSize+'</span><span class="lbl">kuma.db</span></div>'+
-    '<div class="stat"><span class="num" style="color:'+hcColor+'">'+(hc||0)+'</span><span class="lbl">health</span></div>';
+    '<div class="stat"><span class="num" style="color:var(--blue)">'+inj.count+'</span><span class="lbl">injections</span></div>'+
+    '<div class="stat"><span class="num" style="font-size:13px;color:var(--green)">'+savedMin+'</span><span class="lbl">time saved</span></div>';
 }
 
 function truncateLabel(name, maxLen) {
@@ -791,7 +791,7 @@ async function refetch() {
     if (status.ok) { dot.className = 'dot on'; txt.textContent = status.project || 'connected'; } else { dot.className = 'dot off'; txt.textContent = 'no kuma.db found'; }
     var data = await fetch(API+'/dashboard').then(function(r){return r.json()});
     if (data.error) { showError(data.error); return; }
-    renderStats(data); renderGraph(data); renderFeatures(data); renderGotchas(data); renderHealth(data); renderEfficiency(data); renderStaleness(data); renderActivity(data);
+    renderStats(data); renderGraph(data); renderGotchas(data); renderEfficiency(data); renderStaleness(data); renderInjections(data);
     lucide.createIcons();
   } catch(e) { showError('Refetch failed: ' + e.message); }
   btn.innerHTML = '<i data-lucide="refresh-cw" style="width:13px;height:13px;vertical-align:middle;margin-right:3px"></i> Refetch';
@@ -809,7 +809,7 @@ function setupTabs(){
   content.innerHTML =
     '<div class="panel active" id="panel-features"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-gotchas"><div class="empty">Loading...</div></div>' +
-    '<div class="panel" id="panel-health"><div class="empty">Loading...</div></div>' +
+    '<div class="panel" id="panel-injections"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-efficiency"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-staleness"><div class="empty">Loading...</div></div>' +
     '<div class="panel" id="panel-activity"><div class="empty">Loading...</div></div>';
@@ -864,17 +864,22 @@ function renderGotchas(data){
   lucide.createIcons();
 }
 
-function renderHealth(data){
-  var items = data.health || [];
-  var el = document.getElementById("panel-health");
+function renderInjections(data) {
+  var inj = data.injections || {};
+  var el = document.getElementById("panel-injections");
   if(!el) return;
-  if(!items.length){el.innerHTML='<div class="empty">No health data yet</div>';return;}
-  el.innerHTML = items.map(function(h){
-    var cls = h.score>=80?'good':h.score>=50?'ok':'bad';
-    var summary = h.summary||h.risk_level||'-';
-    var date = h.created_at ? new Date(h.created_at*1000).toLocaleDateString() : '-';
-    return '<div class="health-item"><div class="score '+cls+'">'+h.score+'</div><div class="meta">'+escapeHtml(summary)+' &middot; '+date+'</div></div>';
-  }).join('');
+  if(!inj.count){el.innerHTML='<div class="empty">No shadow memory injections yet. Enable hooks via `kuma init --claude`.</div>';return;}
+  el.innerHTML = '<div class="section-title">Shadow Memory (24h)</div>'+
+    '<div class="efficiency-grid">'+
+    '<div class="eff-item"><span class="eff-num">'+inj.count+'</span><span class="eff-lbl">Injections</span></div>'+
+    '<div class="eff-item"><span class="eff-num" style="color:var(--green)">'+inj.savedFormatted+'</span><span class="eff-lbl">Time Saved</span></div>'+
+    '<div class="eff-item"><span class="eff-num" style="color:var(--blue)">~'+Math.round(inj.savedMs/5000)+'x</span><span class="eff-lbl">Multiplier</span></div>'+
+    '</div>'+
+    '<div class="section-title" style="margin-top:16px">Auto-Inject Hooks</div>'+
+    '<div class="gotcha-item">Pre-Edit: <code>kuma hook pre-edit</code> — injects gotchas + decisions + history</div>'+
+    '<div class="gotcha-item">Pre-Bash: <code>kuma hook pre-bash</code> — injects command-triggered gotchas</div>'+
+    '<div class="gotcha-item">Dedupe: files not re-injected within 15 min (I5)</div>'+
+    '<div class="gotcha-item">Loop Capture: 4+ edits within 30 min auto-records a gotcha (I3)</div>';
 }
 
 // ============ EFFICIENCY PANEL (GAP 1) ============

@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import fastGlob from "fast-glob";
-import { recordDecisionLog } from "./kumaDb.js";
 import { recordDecision } from "./kumaMemory.js";
 import { SOURCE_EXT_GLOB } from "./languageSupport.js";
 
@@ -170,13 +169,6 @@ export async function mineHistoricalDecisions(options: MineOptions = {}): Promis
   if (options.confirm && candidates.length > 0) {
     let recordedCount = 0;
     for (const c of candidates) {
-      await recordDecisionLog({
-        title: c.title,
-        context: c.context,
-        rationale: c.rationale,
-        outcome: `Mined from ${c.type} (${c.pattern})`,
-        status: "proposed",
-      });
       await recordDecision({
         title: c.title,
         context: c.context,

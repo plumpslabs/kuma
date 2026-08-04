@@ -156,9 +156,9 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     if (readCalls >= 5 && recordingSummary.features === 0) {
       warnings.push({
         severity: "low",
-        pattern: "explore-without-feature",
-        message: `${readCalls} file reads but 0 features recorded. High-level module understanding helps future sessions.`,
-        suggestion: "After exploring a module/feature, record it:\nkuma_memory({ action: 'feature', title: '<FeatureName>', content: 'description', scope: 'file1.ts,file2.ts' })",
+        pattern: "explore-without-arch_flow",
+        message: `${readCalls} file reads but 0 arch_flows recorded. Consider recording the flow with arch_flow.`,
+        suggestion: "After tracing a flow, record it:\nkuma_memory({ action: 'arch_flow', content: 'domain: <Name> | hops: <file1> → <file2> → <file3>' })",
       });
     }
   }

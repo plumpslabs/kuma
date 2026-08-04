@@ -333,6 +333,15 @@ export async function recordDomainFlow(params: {
   try {
     // 1. Create/update the FeatureDomain anchor node
     const domainId = nodeId("feature_domain", params.domain);
+    // F13: store per-file hashes so flow freshness can be verified on serve
+    let fileHashes: Record<string, string> = {};
+    try {
+      const { hashFile } = await import("./kumaDriftDetector.js");
+      for (const fp of params.filePaths || []) {
+        const h = hashFile(fp);
+        if (h) fileHashes[fp] = h;
+      }
+    } catch { /* non-critical */ }
     await upsertNode({
       id: domainId,
       type: "feature_domain",
@@ -342,6 +351,7 @@ export async function recordDomainFlow(params: {
         gotchas: params.gotchas?.length || 0,
         decisions: params.decisions?.length || 0,
         filePaths: params.filePaths || [],
+        fileHashes,
       },
     });
     nodeCount++;

@@ -313,6 +313,16 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
           } catch { /* non-critical */ }
         }
 
+        // I1 (Roadmap): verification passed → close the loop on gotchas whose
+        // file changed since recording (fix likely landed → mark resolved).
+        if (passed && !isNoTests && scope !== "session-impact") {
+          try {
+            const { resolveGotchasForScope } = await import("./kumaGotchas.js");
+            const { resolved } = await resolveGotchasForScope(scope);
+            if (resolved > 0) autoGotchaMessage = `✅ ${resolved} gotcha(s) resolved automatically (verification passed after file changes).`;
+          } catch { /* non-critical */ }
+        }
+
         // Release lock & state
         _localRunning = false;
         _currentProcess = null;

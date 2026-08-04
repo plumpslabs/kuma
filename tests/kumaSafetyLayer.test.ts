@@ -6,7 +6,6 @@ import { jest } from "@jest/globals";
 // NOTE: Do NOT mock node:fs globally — it breaks other test suites
 // that rely on real filesystem operations (e.g., sql.js WASM loading).
 // ============================================================
-const mockIsLocked = jest.fn<() => { locked: boolean; by?: string; since?: number }>().mockReturnValue({ locked: false });
 const mockGetSummary = jest
   .fn<() => { modifiedFiles: string[] }>()
   .mockReturnValue({ modifiedFiles: [] });
@@ -44,11 +43,6 @@ jest.unstable_mockModule("../src/utils/pathValidator.js", () => ({
     .mockReturnValue({ valid: true, resolvedPath: "/test/project/file.ts" }),
 }));
 
-// Mock kumaLock with mutable ref
-jest.unstable_mockModule("../src/engine/kumaLock.js", () => ({
-  isLocked: mockIsLocked,
-}));
-
 // Mock sessionMemory with mutable ref
 jest.unstable_mockModule("../src/engine/sessionMemory.js", () => ({
   sessionMemory: {
@@ -66,7 +60,6 @@ describe("kumaSafetyLayer", () => {
   beforeEach(() => {
     jest.spyOn(console, "error").mockImplementation(() => {});
     // Reset shared mutable mocks to default state
-    mockIsLocked.mockReturnValue({ locked: false });
     mockGetSummary.mockReturnValue({ modifiedFiles: [] });
   });
   afterEach(() => {
@@ -78,16 +71,6 @@ describe("kumaSafetyLayer", () => {
       const result = await safetyCheck("edit", "file.ts");
       expect(result).toContain("Allowed");
       expect(result).toContain("low");
-    });
-
-    test("blocks when file is locked", async () => {
-      mockIsLocked.mockReturnValue({
-        locked: true,
-        by: "other-agent",
-        since: Date.now(),
-      });
-      const result = await safetyCheck("edit", "locked.ts");
-      expect(result).toContain("Blocked");
     });
 
     test("allows commands (dangerous check handled by preCheck, not safetyCheck)", async () => {
@@ -103,11 +86,6 @@ describe("kumaSafetyLayer", () => {
     test("handles DB errors gracefully", async () => {
       mockGetSummary.mockImplementation(() => {
         throw new Error("no session");
-      });
-      mockIsLocked.mockReturnValue({
-        locked: true,
-        by: "other-agent",
-        since: Date.now(),
       });
       const result = await safetyCheck("edit", "file.ts");
       expect(result).not.toContain("Error in safety check");

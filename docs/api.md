@@ -1,625 +1,293 @@
-# Kuma API Reference
+# Kuma MCP — API Reference
 
-Kuma V3 provides **3 coarse-grained tools**. Each tool accepts an `action` parameter that triggers a multi-step deterministic pipeline.
+**Actions listed here are the impactful core. Removed actions (add_node, feature, heal, harvest, session_mine, todo, context, benchmark, decision_log, domain_rules, layers, noise_policy, progressive, sync, visualize, researches, lock, override, policy, contract, portability, doctor, gitignore, clean, template, suggest, record) are no longer documented — they were gimmick features that duplicated grep/glob or added overhead without measurable impact.**
 
 ---
 
 ## kuma_context
 
-Context, research, and understanding. **Call `init` first every session.**
-
-### Actions
-
-#### `init`
-
-Load project brief. Call first every session.
+### `init`
+Lean project brief + session restore (<500 tokens). Auto-injects focus advice, fresh gotchas, injection stats, and path rules.
 
 ```json
-{
-  "action": "init",
-  "goal": "add password reset",
-  "compact": false
-}
+{ "action": "init", "goal": "add password reset" }
 ```
 
-**Returns:** Project architecture, entry points, framework detection, recent activity, risk areas.
+**Returns:** Session state, proactive memories, fresh gotchas, injection metrics.
 
-#### `research`
-
-5-step research pipeline. **WAJIB before editing unfamiliar code.**
+### `research`
+5-step pipeline: cache → staleness → graph/scan → impact → decision lookup.
 
 ```json
-{
-  "action": "research",
-  "scope": "auth",
-  "compact": false
-}
+{ "action": "research", "scope": "auth" }
 ```
 
-**Pipeline:** Load cache → check staleness → query graph → impact analysis → decision lookup.
-
-**Returns:** Entry points, flow, dependencies, test files, risk areas, past decisions, confidence score.
-
-#### `impact`
-
-Analyze what would break if you change a symbol or file.
+### `impact`
+Analyze change effects: references, test files, risk level, entry points.
 
 ```json
-{
-  "action": "impact",
-  "target": "validateToken"
-}
+{ "action": "impact", "target": "src/services/auth.ts" }
 ```
 
-**Returns:** Reference count, affected files, test files, API routes, dependencies.
-
-#### `navigate`
-
-Trace code flow from entry point to leaf.
+### `navigate`
+Trace code flow from entry point.
 
 ```json
-{
-  "action": "navigate",
-  "target": "login"
-}
+{ "action": "navigate", "target": "src/services/auth.ts" }
 ```
 
-**Returns:** Full call chain with file:line references.
-
-#### `changes`
-
-View change log for selective undo.
+### `flow`
+Hash-verified derived domain flow cache (F13). Re-derives from imports when stale.
 
 ```json
-{
-  "action": "changes",
-  "target": "src/auth.ts",
-  "since": 1722000000000,
-  "compact": false
-}
+{ "action": "flow", "target": "WhatsApp Omnichannel" }
 ```
 
-**Returns:** Modified files, timestamps, diff summaries per change.
-
-#### `health`
-
-Project health dashboard (0-100 score).
+### `history`
+Cross-session trace — "why is this file written this way". Shows change log, fresh gotchas, resolved gotchas, relevant decisions.
 
 ```json
-{
-  "action": "health",
-  "goal": "add password reset"
-}
+{ "action": "history", "target": "src/services/auth.ts" }
 ```
 
-**Returns:** Safety score, dimension breakdown, risk level, summary.
+Also injected automatically via `kuma hook pre-edit` before edits.
 
-#### `rollback`
-
-Rollback a specific change by ID from the change log.
+### `changes`
+View session change log.
 
 ```json
-{
-  "action": "rollback",
-  "target": "5"
-}
+{ "action": "changes" }
+{ "action": "changes", "since": 1722000000000 }
+{ "action": "changes", "target": "src/auth.ts" }
 ```
 
-**Returns:** Rollback result with restored file content.
-
-#### `researches`
-
-List all cached research scopes.
+### `rollback`
+Undo a change by change ID.
 
 ```json
-{
-  "action": "researches"
-}
+{ "action": "rollback", "target": "42" }
 ```
 
-**Returns:** List of cached research with scope, confidence, and age.
-
-#### `sync`
-
-Unified batch API — combines init + health + memory state in single roundtrip (~60-70% token savings).
-
-```json
-{
-  "action": "sync",
-  "goal": "add password reset",
-  "compact": false
-}
-```
-
-**Returns:** Session state, health score, graph stats, proactive memories.
-
-#### `visualize`
-
-Generate Mermaid knowledge graph diagrams.
-
-```json
-{
-  "action": "visualize",
-  "scope": "auth"
-}
-```
-
-**Returns:** Mermaid flowchart diagram of the knowledge graph.
-
-#### `digest`
-
+### `digest`
 Ultra-compact project briefing (<500 tokens). Fastest way to bootstrap context.
 
-```json
-{
-  "action": "digest"
-}
-```
-
-**Returns:** Compact summary: 3-layer memory status, overview, gotchas.
-
-#### `drift`
-
-Detect memory staleness & code drift between knowledge graph and filesystem.
+### `drift`
+Detect memory staleness & code drift.
 
 ```json
-{
-  "action": "drift"
-}
+{ "action": "drift" }
 ```
 
 **Returns:** Stale records, code drift warnings, freshness status.
+
+### `resume`
+Load previous session context (goal, progress, changes).
+
+```json
+{ "action": "resume" }
+```
 
 ---
 
 ## kuma_memory
 
-Decision recording, knowledge persistence, and graph maintenance.
+Decision recording, knowledge persistence, and gotcha tracking.
 
-### Actions
-
-#### `decision`
-
+### `decision`
 ADR-style decision recording.
 
 ```json
 {
   "action": "decision",
-  "decisionAction": "record",
-  "title": "Use JWT for password reset tokens",
+  "title": "Use JWT vs Session Cookies",
   "context": "Need stateless tokens that expire in 15min",
-  "rationale": "No session store needed, mobile-compatible",
-  "outcome": "Implemented JwtPasswordResetService"
+  "rationale": "JWT allows stateless verification across services without DB lookup",
+  "outcome": "Chose JWT with 15min expiry + refresh tokens"
 }
 ```
 
-Sub-actions: `record` (save decision), `template` (show template), `suggest` (detect scope and suggest recording).
-
-#### `mine`
-
-Mine historical decisions from git log and inline code comments (`HACK`, `FIXME`, `TODO`, `XXX`, `WARNING`).
+### `research_save`
+Save research findings to cache + graph.
 
 ```json
-{
-  "action": "mine",
-  "scope": "auth",
-  "since": "1 year",
-  "confirm": false
-}
+{ "action": "research_save", "scope": "auth" }
 ```
 
-Set `confirm: true` to confirm and record mined candidate decisions into the knowledge graph & decision log.
-
-#### `research_save`
-
-Save research results to graph + `.kuma/research/`.
+To pass pre-built record:
 
 ```json
-{
-  "action": "research_save",
-  "scope": "auth",
-  "content": "Auth flow uses JWT with refresh tokens",
-  "confidence": 0.85
-}
+{ "action": "research_save", "scope": "auth", "record": "{\"scope\":\"auth\",\"confidence\":0.9,\"entryPoints\":[\"AuthController.login\"],\"flow\":[\"POST /login → AuthController.login → AuthService.validate → UserRepository.findByEmail\"]}" }
 ```
 
-To pass a pre-built record:
+### `session`
+Session summary — goal, duration, recordings, modified files, unresolved issues.
 
 ```json
-{
-  "action": "research_save",
-  "record": "{\"scope\":\"auth\",\"confidence\":0.9,\"entryPoints\":[\"AuthController.login\"],\"flow\":[\"POST /login → AuthController.login → AuthService.validate → UserRepository.findByEmail\"]}"
-}
+{ "action": "session" }
 ```
 
-#### `session`
-
-Current session summary.
+### `search`
+Search memory + knowledge graph with impact analysis.
 
 ```json
-{
-  "action": "session",
-  "topic": "auth",
-  "compact": false
-}
+{ "action": "search", "query": "auth flow" }
 ```
 
-**Returns:** Modified files, failures, goal progress, tool call history.
-
-#### `heal`
-
-Self-heal knowledge graph.
+### `mine`
+Mine decisions from git log & comments.
 
 ```json
-{
-  "action": "heal",
-  "healAction": "check"
-}
+{ "action": "mine", "scope": "auth" }
 ```
 
-Sub-actions: `check` (scan for stale nodes), `heal` (auto-repair).
-
-#### `search`
-
-Search across memories + knowledge graph.
-
-```json
-{
-  "action": "search",
-  "query": "jwt token",
-  "scope": "auth",
-  "limit": 20
-}
-```
-
-#### `changes`
-
-View change log (alternative to `kuma_context` changes).
-
-```json
-{
-  "action": "changes",
-  "target": "src/auth.ts",
-  "since": 1722000000000
-}
-```
-
-#### `todo`
-
-Persistent todo CRUD with scope, dependencies, and success criteria.
-
-```json
-{
-  "action": "todo",
-  "title": "Refactor auth service",
-  "scope": "auth",
-  "description": "Split monolithic auth service into smaller modules",
-  "deps": "[\"Create UserService\"]",
-  "success_criteria": "All auth tests pass, auth.ts < 300 lines"
-}
-```
-
-**Returns:** Todo list or creation confirmation.
-
-#### `context`
-
-Inject context notes from external sources.
-
-```json
-{
-  "action": "context",
-  "source": "slack",
-  "content": "Per discussion in #engineering: we're moving to JWT for auth tokens",
-  "scope": "auth"
-}
-```
-
-#### `benchmark`
-
-Before/after metric capture & diff.
-
-```json
-{
-  "action": "benchmark",
-  "label": "phase-3",
-  "metrics": "{\"tsc_errors\": 245, \"test_count\": 120}"
-}
-```
-
-#### `decision_log`
-
-Living decision document with active/superseded/deprecated status tracking.
-
-```json
-{
-  "action": "decision_log",
-  "title": "Use JWT for auth",
-  "rationale": "Stateless, mobile-compatible",
-  "status": "active"
-}
-```
-
-#### `domain_rules`
-
-Layer 1 — Read/write business domain rules (Issue #17).
-
-```json
-{
-  "action": "domain_rules",
-  "content": "All password reset tokens expire in 15 minutes. Refresh tokens last 7 days."
-}
-```
-
-#### `arch_flow`
-
-Layer 2 — Read/write architecture flow maps (Issue #17).
-
-```json
-{
-  "action": "arch_flow",
-  "content": "Auth Flow: POST /login → AuthController.login → AuthService.validate → UserRepository.findByEmail"
-}
-```
-
-#### `gotcha`
-
-Layer 3 — Record/list known gotchas & anti-regression facts (Issue #17/#21).
+### `gotcha`
+Record bug/quirk (IMMEDIATELY when found).
 
 ```json
 {
   "action": "gotcha",
-  "scope": "src/auth.ts",
-  "content": "PasswordResetService uses synchronous bcrypt — will block event loop",
+  "scope": "path/to/file.ts",
+  "content": "useEffect causes infinite loop when state change triggers re-render",
   "status": "high",
-  "description": "Use bcrypt.hash() with async/await instead"
+  "description": "Use useCallback on the handler",
+  "trigger_command": "npm run build"
 }
 ```
 
-#### `layers`
+**Parameters:**
+- `scope` (required) — file path
+- `content` (required) — bug description
+- `status` — severity: `low`, `medium`, `high`, `critical`
+- `description` — workaround
+- `trigger_command` (I2) — command that triggers this gotcha (e.g. "npm run seed")
 
-Show all 3 memory layers summary.
+### `arch_flow`
+Record architecture flow (max 5 core files).
 
 ```json
 {
-  "action": "layers"
+  "action": "arch_flow",
+  "content": "domain: AuthFlow | hops: auth.ts → middleware.ts → route.ts | gotchas: rate-limit, token-expiry"
 }
 ```
 
-**Returns:** Summary of domain rules, architecture flows, and known gotchas.
+### `delete_node`
+Remove node + graph + table entries.
+
+```json
+{ "action": "delete_node", "target": "gotcha::auth.ts::useEffect infinite loop" }
+{ "action": "delete_node", "scope": "gotcha", "target": "42" }
+```
+
+### `clear`
+Wipe all nodes, edges, and gotchas from disk and memory.
+
+```json
+{ "action": "clear" }
+```
+
+### `goal_progress`
+Update goal completion percentage.
+
+```json
+{ "action": "goal_progress", "confidence": 75, "content": "Done with auth refactor" }
+```
+
+### `changes`
+View change log (alternative to `kuma_context changes`).
+
+```json
+{ "action": "changes" }
+```
 
 ---
 
 ## kuma_safety
 
-Safety checks, policy enforcement, and multi-agent coordination.
-
-### Actions
-
-#### `guard`
-
-Anti-pattern and drift detection.
+### `guard`
+Anti-pattern detection before risky edits.
 
 ```json
-{
-  "action": "guard",
-  "guardGoal": "refactor auth",
-  "guardCheck": "all"
-}
+{ "action": "guard", "guardGoal": "Refactoring auth middleware" }
 ```
 
-Check types: `anti-pattern`, `loop`, `drift`, `context`, `all`.
-
-#### `verify`
-
-Integrated auto-verification. Automatically detects project test runner and executes tests scoped to impact or file paths.
+### `verify`
+Auto-run scoped tests after edits. Rate-limited (30s cooldown).
 
 ```json
-{
-  "action": "verify",
-  "scope": "auth"
-}
+{ "action": "verify", "scope": "auth" }
 ```
 
-#### `check`
-
+### `check`
 Pre-execution safety check.
 
-```json
-{
-  "action": "check",
-  "actionCheck": "edit",
-  "filePath": "src/auth.ts",
-  "toolName": "native_edit"
-}
-```
-
-#### `audit`
-
-Query safety audit trail.
+### `audit`
+Query audit trail.
 
 ```json
-{
-  "action": "audit",
-  "limit": 20
-}
+{ "action": "audit", "toolName": "kuma_safety", "limit": 10 }
 ```
 
-#### `lock`
-
-Multi-agent file locking.
+### `health`
+Project health score (0-100). Optional/cosmetic.
 
 ```json
-{
-  "action": "lock",
-  "lockAction": "acquire",
-  "lockFilePath": "src/auth.ts",
-  "agentId": "agent-1"
-}
+{ "action": "health" }
 ```
 
-Lock actions: `acquire`, `release`, `list`, `clean`.
-
-#### `health`
-
-Project health score.
+### `security`
+Security leak scanner for credentials/tokens/secrets in code.
 
 ```json
-{
-  "action": "health"
-}
+{ "action": "security", "filePath": "src/controllers/user.ts" }
 ```
 
-#### `override`
-
-Logged safety bypass.
+### `gc`
+Garbage collection — deduplicate, remove orphans, vacuum.
 
 ```json
-{
-  "action": "override",
-  "toolName": "native_edit",
-  "reason": "Trusted minor refactor"
-}
+{ "action": "gc" }
 ```
 
-#### `security`
-
-Security leak scanner — regex-based credential/token detection.
+### `ast` / `validate`
+AST-based code validation.
 
 ```json
-{
-  "action": "security",
-  "filePath": "src/config.ts"
-}
+{ "action": "ast", "scope": "src/services/auth.ts" }
 ```
 
-#### `gc`
-
-Kuma garbage collection — orphan cleanup, VACUUM, index maintenance.
+### `checkpoint`
+Create atomic snapshot before risky refactors.
 
 ```json
-{
-  "action": "gc"
-}
+{ "action": "checkpoint", "label": "pre-refactor-auth" }
 ```
 
-#### `doctor`
-
-Kuma health diagnostics — DB integrity check, schema audit, process monitoring.
+### `rollback_label`
+Restore from a checkpoint by label.
 
 ```json
-{
-  "action": "doctor"
-}
+{ "action": "rollback_label", "label": "pre-refactor-auth" }
 ```
 
-#### `portability`
+### `checkpoint_list`
+List all available checkpoints.
 
-Check path portability — ensure no absolute paths in stored data.
+### `gotcha_staleness`
+Verify recorded gotchas still reference real files/symbols.
 
 ```json
-{
-  "action": "portability"
-}
+{ "action": "gotcha_staleness" }
 ```
-
-#### `gitignore`
-
-Auto-configure `.gitignore` to include `.kuma/`.
-
-```json
-{
-  "action": "gitignore"
-}
-```
-
-#### `clean`
-
-Purge scratch directory + reset drift warnings (Issue #10).
-
-```json
-{
-  "action": "clean"
-}
-```
-
-#### `policy`
-
-Policy-as-Code engine — evaluate commands against `.kuma/policy.yml` (Issue #24).
-
-```json
-{
-  "action": "policy",
-  "command": "rm -rf node_modules"
-}
-```
-
-**Returns:** Command verdict (allowed/blocked), blocked-by rule, warnings.
-
-#### `ast` / `validate`
-
-AST-based code validation — validate JS/TS code structure & patterns (Issue #22).
-
-```json
-{
-  "action": "ast",
-  "scope": "src/auth.ts"
-}
-```
-
-Or validate inline code:
-
-```json
-{
-  "action": "validate",
-  "command": "function foo() { return bar; }",
-  "scope": "example.ts"
-}
-```
-
-**Returns:** Validation findings with line numbers, severities, and descriptions.
 
 ---
 
-## Parameter Types
+## Auto-Inject Hooks (Roadmap F2)
 
-| Parameter | Type | Used In |
-|-----------|------|---------|
-| `action` | `enum` | All tools |
-| `scope` | `string?` | context, memory, safety |
-| `target` | `string?` | context, memory |
-| `goal` | `string?` | context, safety |
-| `query` | `string?` | memory |
-| `content` | `string?` | memory |
-| `record` | `string?` | memory |
-| `confidence` | `number (0-1)?` | memory |
-| `confirm` | `boolean?` | memory |
-| `decisionAction` | `enum?` | memory |
-| `title` | `string?` | memory |
-| `context` | `string?` | memory |
-| `rationale` | `string?` | memory |
-| `outcome` | `string?` | memory |
-| `healAction` | `enum?` | memory |
-| `topic` | `string?` | memory |
-| `guardGoal` | `string?` | safety |
-| `guardCheck` | `enum?` | safety |
-| `actionCheck` | `enum?` | safety |
-| `toolName` | `string?` | safety |
-| `reason` | `string?` | safety |
-| `lockAction` | `enum?` | safety |
-| `lockFilePath` | `string?` | safety |
-| `agentId` | `string?` | safety |
-| `since` | `number?` | context, memory |
-| `limit` | `number?` | memory, safety |
-| `compact` | `boolean?` | context, memory |
-| `force` | `boolean?` | safety (verify) |
-| `command` | `string?` | safety (check/policy/ast) |
-| `description` | `string?` | memory (todo/gotcha) |
-| `deps` | `string?` | memory (todo) |
-| `success_criteria` | `string?` | memory (todo) |
-| `source` | `string?` | memory (context) |
-| `label` | `string?` | memory (benchmark) |
-| `metrics` | `string?` | memory (benchmark) |
-| `labelB` | `string?` | memory (benchmark diff) |
-| `todoId` | `number?` | memory (todo status update) |
-| `status` | `string?` | memory (todo/gotcha/decision_log) |
-| `filePath` | `string?` | safety (check/lock/security) |
+Kuma auto-injects gotchas, decisions, and history before edits via:
+
+- **Claude Code:** `.claude/settings.json` — `kuma hook pre-edit` + `kuma hook pre-bash`
+- **Cursor:** `.cursor/rules/kuma-gotchas/*.mdc` — globs-based gotcha rules
+- **Other agents:** Prompt-level instructions in skill files (generated by `kuma init`)
+
+The hook is invisible — it returns `{}` for files with no gotchas, and injects relevant context only when available. No extra steps from the agent.

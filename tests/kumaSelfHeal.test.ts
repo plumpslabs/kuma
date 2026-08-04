@@ -29,9 +29,9 @@ jest.unstable_mockModule("node:child_process", () => ({
 }));
 
 const {
-  formatHealReport,
-  autoHeal,
   healOnQuery,
+  verifyGotchaStaleness,
+  formatGotchaStalenessReport,
 } = await import("../src/engine/kumaSelfHeal.js");
 
 describe("kumaSelfHeal", () => {
@@ -44,31 +44,11 @@ describe("kumaSelfHeal", () => {
       getAsObject: mockGetAsObject,
       free: jest.fn<any>(),
     });
+    mockDb.exec.mockReturnValue([]);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  describe("formatHealReport", () => {
-    test("returns clean message when no stale entries", () => {
-      const result = formatHealReport({ total: 0, healed: 0, missing: 0 });
-      expect(result).toContain("No stale entries");
-    });
-
-    test("includes heal stats", () => {
-      const result = formatHealReport({ total: 5, healed: 3, missing: 2 });
-      expect(result).toContain("5");
-      expect(result).toContain("3");
-      expect(result).toContain("2");
-    });
-
-    test("handles singular vs plural", () => {
-      const singular = formatHealReport({ total: 1, healed: 1, missing: 0 });
-      expect(singular).toContain("entry");
-      const plural = formatHealReport({ total: 2, healed: 1, missing: 1 });
-      expect(plural).toContain("entries");
-    });
   });
 
   describe("healOnQuery", () => {
@@ -99,12 +79,54 @@ describe("kumaSelfHeal", () => {
     });
   });
 
-  describe("autoHeal", () => {
-    test("returns zeros when no stale nodes", async () => {
-      mockGetAsObject.mockReturnValue(undefined);
-      mockExecSync.mockReturnValue(Buffer.from(""));
-      const result = await autoHeal();
-      expect(result).toEqual({ total: 0, healed: 0, missing: 0, cascadedEdges: 0, removed: 0 });
+  describe("verifyGotchaStaleness", () => {
+    test("returns empty when no gotcha nodes", async () => {
+      mockDb.exec.mockReturnValue([]);
+      const stale = await verifyGotchaStaleness();
+      expect(stale).toEqual([]);
+    });
+
+    test("flags gotchas whose file is missing", async () => {
+      mockDb.exec.mockReturnValue([{
+        columns: ["id", "metadata"],
+        values: [["g1", JSON.stringify({ file_path: "src/ghost.ts", description: "weird quirk" })]],
+      }]);
+      const stale = await verifyGotchaStaleness();
+      expect(stale).toEqual([{ gotchaId: "g1", file_path: "src/ghost.ts", issue: "file_missing" }]);
+    });
+
+    test("skips non-file paths", async () => {
+      mockDb.exec.mockReturnValue([{
+        columns: ["id", "metadata"],
+        values: [["g1", JSON.stringify({ file_path: "search::query", description: "weird" })]],
+      }]);
+      const stale = await verifyGotchaStaleness();
+      expect(stale).toEqual([]);
+    });
+
+    test("handles corrupt metadata gracefully", async () => {
+      mockDb.exec.mockReturnValue([{
+        columns: ["id", "metadata"],
+        values: [["g1", "{ not json"]],
+      }]);
+      const stale = await verifyGotchaStaleness();
+      expect(stale).toEqual([]);
+    });
+  });
+
+  describe("formatGotchaStalenessReport", () => {
+    test("clean message when nothing stale", () => {
+      const r = formatGotchaStalenessReport([]);
+      expect(r).toContain("All gotcha references are valid");
+    });
+
+    test("lists stale gotchas with file paths", () => {
+      const r = formatGotchaStalenessReport([
+        { gotchaId: "g1", file_path: "src/a.ts", issue: "file_missing" },
+      ]);
+      expect(r).toContain("g1");
+      expect(r).toContain("file missing");
+      expect(r).toContain("src/a.ts");
     });
   });
 });

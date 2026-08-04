@@ -6,9 +6,13 @@
 // legacy quirks. Integrates with kuma_safety check pipeline.
 // ============================================================
 
+import fs from "node:fs";
+import path from "node:path";
 import { sessionMemory } from "./sessionMemory.js";
 import { getDb, saveDb, rebuildFtsIndex } from "./kumaDb.js";
+import { getProjectRoot } from "../utils/pathValidator.js";
 import { getActiveGotchas, checkFileGotchas, appendToLayer } from "./domainRules.js";
+import { hashFileContent } from "./kumaInject.js";
 
 // ============================================================
 // GOTCHA TABLE — Structured storage alongside markdown file
@@ -26,11 +30,35 @@ async function ensureGotchasSchema(): Promise<void> {
       workaround TEXT,
       added_by TEXT DEFAULT 'agent',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      content_hash TEXT,
+      trigger_command TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active','resolved')),
+      last_verified_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_gotchas_file ON known_gotchas(file_path);
     CREATE INDEX IF NOT EXISTS idx_gotchas_severity ON known_gotchas(severity);
   `);
+
+  // F3/F3b (Roadmap): migrations for legacy DBs missing the newer columns
+  try {
+    const info = db.exec("PRAGMA table_info(known_gotchas)");
+    const cols = (info[0]?.values ?? []).map((v: unknown[]) => String(v[1]));
+    if (!cols.includes("content_hash")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN content_hash TEXT`);
+    }
+    if (!cols.includes("trigger_command")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN trigger_command TEXT`);
+    }
+    if (!cols.includes("status")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+    }
+    if (!cols.includes("last_verified_at")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN last_verified_at INTEGER`);
+    }
+  } catch { /* non-critical */ }
+
   saveDb();
 }
 
@@ -43,6 +71,8 @@ export interface GotchaEntry {
   description: string;
   severity?: "low" | "medium" | "high" | "critical";
   workaround?: string;
+  /** I2: optional command that triggers this gotcha (e.g. "npm run seed"). */
+  triggerCommand?: string;
 }
 
 /**
@@ -56,11 +86,16 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     const db = await getDb();
 
     const severity: "low" | "medium" | "high" | "critical" = entry.severity || "medium";
+
+    // F3: hash the file content when the gotcha is recorded, so freshness can be verified later
+    const contentHash = hashFileContent(entry.filePath);
+
     const formatted = [
       `### ${entry.filePath} — ${entry.description}`,
       `- **Issue**: ${entry.description}`,
       `- **Severity**: ${severity}`,
       entry.workaround ? `- **Workaround**: ${entry.workaround}` : "",
+      entry.triggerCommand ? `- **Trigger**: when running \`${entry.triggerCommand}\`` : "",
       `- **Added**: ${new Date().toISOString().split("T")[0]}`,
     ].filter(Boolean).join("\n");
 
@@ -78,16 +113,16 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     checkStmt.free();
 
     if (existingId !== null) {
-      // Update existing gotcha
+      // Update existing gotcha — also refresh the hash (the file may have changed/fixed)
       db.run(
-        `UPDATE known_gotchas SET severity = ?, workaround = ?, updated_at = strftime('%s','now') WHERE id = ?`,
-        [severity, entry.workaround || null, existingId]
+        `UPDATE known_gotchas SET severity = ?, workaround = ?, content_hash = ?, trigger_command = ?, status = 'active', updated_at = strftime('%s','now') WHERE id = ?`,
+        [severity, entry.workaround || null, contentHash, entry.triggerCommand || null, existingId]
       );
     } else {
       // Insert new gotcha
       db.run(
-        `INSERT INTO known_gotchas (file_path, description, severity, workaround) VALUES (?, ?, ?, ?)`,
-        [entry.filePath, entry.description, severity, entry.workaround || null]
+        `INSERT INTO known_gotchas (file_path, description, severity, workaround, content_hash, trigger_command) VALUES (?, ?, ?, ?, ?, ?)`,
+        [entry.filePath, entry.description, severity, entry.workaround || null, contentHash, entry.triggerCommand || null]
       );
     }
 
@@ -150,6 +185,7 @@ export async function listGotchas(params: {
       sql += " AND severity = ?";
       bind.push(params.severity);
     }
+    sql += " AND status = 'active'";
 
     sql += " ORDER BY severity DESC, created_at DESC LIMIT 50";
 
@@ -175,6 +211,7 @@ export async function listGotchas(params: {
           : g.severity === "medium" ? "🟡" : "🟢";
       lines.push(`${icon} [${g.severity}] ${g.file_path}`);
       lines.push(`   📝 ${g.description?.toString().substring(0, 100)}`);
+      if (g.trigger_command) lines.push(`   ⌨️ when running: \`${(g.trigger_command as string).substring(0, 80)}\``);
       if (g.workaround) lines.push(`   💡 ${(g.workaround as string).substring(0, 100)}`);
       lines.push("");
     }
@@ -293,5 +330,150 @@ export async function syncGotchasGraph(): Promise<{ created: number }> {
     return { created };
   } catch {
     return { created: 0 };
+  }
+}
+
+// ============================================================
+// I1 — GOTCHA LIFECYCLE (auto-resolve on verified fix)
+// ============================================================
+
+/**
+ * I1: mark gotchas as RESOLVED when verification passes for a scope
+ * AND the underlying file changed since the gotcha was recorded
+ * (content_hash mismatch → the code was modified, likely fixed).
+ * Returns the number of gotchas resolved.
+ */
+export async function resolveGotchasForScope(scope: string): Promise<{ resolved: number }> {
+  try {
+    await ensureGotchasSchema();
+    const db = await getDb();
+    const stmt = db.prepare(
+      `SELECT id, file_path, content_hash FROM known_gotchas
+       WHERE status = 'active' AND file_path LIKE ? AND content_hash IS NOT NULL`
+    );
+    stmt.bind([`%${scope}%`]);
+    const rows: Array<{ id: number; file_path: string; content_hash: string | null }> = [];
+    while (stmt.step()) rows.push(stmt.getAsObject() as any);
+    stmt.free();
+
+    let resolved = 0;
+    for (const r of rows) {
+      const current = hashFileContent(r.file_path);
+      // File changed since recording AND still exists → fix likely landed
+      if (current && current !== r.content_hash) {
+        db.run(
+          `UPDATE known_gotchas SET status = 'resolved', last_verified_at = strftime('%s','now') WHERE id = ?`,
+          [r.id]
+        );
+        resolved++;
+      }
+    }
+    if (resolved > 0) saveDb();
+    return { resolved };
+  } catch {
+    return { resolved: 0 };
+  }
+}
+
+// ============================================================
+// I2 — COMMAND-TRIGGER GOTCHAS
+// ============================================================
+
+/**
+ * I2: fetch active gotchas whose trigger_command matches a shell command
+ * (e.g. running "npm run seed" → gotchas about the seed script).
+ * Used by the Bash PreToolUse hook (`kuma hook pre-bash`).
+ */
+export async function getActiveGotchasForCommand(command: string): Promise<Array<{
+  filePath: string;
+  description: string;
+  severity: string;
+  workaround: string | null;
+  triggerCommand: string;
+}>> {
+  try {
+    await ensureGotchasSchema();
+    const db = await getDb();
+    const stmt = db.prepare(
+      `SELECT file_path, description, severity, workaround, trigger_command
+       FROM known_gotchas
+       WHERE status = 'active' AND trigger_command IS NOT NULL AND length(trigger_command) > 0
+       ORDER BY
+         CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+       LIMIT 30`
+    );
+    const rows: Array<Record<string, unknown>> = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+
+    const cmd = command.toLowerCase();
+    return rows
+      .filter((r) => {
+        const trigger = String(r.trigger_command || "").toLowerCase();
+        // Substring match both ways: "pnpm run seed --x" hits "npm run seed",
+        // and a bare "seed" trigger hits "npm run seed". No first-token guessing.
+        return cmd.includes(trigger) || trigger.includes(cmd);
+      })
+      .map((r) => ({
+        filePath: r.file_path as string,
+        description: r.description as string,
+        severity: r.severity as string,
+        workaround: (r.workaround as string | null) ?? null,
+        triggerCommand: r.trigger_command as string,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * I4: record a shadow-memory injection for metrics.
+ * Appends to an append-only JSONL file (.kuma/injections.jsonl) instead of the
+ * shared DB — the hook process must never do read-modify-write on kuma.db while
+ * the MCP server holds it (lost-update race). Append + fsync is atomic enough.
+ */
+export async function recordInjection(params: {
+  filePath?: string;
+  command?: string;
+  kind?: "edit" | "command";
+}): Promise<void> {
+  try {
+    const fp = path.join(getProjectRoot(), ".kuma", "injections.jsonl");
+    if (!fs.existsSync(path.dirname(fp))) fs.mkdirSync(path.dirname(fp), { recursive: true });
+    const line = JSON.stringify({
+      filePath: params.filePath || null,
+      command: params.command || null,
+      kind: params.kind || "edit",
+      savedMs: 5000, // conservative estimate: avoided re-research / re-discovery
+      at: Date.now(),
+    });
+    fs.appendFileSync(fp, line + "\n", "utf-8");
+  } catch { /* non-critical */ }
+}
+
+/**
+ * I4: aggregate injection metrics from the JSONL log within the last N hours.
+ */
+export function getInjectionStats(hours = 24): { count: number; savedMs: number } {
+  try {
+    const fp = path.join(getProjectRoot(), ".kuma", "injections.jsonl");
+    if (!fs.existsSync(fp)) return { count: 0, savedMs: 0 };
+    const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    const lines = fs.readFileSync(fp, "utf-8").split("\n");
+    let count = 0;
+    let savedMs = 0;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if ((entry.at || 0) >= cutoff) {
+          count++;
+          savedMs += Number(entry.savedMs) || 0;
+        }
+      } catch { /* skip corrupt line */ }
+    }
+    return { count, savedMs };
+  } catch {
+    return { count: 0, savedMs: 0 };
   }
 }

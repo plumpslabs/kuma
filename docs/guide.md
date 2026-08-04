@@ -58,11 +58,11 @@ kuma_context({ action: "research", scope: "auth" })
 ```
 
 This triggers the 5-step pipeline:
-1. Load research cache from `.kuma/research/auth.json`
+1. Load research cache from `.kuma/kuma.db` (`research_cache` table)
 2. Query knowledge graph for related nodes/edges
 3. Run impact analysis (references, tests, API routes)
 4. Lookup past decisions and known issues
-5. Safety check (policy, locks, risk level)
+5. Safety check (risk level)
 
 ### Step 3: Edit (Native Agent Tools)
 
@@ -87,7 +87,6 @@ Record new decisions or mine historical decisions from git history & comments:
 # Record a new decision
 kuma_memory({
   action: "decision",
-  decisionAction: "record",
   title: "Use JWT for password reset tokens",
   context: "Need stateless tokens that expire in 15min",
   rationale: "No session store needed, mobile-compatible",
@@ -129,7 +128,7 @@ The 5-step research pipeline is Kuma's core differentiator. Here's what happens 
 
 ### STEP 1: Load Cache
 
-Checks `.kuma/research/<scope>.json`:
+Checks the research cache in `.kuma/kuma.db` (`research_cache` table):
 - If found → compares content hash against current code
 - If stale (hash mismatch) → proceeds to STEP 2
 - If fresh → returns cached result with confidence score
@@ -158,10 +157,7 @@ Checks persistent memory:
 
 ### STEP 5: Safety Check
 
-Validates:
-- Policy compliance (`.kuma/policy.yml`)
-- Active locks on target files
-- Risk level assessment
+Validates risk level assessment.
 
 ---
 
@@ -184,53 +180,15 @@ The change log enables selective undo — revert specific modifications without 
 
 ---
 
-## Self-Healing
+## Auto-Inject (Roadmap F2)
 
-Kuma's knowledge graph automatically detects and repairs stale entries:
+Kuma auto-injects gotchas, decisions, and history before edits via:
+- **Claude Code:** `kuma hook pre-edit` + `kuma hook pre-bash` (PreToolUse hooks)
+- **Cursor:** `.cursor/rules/kuma-gotchas/*.mdc` (globs-based gotcha rules)
+- **Other agents:** Prompt-level instructions in skill files
 
-```bash
-# Check for stale entries
-kuma_memory({ action: "heal", healAction: "check" })
-
-# Auto-heal
-kuma_memory({ action: "heal" })
+Zero extra steps from the agent. Returns `{}` for files with no gotchas.
 ```
-
-What it checks:
-- **Content Hash**: Files changed since last scan
-- **All-Node Scan**: Files, functions, classes, interfaces, modules, tests
-- **Git-Aware Repair**: Tracks file renames via `git log --follow --diff-filter=R`
-- **Cascading Edges**: Stale node edges get weight reduced to near-zero
-- **Confidence Scoring**: Age + file existence + edge weight
-
----
-
-## New in This Release
-
-### 🧬 3-Layer Memory Engine (Issue #17)
-
-Kuma now has structured memory across 3 layers:
-
-| Layer | Action | What it stores |
-|-------|--------|----------------|
-| **Layer 1 — Domain Rules** | `kuma_memory({ action: 'domain_rules' })` | Business logic constraints, project invariants |
-| **Layer 2 — Architecture Flow** | `kuma_memory({ action: 'arch_flow' })` | Code flow maps, entry-to-exit paths |
-| **Layer 3 — Gotchas** | `kuma_memory({ action: 'gotcha' })` | Known pitfalls, workarounds, anti-regression facts |
-
-```bash
-# View all layers
-kuma_memory({ action: "layers" })
-```
-
-### 📜 Policy-as-Code Engine (Issue #24)
-
-Evaluate commands against `.kuma/policy.yml` before execution:
-
-```bash
-kuma_safety({ action: "policy", command: "rm -rf node_modules" })
-```
-
-**Returns:** Command verdict (allowed/blocked), blocked-by rule, warnings, and override instructions.
 
 ### 🔬 AST-Based Code Validation (Issue #22)
 
@@ -252,22 +210,6 @@ kuma_context({ action: "digest" })
 
 # Detect memory staleness & code drift
 kuma_context({ action: "drift" })
-```
-
-### 🎨 Knowledge Graph Visualizer (Issue #16)
-
-Generate interactive Mermaid diagrams:
-
-```bash
-kuma_context({ action: "visualize", scope: "auth" })
-```
-
-### 🔄 Unified Batch API (Issue #12)
-
-Combine init + health + memory in one call (~60-70% token savings):
-
-```bash
-kuma_context({ action: "sync", goal: "add password reset" })
 ```
 
 ---
@@ -294,36 +236,7 @@ kuma_safety({ action: "check", actionCheck: "edit", filePath: "auth.ts" })
 
 Validates:
 - Path is within project directory
-- File is not in `never_touch` policy
-- Command is not blocked
-- No active locks on the file
-
-### Safety Policy
-
-Configure via `.kuma/policy.yml`:
-
-```yaml
-never_touch:
-  - "src/config/*"
-  - "package.json"
-require_review:
-  - "src/database/*"
-  - "src/api/*"
-require_tests:
-  - "src/services/*"
-block_commands:
-  - "rm -rf"
-  - "git push --force"
-```
-
-### Multi-Agent Lock
-
-```bash
-kuma_safety({ action: "lock", lockAction: "acquire", lockFilePath: "auth.ts" })
-kuma_safety({ action: "lock", lockAction: "release", lockFilePath: "auth.ts" })
-kuma_safety({ action: "lock", lockAction: "list" })
-kuma_safety({ action: "lock", lockAction: "clean" })
-```
+- Risk level assessment```
 
 ### Security Leak Scanner
 
@@ -333,31 +246,11 @@ Scan files for leaked credentials/tokens:
 kuma_safety({ action: "security", filePath: "src/config.ts" })
 ```
 
-### Kuma Hygiene — GC, Doctor, Clean
+### Kuma Hygiene — GC
 
 ```bash
 # Garbage collection — orphan cleanup, VACUUM, index maintenance
 kuma_safety({ action: "gc" })
-
-# Health diagnostics — DB integrity, schema health, process monitoring
-kuma_safety({ action: "doctor" })
-
-# Purge scratch directory + reset drift warnings
-kuma_safety({ action: "clean" })
-```
-
----
-
-## config.json
-
-```json
-{
-  "collective": {
-    "url": "http://your-vps:3001",
-    "autoSync": true,
-    "syncIntervalMinutes": 60
-  }
-}
 ```
 
 ---
@@ -390,7 +283,8 @@ Studio runs at `http://localhost:3322` and provides:
 - **Knowledge Graph** — Interactive node-edge visualization with physics simulation
 - **Features** — High-level module tracking with owns edges to files
 - **Gotchas** — Known bugs and quirks with severity levels
-- **Health** — Project health scores over time
+- **Shadow Memory** — Injection count, estimated time saved, hook status
+- **Efficiency / Staleness / Activity** — Token-savings estimates, drift detection, session activity
 - **Efficiency** — Session metrics, time saved, verification pass rates
 - **Staleness** — Detection of stale nodes with missing file references
 - **Activity** — Agent usage intensity, success rates, and session history

@@ -26,6 +26,7 @@ const BOOTSTRAP = [
 ].join("\n");
 
 // OpenCode-specific bootstrap — uses kuma_kuma_* prefix
+// OpenCode-specific bootstrap — uses kuma_kuma_* prefix
 const BOOTSTRAP_OPENCODE = [
   "Kuma MCP tools are available (kuma_kuma_context, kuma_kuma_memory, kuma_kuma_safety).",
   "**Before coding, call `kuma_kuma_context({ action: \"init\" })`** to load project context.",
@@ -35,7 +36,7 @@ const BOOTSTRAP_OPENCODE = [
   "  2. *(edit/read using native tools)*",
   "  3. `changes` — review session",
   "",
-  "📝 **RECORD when needed (don't force it):**",
+  "📝 **RECORD when needed:**",
   "  • Found a bug? → `kuma_kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
   "  • Traced a flow? → `kuma_kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
   "  • Chose between options? → `kuma_kuma_memory({ action: \"decision\" })`",
@@ -165,7 +166,7 @@ function generateClineSkill(): string {
 
 /**
  * Antigravity CLI: `.agents/skills/kuma/SKILL.md`
- * Uses kuma_kuma_* prefix (same as OpenCode — .agents/ dir adds kuma_ prefix)
+ * Uses regular kuma_* prefix (no server prefix added).
  */
 function generateAntigravitySkill(): string {
   return [
@@ -174,11 +175,7 @@ function generateAntigravitySkill(): string {
     "description: Kuma MCP — safety toolkit for AI coding agents",
     "---",
     "",
-    "⚠️ **Antigravity platform note:** Tool names use `kuma_kuma_*` prefix",
-    "   (server name `kuma` + already-prefixed `kuma_context`).",
-    "   Example: `kuma_kuma_context({ action: \"init\" })`",
-    "",
-    BOOTSTRAP_OPENCODE,
+    BOOTSTRAP,
     "",
     "📖 Read `.kuma/init.md` for detailed rules.",
   ].join("\n");

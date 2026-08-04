@@ -219,11 +219,6 @@ export async function getDashboardData() {
       node_count: first(`SELECT COUNT(*) as c FROM nodes`, "c"),
       edge_count: first(`SELECT COUNT(*) as c FROM edges`, "c"),
       gotcha_count: first(`SELECT COUNT(*) as c FROM known_gotchas`, "c"),
-      feature_count: first(`SELECT COUNT(*) as c FROM nodes WHERE type = 'feature'`, "c"),
-      health_score: first(
-        `SELECT COALESCE((SELECT score FROM health_snapshots ORDER BY created_at DESC LIMIT 1), 0) as c`,
-        "c"
-      ),
     };
 
     const nodes = jsonRows(
@@ -238,9 +233,27 @@ export async function getDashboardData() {
     const features = jsonRows(
       `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'))) FROM (SELECT * FROM nodes WHERE type = 'feature' ORDER BY updated_at DESC)`
     );
-    const health = jsonRows(
-      `SELECT json_group_array(json_object('score',score,'summary',REPLACE(REPLACE(COALESCE(summary,''),char(10),' '),char(13),''),'risk_level',risk_level,'created_at',created_at)) FROM (SELECT * FROM health_snapshots ORDER BY created_at DESC LIMIT 10)`
-    );
+    // ── Injection metrics (I4 Roadmap): shadow memory time saved ──
+    let injectionCount = 0;
+    let injectionSavedMs = 0;
+    try {
+      const root = projectRootFromDb(dbPath);
+      const injPath = path.join(root, ".kuma", "injections.jsonl");
+      if (fs.existsSync(injPath)) {
+        const lines = fs.readFileSync(injPath, "utf-8").split("\n").filter(Boolean);
+        const now = Date.now();
+        for (const line of lines.slice(-200)) {
+          try {
+            const entry = JSON.parse(line);
+            const age = now - (entry.ts || 0);
+            if (age < 24 * 60 * 60 * 1000) {
+              injectionCount++;
+              injectionSavedMs += entry.saved_ms || 5000;
+            }
+          } catch {}
+        }
+      }
+    } catch {}
 
     // ── Efficiency (GAP 1): prove "the more you use it, the more efficient it gets" ──
     const sessionMetrics = readSessionMetrics(dbPath);
@@ -276,7 +289,7 @@ export async function getDashboardData() {
     // ── Staleness (GAP 4): surface stale assets before they become liabilities ──
     const staleness = detectStaleNodes(db, dbPath);
 
-    return { stats, nodes, edges, gotchas, features, health, efficiency, staleness };
+    return { stats, nodes, edges, gotchas, efficiency, staleness, injections: { count: injectionCount, savedMs: injectionSavedMs, savedFormatted: Math.round(injectionSavedMs / 60000) + ' min' } };
   } finally {
     db.close();
   }

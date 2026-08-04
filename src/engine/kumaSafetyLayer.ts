@@ -5,18 +5,15 @@
 // the filesystem. Every action passes through:
 //   ✅ Policy check (.kuma/policy.yml)
 //   ✅ Path validation (sandbox protection)
-//   ✅ Risk prediction (failures, locks, git state)
+//   ✅ Risk prediction (failures, git state)
 //   ✅ Audit trail (all operations logged)
 //   ✅ Proxy wrapper (all Kuma tools auto-checked)
 // ============================================================
 
-import { isLocked } from "./kumaLock.js";
 import { getDb } from "./kumaDb.js";
 import { sessionMemory } from "./sessionMemory.js";
 import { recordAudit } from "./safetyAudit.js";
-import { preCheck, type SafetyVerdict } from "./kumaSafetyProxy.js";
-
-export type { SafetyVerdict };
+import { preCheck } from "./kumaSafetyProxy.js";
 
 // ============================================================
 // SAFETY CHECK — Full safety check (used by kuma_safety tool)
@@ -45,19 +42,7 @@ export async function safetyCheck(
     const checks: SafetyCheckResult["checks"] = [];
     const db = await getDb();
 
-    // Check 1: File lock
-    if (filePath) {
-      const lock = isLocked(filePath);
-      checks.push({
-        name: "File Lock",
-        passed: !lock.locked,
-        detail: lock.locked
-          ? `🔒 Locked by ${lock.by} since ${new Date(lock.since!).toISOString()}`
-          : "✅ No lock conflict",
-      });
-    }
-
-    // Check 2: Git status
+    // Check 1: Git status
     let changes = 0;
     try {
       const summary = sessionMemory.getSummary();
@@ -72,7 +57,7 @@ export async function safetyCheck(
       checks.push({ name: "Uncommitted Changes", passed: true, detail: "✅ Could not check" });
     }
 
-    // Check 3: Safety score from proxy preCheck
+    // Check 2: Safety score from proxy preCheck
     if (action && filePath) {
       const verdict = await preCheck(action, { filePath: filePath as any, action } as any, {
         extractFilePath: (p) => p.filePath as string,
@@ -86,7 +71,7 @@ export async function safetyCheck(
       });
     }
 
-    // Check 4: Recent changes (from change_log)
+    // Check 3: Recent changes (from change_log)
     let recentChanges = 0;
     try {
       const changeResult = db.exec("SELECT COUNT(*) as c FROM change_log WHERE created_at > strftime('%s','now','-1 hour')");
@@ -98,7 +83,7 @@ export async function safetyCheck(
       detail: recentChanges > 0 ? `📝 ${recentChanges} change(s) in last hour` : "✅ No recent changes",
     });
 
-    // Check 5: Knowledge Graph Health
+    // Check 4: Knowledge Graph Health
     try {
       const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) || 0;
       checks.push({
@@ -206,40 +191,6 @@ export async function safetyCheck(
   } catch (err) {
     return `Error in safety check: ${err}`;
   }
-}
-
-// ============================================================
-// SAFETY OVERRIDE — Bypass safety for a specific operation
-// ============================================================
-
-/**
- * Temporarily override safety for a specific tool/target.
- * Recorded in audit trail for accountability.
- */
-export function safetyOverride(tool: string, reason?: string): string {
-  const entry = {
-    timestamp: Math.floor(Date.now() / 1000),
-    toolName: "safety_override",
-    action: "override",
-    riskLevel: "high" as const,
-    policyViolations: 1,
-    allowed: true,
-    durationMs: 0,
-    metadata: { override: true, tool, reason: reason || "No reason provided" },
-  };
-
-  // Fire-and-forget audit (non-blocking)
-  recordAudit(entry).catch(() => {});
-
-  return [
-    `⚠️ **Safety Override** — Bypassing safety for "${tool}"`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    "",
-    `📝 Reason: ${reason || "No reason provided"}`,
-    "",
-    "⚠️ This override is recorded in the safety audit trail.",
-    "⚠️ Use sparingly — overrides reduce project safety.",
-  ].join("\n");
 }
 
 // ============================================================

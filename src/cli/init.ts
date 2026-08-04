@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
+import { getActiveGotchas } from "../engine/domainRules.js";
 
 // ============================================================
 // KUMA INIT — Generate/append AI agent config files
@@ -93,7 +94,11 @@ const BOOTSTRAP_LINES = [
   "🔧 **ON-DEMAND (use when appropriate):**",
   "  • `kuma_safety({ action: \"guard\" })` — before risky ops (deletions, refactors)",
   "  • `kuma_context({ action: \"research\" })` — before editing unfamiliar code",
+  "  • `kuma_context({ action: \"history\", target: \"<file>\" })` — WHY this file is written this way",
   "  • `kuma_safety({ action: \"verify\" })` — after edits to confirm nothing broken",
+  "",
+  "🪄 **Auto-inject (Claude Code):** gotcha/decision/history injected automatically before edits",
+  "   via the PreToolUse hook — an empty hook output means the file has no gotchas.",
   "",
   "🗑️ **Delete/Clear:** `delete_node` | `clear`",
   "📖 Full rules: `.kuma/init.md`",
@@ -106,6 +111,10 @@ function claudeTemplate(): string {
     "# Kuma MCP",
     "",
     KUMA_CORE_INSTRUCTIONS,
+    "",
+    "🪄 **Auto-inject hook:** `.claude/settings.json` wires a PreToolUse hook",
+    "   (`kuma hook pre-edit`) — gotchas/decisions/history injected before edits.",
+    "   ⚠️ Requires `kuma` on PATH (global install). A silent hook means no gotchas for that file.",
     "",
     "📖 Rules: `.kuma/init.md`",
     "🧠 Memories: `.kuma/memories/*.md`",
@@ -305,35 +314,13 @@ function codewhaleTemplate(): string {
  * (Antigravity is in .agents/ dir, same as OpenCode — server name kuma + already-prefixed kuma_context)
  */
 function antigravitySkillTemplate(): string {
-  const antigravityLines = [
-    "Kuma MCP tools are installed (kuma_kuma_context, kuma_kuma_memory, kuma_kuma_safety).",
-    "**Before coding, call `kuma_kuma_context({ action: \"init\" })`** to load project context.",
-    "",
-    "⚡ **DEFAULT WORKFLOW (Lean — 3 steps):**",
-    "  1. `kuma_kuma_context({ action: \"init\" })` — Load context (START HERE)",
-    "  2. *(edit/read using native tools)*",
-    "  3. `kuma_kuma_context({ action: \"changes\" })` — Review session",
-    "",
-    "📝 **RECORD when needed (don't force it):**",
-    "  • Found a bug? → `kuma_kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
-    "  • Traced a flow? → `kuma_kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
-    "  • Chose between options? → `kuma_kuma_memory({ action: \"decision\" })`",
-    "",
-    "🔧 **ON-DEMAND:**",
-    "  • `kuma_kuma_safety({ action: \"guard\" })` — before risky ops",
-    "  • `kuma_kuma_context({ action: \"research\" })` — before editing unfamiliar code",
-    "  • `kuma_kuma_safety({ action: \"verify\" })` — after edits",
-    "",
-    "⚠️ **Antigravity note:** Tool names use `kuma_kuma_*` prefix.",
-    "",
-  ].join("\n");
   return [
     "---",
     "name: kuma-mcp",
     "description: Kuma MCP — .kuma/ is the single source of truth",
     "---",
     "",
-    antigravityLines,
+    KUMA_CORE_INSTRUCTIONS,
     "",
     "📖 Read `.kuma/init.md` for detailed rules.",
     "🧠 Memories: `.kuma/memories/*.md`",
@@ -372,7 +359,7 @@ export function generateInitMdContent(): string {
     "---",
     "",
     "> **Platform Tool Names:**",
-    "> • **OpenCode / Antigravity:** Use `kuma_kuma_*` prefix (e.g. `kuma_kuma_context({ action: \"init\" })`)",
+    "> • **OpenCode:** Use `kuma_kuma_*` prefix (e.g. `kuma_kuma_context({ action: \"init\" })`)",
     "> • **Other platforms:** Use `kuma_*` directly (e.g. `kuma_context({ action: \"init\" })`)",
     "",
     "---",
@@ -428,7 +415,7 @@ export function generateInitMdContent(): string {
     "",
     "**⚠️ decision format:**",
     "```",
-    "kuma_memory({ action: \"decision\", decisionAction: \"record\", title: \"...\", context: \"...\", rationale: \"...\", outcome: \"...\" })",
+    "kuma_memory({ action: \"decision\", title: \"...\", context: \"...\", rationale: \"...\", outcome: \"...\" })",
     "```",
     "- Required: `title` and `rationale`",
     "",
@@ -449,15 +436,16 @@ export function generateInitMdContent(): string {
     "",
     "| Action | Description |",
     "|--------|-------------|",
-    "| `init` | Load project brief, restore session |",
-    "| `research` | 5-step research pipeline |",
+    "| `init` | Lean project brief, restore session |",
+    "| `history` | Why is this file written this way (cross-session trace) |",
+    "| `flow` | Hash-verified derived flow cache (F13) |",
     "| `impact` | Analyze change effects |",
     "| `navigate` | Trace code flow |",
     "| `changes` | View session change log |",
-    "| `health` | Project health score 0-100 |",
     "| `digest` | Ultra-compact project briefing |",
     "| `drift` | Detect memory staleness |",
     "| `rollback` | Undo a change by change ID |",
+    "| `resume` | Load previous session context |",
     "",
     "### kuma_memory — Knowledge Recording",
     "",
@@ -468,8 +456,10 @@ export function generateInitMdContent(): string {
     "| `decision` | Record ADR / decision rationale |",
     "| `research_save` | Cache research findings |",
     "| `search` | Search knowledge graph |",
-    "| `session_mine` | Auto-extract insights from transcript |",
+    "| `session` | Session summary |",
+    "| `mine` | Mine decisions from git history |",
     "| `delete_node` | Remove node + graph + table entries |",
+    "| `goal_progress` | Track goal completion |",
     "",
     "### kuma_safety — Safety & Verification",
     "",
@@ -477,7 +467,12 @@ export function generateInitMdContent(): string {
     "|--------|-------------|",
     "| `guard` | Anti-pattern detection before edits |",
     "| `verify` | Auto-run scoped tests after edits |",
-    "| `gotcha_staleness` | Verify gotcha file references |",
+    "| `check` | Pre-execution safety check |",
+    "| `audit` | Query audit trail |",
+    "| `security` | Security leak scanner |",
+    "| `gc` | Garbage collection |",
+    "| `ast`/`validate` | AST-based code validation |",
+    "| `checkpoint` | Atomic snapshot before refactors |",
     "",
     "---",
     "",
@@ -940,210 +935,6 @@ function handleOpenclawSecondary(root: string, results: InitResult[]): void {
   }
 }
 
-/** Generate .kuma/quickref.md — simplified cheat sheet */
-function handleQuickrefGeneration(root: string, results: InitResult[]): void {
-  const quickrefPath = path.resolve(root, ".kuma/quickref.md");
-  const content = [
-    "# Kuma Quick Reference",
-    "",
-    "## Lean Mode (default — for speed)",
-    "1. `init` → edit → record (if needed)",
-    "",
-    "## Standard Mode (for safety)",
-    "1. `init` → `guard` → `research` → edit → `record` → `verify`",
-    "",
-    "## Full Mode (for complex changes)",
-    "1. `init` → `guard` → `research` → `impact` → edit → `record` → `verify` → `changes`",
-    "",
-    "## Record Rules",
-    "- **MUST:** decision, gotcha, arch_flow, research_save, feature",
-    "- **SKIP:** function, class, import, route",
-    "- **RELATIONSHIPS:** Every node MUST have edges. No orphan nodes.",
-    "",
-    "## Platform Tool Names",
-    "- OpenCode / Antigravity: `kuma_kuma_*`",
-    "- Others: `kuma_*`",
-    "",
-    "📖 Full: `.kuma/init.md` | 📊 Modes: `.kuma/MODE.md` | 🟢 Skip: `.kuma/SKIP_RULES.md`",
-    "_Generated by Kuma MCP - https://github.com/plumpslabs/kuma_",
-  ].join("\n");
-
-  try {
-    const kumaDir = path.dirname(quickrefPath);
-    if (!fs.existsSync(kumaDir)) fs.mkdirSync(kumaDir, { recursive: true });
-
-    if (fs.existsSync(quickrefPath)) {
-      const existing = fs.readFileSync(quickrefPath, "utf-8");
-      if (existing.includes("_Generated by Kuma MCP_")) {
-        results.push({ type: "claude", filePath: ".kuma/quickref.md", action: "skipped" });
-        return;
-      }
-    }
-    fs.writeFileSync(quickrefPath, content, "utf-8");
-    results.push({ type: "claude", filePath: ".kuma/quickref.md", action: "created" });
-  } catch (err) {
-    results.push({
-      type: "claude",
-      filePath: ".kuma/quickref.md",
-      action: "error",
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-/** Generate .kuma/MODE.md */
-function handleModeMdGeneration(root: string, results: InitResult[]): void {
-  const filePath = path.resolve(root, ".kuma/MODE.md");
-  const content = [
-    "# Adaptive Mode Selector",
-    "",
-    "## Mode Definitions",
-    "",
-    "| Mode | When to Use | Token Cost | Steps |",
-    "|------|-------------|------------|-------|",
-    "| **Lean** (default) | Small fixes, familiar code, hotfixes, < 3 files | ~100 | 3 |",
-    "| **Standard** | New features, unfamiliar modules, 3-10 files | ~300 | 5 |",
-    "| **Full** | Cross-module refactors, architecture changes, > 10 files | ~500 | 7 |",
-    "",
-    "## Auto-Detection Rules",
-    "",
-    "```",
-    "IF file_count < 3 AND area_familiar == true:",
-    "  mode = \"lean\"",
-    "ELSE IF file_count <= 10 OR area_familiar == false:",
-    "  mode = \"standard\"",
-    "ELSE IF file_count > 10 OR cross_module == true:",
-    "  mode = \"full\"",
-    "```",
-    "",
-    "## Mode Behaviors",
-    "",
-    "### Lean Mode (Default)",
-    "- Skip: guard, research, verify, changes",
-    "- Record: only if decision/gotcha explicit",
-    "- Focus: speed, minimal overhead",
-    "",
-    "### Standard Mode",
-    "- Include: guard (before unfamiliar), research (before edit)",
-    "- Record: decision, gotcha, arch_flow (if complex)",
-    "- Focus: safety + knowledge capture",
-    "",
-    "### Full Mode",
-    "- Include: all steps including impact, changes",
-    "- Record: everything valuable",
-    "- Focus: completeness, audit trail",
-    "",
-    "_Generated by Kuma MCP - https://github.com/plumpslabs/kuma_",
-  ].join("\n");
-
-  try {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, content, "utf-8");
-      results.push({ type: "claude", filePath: ".kuma/MODE.md", action: "created" });
-    }
-  } catch (err) {
-    results.push({ type: "claude", filePath: ".kuma/MODE.md", action: "error", error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-/** Generate .kuma/SKIP_RULES.md */
-function handleSkipRulesMdGeneration(root: string, results: InitResult[]): void {
-  const filePath = path.resolve(root, ".kuma/SKIP_RULES.md");
-  const content = [
-    "# Skip Rules — What NOT to Record",
-    "",
-    "## 🟢 NEVER Record (grep/glob is faster)",
-    "",
-    "| What | Why Skip | Better Tool |",
-    "|------|----------|-------------|",
-    "| Function definitions | `grep funcName(` | Grep |",
-    "| Class definitions | `grep class ClassName` | Grep |",
-    "| Import statements | Read import block | Read |",
-    "| Component definitions | `glob **/*Component*` | Glob |",
-    "| Route definitions | Check router file | Read |",
-    "| Type/interface definitions | `grep interface TypeName` | Grep |",
-    "| Variable/const declarations | `grep const varName` | Grep |",
-    "| Test file locations | `glob **/*.test.*` | Glob |",
-    "",
-    "## 🔴 ALWAYS Record (high value)",
-    "",
-    "| What | Why Record | Tool |",
-    "|------|------------|------|",
-    "| Architecture decisions with rationale | Preserves context | `decision` |",
-    "| Bugs/quirks found and fixed | Prevents re-discovery | `gotcha` |",
-    "| Cross-module flow paths | Saves 5-10 files next session | `arch_flow` |",
-    "| Business rules discovered | Domain knowledge | `domain_rules` |",
-    "",
-    "## 🟡 Record ONLY If Complex",
-    "",
-    "| What | Condition | Tool |",
-    "|------|-----------|------|",
-    "| Research findings | Multi-file exploration (> 3 files) | `research_save` |",
-    "| Architecture flow | Cross-service or > 3 hops | `arch_flow` |",
-    "| Feature definition | High-level feature with owns edges | `feature` |",
-    "",
-    "_Generated by Kuma MCP - https://github.com/plumpslabs/kuma_",
-  ].join("\n");
-
-  try {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, content, "utf-8");
-      results.push({ type: "claude", filePath: ".kuma/SKIP_RULES.md", action: "created" });
-    }
-  } catch (err) {
-    results.push({ type: "claude", filePath: ".kuma/SKIP_RULES.md", action: "error", error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-/** Generate .kuma/STALENESS.md */
-function handleStalenessMdGeneration(root: string, results: InitResult[]): void {
-  const filePath = path.resolve(root, ".kuma/STALENESS.md");
-  const content = [
-    "# Auto-Staleness Detection",
-    "",
-    "## Staleness Signals",
-    "",
-    "| Signal | Detection | Action |",
-    "|--------|-----------|--------|",
-    "| File modified after save | Compare file mtime vs research_save timestamp | Mark STALE, skip cache |",
-    "| Git commit touches file | `git log --since` on researched files | Mark STALE, warn |",
-    "| Age > 7 days | Current time - research_save timestamp | Warn: \"Cache may be stale\" |",
-    "| Age > 30 days | Current time - research_save timestamp | Auto-invalidate, re-read |",
-    "",
-    "## Recovery Protocol",
-    "",
-    "```",
-    "ON stale_detected:",
-    "  1. Skip cached data",
-    "  2. Re-read file from disk",
-    "  3. Update research_save timestamp",
-    "  4. Continue with fresh data",
-    "",
-    "ON search_conflict:",
-    "  1. Prefer recent research (newer timestamp)",
-    "  2. If same age, prefer live file over cache",
-    "  3. Log conflict for review",
-    "```",
-    "",
-    "_Generated by Kuma MCP - https://github.com/plumpslabs/kuma_",
-  ].join("\n");
-
-  try {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, content, "utf-8");
-      results.push({ type: "claude", filePath: ".kuma/STALENESS.md", action: "created" });
-    }
-  } catch (err) {
-    results.push({ type: "claude", filePath: ".kuma/STALENESS.md", action: "error", error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
 /** Generate .kuma/init.md — behavioral rules, single source of truth (no duplicates) */
 function handleInitMdGeneration(root: string, results: InitResult[]): void {
   const initMdPath = path.resolve(root, ".kuma/init.md");
@@ -1175,11 +966,6 @@ function handleInitMdGeneration(root: string, results: InitResult[]): void {
     });
   }
 
-  // Always generate quickref.md, MODE.md, SKIP_RULES.md, STALENESS.md alongside init.md
-  handleQuickrefGeneration(root, results);
-  handleModeMdGeneration(root, results);
-  handleSkipRulesMdGeneration(root, results);
-  handleStalenessMdGeneration(root, results);
 }
 
 /** Generate CodeWhale .codewhale/mcp.json as secondary file */
@@ -1225,6 +1011,134 @@ export interface InitOptions {
   types: ConfigType[];
   projectRoot?: string;
   skipExisting?: boolean;
+}
+
+/**
+ * Claude Code secondary: write/merge `.claude/settings.json` with PreToolUse hooks
+ * (Roadmap F2 — auto-inject shadow memory before every Edit/Write/MultiEdit).
+ * Merges with existing settings (hooks never overwrite other keys).
+ */
+function handleClaudeSecondary(root: string, results: InitResult[]): void {
+  const settingsPath = path.resolve(root, ".claude", "settings.json");
+  const hookBlock = {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Edit|Write|MultiEdit|NotebookEdit",
+          hooks: [{ type: "command", command: "kuma hook pre-edit" }],
+        },
+        {
+          matcher: "Bash",
+          hooks: [{ type: "command", command: "kuma hook pre-bash" }],
+        },
+      ],
+    },
+  };
+
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const existing = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      const merged = {
+        ...existing,
+        hooks: {
+          ...(existing.hooks || {}),
+          ...hookBlock.hooks,
+        },
+      };
+      // Avoid duplicate matchers — replace existing hooks with the same matcher
+      const matchers = new Set((merged.hooks.PreToolUse || []).map((h: { matcher: string }) => h.matcher));
+      for (const entry of hookBlock.hooks.PreToolUse) {
+        if (!matchers.has(entry.matcher)) {
+          merged.hooks.PreToolUse = [...(merged.hooks.PreToolUse || []), entry];
+          matchers.add(entry.matcher);
+        }
+      }
+      fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+      results.push({ type: "claude", filePath: ".claude/settings.json", action: "appended" });
+    } else {
+      const dir = path.dirname(settingsPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(hookBlock, null, 2) + "\n", "utf-8");
+      results.push({ type: "claude", filePath: ".claude/settings.json", action: "created" });
+    }
+  } catch (err) {
+    results.push({
+      type: "claude",
+      filePath: ".claude/settings.json",
+      action: "error",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * I7 (Roadmap): generate Cursor globs-based rules for active high/critical
+ * gotchas. Cursor auto-applies a .mdc rule when a matching file is opened,
+ * giving gotcha injection on Cursor without PreToolUse hooks.
+ * Regenerates the whole rules dir each run (idempotent, safe to re-run).
+ */
+function handleCursorGotchaRules(root: string, results: InitResult[]): void {
+  const rulesDir = path.resolve(root, ".cursor", "rules", "kuma-gotchas");
+  try {
+    // 1. Gather active gotchas from the markdown layer (cheap, no DB side effects)
+    let gotchas: Array<{ filePath: string; description: string; severity: string }> = [];
+    try {
+      gotchas = getActiveGotchas().filter((g) => g.severity === "high" || g.severity === "critical");
+    } catch { /* no markdown layer yet */ }
+
+    // 2. Regenerate only the .mdc files (never wipe user files in the dir)
+    if (fs.existsSync(rulesDir)) {
+      for (const f of fs.readdirSync(rulesDir)) {
+        if (f.endsWith(".mdc")) {
+          try { fs.rmSync(path.join(rulesDir, f), { force: true }); } catch { /* non-critical */ }
+        }
+      }
+    }
+    if (gotchas.length === 0) {
+      results.push({ type: "cursor", filePath: ".cursor/rules/kuma-gotchas/", action: "skipped" });
+      return;
+    }
+    fs.mkdirSync(rulesDir, { recursive: true });
+
+    const seen = new Set<string>();
+    let created = 0;
+    for (const g of gotchas) {
+      const slug = g.filePath
+        .replace(/[^a-zA-Z0-9._-]/g, "-")
+        .replace(/\.(ts|js|tsx|jsx|py|go|rs|java|rb|php)$/i, "")
+        .slice(0, 60);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      const md = [
+        "---",
+        `description: "KUMA gotcha — ${g.description.substring(0, 80)}"`,
+        `globs: ["**/${g.filePath}"]`,
+        "---",
+        "",
+        `## ⚠️ Known gotcha (auto-generated by Kuma)`,
+        "",
+        g.description,
+        "",
+        "Check active gotchas before editing:",
+        "`kuma_context({ action: 'history', target: '<file>' })`",
+        "",
+      ].join("\n");
+      fs.writeFileSync(path.join(rulesDir, `${slug}.mdc`), md, "utf-8");
+      created++;
+    }
+    results.push({
+      type: "cursor",
+      filePath: `.cursor/rules/kuma-gotchas/ (${created} rule(s))`,
+      action: created > 0 ? "created" : "skipped",
+    });
+  } catch (err) {
+    results.push({
+      type: "cursor",
+      filePath: ".cursor/rules/kuma-gotchas/",
+      action: "error",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export function runInit(options: InitOptions): InitResult[] {
@@ -1336,6 +1250,17 @@ export function runInit(options: InitOptions): InitResult[] {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // Claude Code secondary: PreToolUse hooks (F2 auto-inject) — called AFTER the loop
+  // so it runs even when CLAUDE.md is skipped (already present / skip-existing).
+  if (selectedSet.has("claude")) {
+    handleClaudeSecondary(root, results);
+  }
+
+  // I7: Cursor globs-based gotcha rules — auto-apply when a gotcha file is open
+  if (selectedSet.has("cursor")) {
+    handleCursorGotchaRules(root, results);
   }
 
   return results;

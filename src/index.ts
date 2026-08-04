@@ -36,6 +36,8 @@ Usage:
   npx @plumpslabs/kuma studio        Start Kuma Studio web dashboard (knowledge graph visualizer)
   npx @plumpslabs/kuma init --legacy  Bulk-onboard an existing (legacy) codebase
   npx @plumpslabs/kuma init --help  Show this help
+  npx @plumpslabs/kuma hook pre-edit  Claude Code PreToolUse hook — inject gotcha/decision/history before edits
+  npx @plumpslabs/kuma hook pre-bash   Claude Code PreToolUse hook — inject command-triggered gotchas before Bash
 
 Available config files:
   --claude     CLAUDE.md                    (Claude Code)
@@ -198,15 +200,94 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (args[0] === "--hook") {
-    // Git hook mode: harvest recent commit into knowledge graph
-    const hookType = args[1] || "post-commit";
-    if (hookType === "post-commit") {
-      try {
-        const { harvestGitHistory } = await import("./engine/kumaGitHarvester.js");
-        await harvestGitHistory({ commitCount: 1 });
-      } catch {}
+  // ============================================================
+  // CLI MODE: kuma hook pre-edit — Claude Code PreToolUse hook (F2)
+  // Runs automatically BEFORE every Edit/Write/MultiEdit via
+  // .claude/settings.json. Reads the hook JSON from stdin → injects
+  // fresh gotchas + decisions + trace (shadow memory).
+  // Pipeline: I5 dedupe → I3 loop auto-capture → I4 metrics.
+  // Output: {} when nothing is relevant (anti-noise), or additionalContext.
+  // ============================================================
+  if (args[0] === "hook" && args[1] === "pre-edit") {
+    try {
+      const stdin = await readStdin();
+      const {
+        parseHookInput,
+        getRelevantContext,
+        buildHookResponse,
+        checkInjectDedupe,
+        trackFileEditLoop,
+      } = await import("./engine/kumaInject.js");
+      const hook = parseHookInput(stdin);
+
+      if (hook.filePaths.length === 0) {
+        process.stdout.write("{}");
+        process.exit(0);
+      }
+
+      // Context for the touched file (first file; MultiEdit stays a single
+      // injection so the payload stays under the token budget)
+      const target = hook.filePaths[0];
+
+      // I3: repeated edits to the same file → auto-capture a low-severity gotcha.
+      // Runs BEFORE dedupe so every edit counts toward the loop signal.
+      await trackFileEditLoop(target);
+
+      // I5: don't re-inject the same file within the dedupe window
+      if (!checkInjectDedupe(target)) {
+        process.stdout.write("{}");
+        process.exit(0);
+      }
+
+      const context = await getRelevantContext(target, hook.goal);
+      if (context.trim()) {
+        // I4: record the injection for north-star metrics
+        try {
+          const { recordInjection } = await import("./engine/kumaGotchas.js");
+          await recordInjection({ filePath: target, kind: "edit" });
+        } catch { /* non-critical */ }
+      }
+      process.stdout.write(buildHookResponse(context));
+    } catch {
+      process.stdout.write("{}");
     }
+    process.exit(0);
+  }
+
+  // ============================================================
+  // CLI MODE: kuma hook pre-bash — Claude Code PreToolUse hook (I2)
+  // Runs BEFORE every Bash tool call. Injects gotchas whose
+  // trigger_command matches the command about to run (seed/migrate/build).
+  // ============================================================
+  if (args[0] === "hook" && args[1] === "pre-bash") {
+    try {
+      const stdin = await readStdin();
+      const { getCommandContext, buildHookResponse } = await import("./engine/kumaInject.js");
+      const data = JSON.parse(stdin || "{}");
+      const command =
+        (data && typeof data === "object" && data.tool_input && typeof data.tool_input.command === "string")
+          ? data.tool_input.command
+          : "";
+      if (!command.trim()) {
+        process.stdout.write("{}");
+        process.exit(0);
+      }
+      const context = await getCommandContext(command);
+      if (context.trim()) {
+        try {
+          const { recordInjection } = await import("./engine/kumaGotchas.js");
+          await recordInjection({ command, kind: "command" });
+        } catch { /* non-critical */ }
+      }
+      process.stdout.write(buildHookResponse(context));
+    } catch {
+      process.stdout.write("{}");
+    }
+    process.exit(0);
+  }
+
+  if (args[0] === "--hook") {
+    // Git hook mode — no longer auto-harvests (removed: gimmic)
     process.exit(0);
   }
 
@@ -227,19 +308,6 @@ async function main(): Promise<void> {
     // decisions/gotchas, inline markers → gotchas, feature graph,
     // architecture digest. All in one command.
     // ============================================================
-    if (flags.includes("--legacy")) {
-      try {
-        const { runLegacyOnboarding } = await import("./engine/kumaLegacyOnboard.js");
-        console.error("🐻 Kuma Legacy Onboarding — making your existing codebase agent-ready...");
-        const report = await runLegacyOnboarding();
-        console.log(report);
-      } catch (err) {
-        console.error(`❌ Legacy onboarding failed: ${err}`);
-        process.exit(1);
-      }
-      process.exit(0);
-    }
-
     const requestedFlags = flags.filter((f) => f.startsWith("--"));
     let selectedTypes: ConfigType[];
 
@@ -459,16 +527,7 @@ async function main(): Promise<void> {
         console.error(`[${SERVER_NAME}] ⚠️ Session DB record: ${err}`);
       }
 
-      // 5. ISSUE #16: Auto-capture — install git hooks for passive graph updates
-      try {
-        const { installGitHook } = await import("./engine/kumaGitHarvester.js");
-        const hookResult = installGitHook();
-        console.error(`[${SERVER_NAME}] ${hookResult}`);
-      } catch (err) {
-        console.error(`[${SERVER_NAME}] ⚠️ Git hook setup: ${err}`);
-      }
-
-      // 6. ISSUE #16: Pre-warm search vector cache
+      // 5. Pre-warm search vector cache
       try {
         const { buildSearchVectors } = await import("./engine/kumaSearch.js");
         const vectors = await buildSearchVectors();
@@ -545,6 +604,26 @@ async function main(): Promise<void> {
  * Interactive prompt: ask user which config files to generate.
  * Uses Node.js readline for robust input handling.
  */
+/**
+ * Reads the entire stdin (Claude Code hook JSON).
+ * Includes a safety timeout so the hook can never hang.
+ */
+function readStdin(): Promise<string> {
+  return new Promise((resolve) => {
+    let data = "";
+    process.stdin.setEncoding("utf-8");
+    const done = (): void => resolve(data);
+    process.stdin.on("data", (chunk: string) => {
+      data += chunk;
+    });
+    process.stdin.on("end", done);
+    process.stdin.on("error", done);
+    // Safety: never hang for more than 2 seconds
+    const timer = setTimeout(done, 2000);
+    timer.unref?.();
+  });
+}
+
 function interactiveSelect(): Promise<ConfigType[]> {
   const labels = [
     { type: "claude" as ConfigType, label: "1) Claude Code (CLAUDE.md)" },
