@@ -220,7 +220,7 @@ function computeScopeHash(scope: string): string | null {
 
 /**
  * Mark stale records in the database with metadata flags.
- * Called during kuma_context({ action: 'sync' }) or kuma_bootstrap().
+ * Called during kuma_bootstrap().
  */
 export async function flagStaleRecords(): Promise<{ flagged: number; total: number }> {
   const staleRecords = await detectDrift();

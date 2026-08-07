@@ -5,7 +5,7 @@ import { handleContext, handleMemory, handleSafety } from "./engine/kumaRouter.j
 import { ensureInitialized } from "./engine/kumaAutoInit.js";
 
 // ============================================================
-// NAMESPACE NORMALIZER — Pilar 2
+// NAMESPACE NORMALIZER
 // ============================================================
 // Resolves tool name aliases so MCP clients that add prefixes
 // (e.g., kuma_kuma_context) still work seamlessly.
@@ -34,23 +34,33 @@ export function resolveToolName(name: string): string {
   return TOOL_ALIASES[name] || name;
 }
 
+/**
+ * Core actions are the 6 high-value entry points agents should use.
+ * Everything else exists for power users / maintenance and is marked internal.
+ */
+const CORE_NOTE = "\n\nCORE ACTIONS (use these): ";
+
 export function registerAllTools(server: McpServer): void {
   // ============================================================
   // kuma_context — Context & Understanding
   // ============================================================
   server.tool(
     "kuma_context",
-    "**Call FIRST every session.** Understand your project before making changes.\n\nWORKFLOW:\n• STEP 1 (ALWAYS): `init` — lean project brief + session restore (<500 tokens)\n• During edits: hooks (`kuma hook pre-edit` / `pre-bash`) auto-inject gotchas, decisions & history — zero extra steps\n• Editing an unfamiliar file: `history` — why is this file written this way (cross-session trace)\n• STEP 8 (END of session): `changes` — review what you modified\n\nOther actions: flow (hash-verified derived flow cache), impact (analyze changes), digest (compact briefing), drift (detect staleness), rollback (undo a change).",
+    "Context & memory recall. Call FIRST each session. Lean — each call returns only what you need." +
+      CORE_NOTE +
+      "`init` (start of session: project brief + session state), `research` (before editing unfamiliar code), `history` (why is this file written this way). Other actions are internal: flow, impact, navigate, digest, drift, rollback, changes, resume.",
     {
-      action: z.enum(["init", "research", "impact", "navigate", "flow", "history", "changes", "rollback", "digest", "drift", "resume"]).describe("Action: init=lean project brief, research=research pipeline, impact=analyze change effects, navigate=trace code flow, flow=hash-verified derived flow cache (F13), history=why is this file written this way (cross-session trace + fresh gotchas), changes=view change log, rollback=undo a change by ID, digest=ultra-compact project briefing, drift=detect memory staleness, resume=load previous session context"),
+      action: z.enum(["init", "research", "impact", "navigate", "flow", "history", "changes", "rollback", "digest", "drift", "resume"]).describe(
+        "init=project brief + session restore (CORE), research=research pipeline (CORE), history=file rationale + fresh gotchas (CORE); internal (avoid unless needed): impact, navigate, flow, changes, rollback, digest, drift, resume"
+      ),
       scope: z.string().optional().describe("Research scope for research action"),
-      target: z.string().optional().describe("Target symbol/file for impact/navigate/changes"),
+      target: z.string().optional().describe("Target symbol/file for impact/navigate/changes/history"),
       goal: z.string().optional().describe("Current goal (for init)"),
       since: z.number().optional().describe("Unix timestamp filter for changes"),
     },
     async (params) => {
       try {
-        // Pilar 1: Auto-init on first call
+        // Auto-init on first call
         await ensureInitialized();
 
         const text = await handleContext({
@@ -72,11 +82,15 @@ export function registerAllTools(server: McpServer): void {
   // ============================================================
   server.tool(
     "kuma_memory",
-    "**Call after research/editing** (including research-only). Record what matters, skip what doesn't.\n\n🔴 MUST RECORD — High Impact (saves agent time next session):\n• STEP 5: `research_save` — after exploring area (creates search cache).\n• STEP 6: `gotcha` — IMMEDIATELY when you discover bugs/quirks. No re-research.\n• STEP 7: `arch_flow` — AFTER tracing COMPLETE flow (max 5 core files).\n• STEP 8: `decision` — IMMEDIATELY when choosing between options. Preserves rationale.\n\n🟢 SKIP using MCP (agent native tools are faster):\n• Function/class nodes → grep\n• Component/route nodes → glob or check directly\n• Import edges → read imports directly\n• Visual graph → for humans, not AI agents\n\nOther actions: session, search, changes.",
+    "Persistent knowledge. Record what matters, skip what doesn't. This is what saves time in future sessions. Don't record what grep/glob answers faster (functions, imports, types, components)." +
+      CORE_NOTE +
+      "`gotcha` (IMMEDIATELY when you find a bug/quirk), `decision` (when choosing between options), `arch_flow` (after tracing a complete flow, max 5 core files), `research_save` (after exploring an area). Other actions are internal: session, search, changes, mine, delete_node, clear, goal_progress.",
     {
-      action: z.enum(["decision", "mine", "research_save", "session", "search", "changes", "arch_flow", "gotcha", "delete_node", "clear", "goal_progress"]).describe("Memory action: decision=ADR, mine=mine git log, research_save=save findings, session=summary, search=search memory + graph, changes=change log, arch_flow=record architecture flow, gotcha=record bug/quirk, delete_node=delete node/gotcha, clear=wipe all nodes, goal_progress=update goal progress"),
+      action: z.enum(["decision", "mine", "research_save", "session", "search", "changes", "arch_flow", "gotcha", "delete_node", "clear", "goal_progress"]).describe(
+        "gotcha=record bug/quirk (CORE), decision=ADR (CORE), arch_flow=record architecture flow (CORE), research_save=save findings (CORE); internal (avoid unless needed): mine, session, search, changes, delete_node, clear, goal_progress"
+      ),
       scope: z.string().optional().describe("Scope for research_save/search/mine — or file path for gotcha/delete_node"),
-      trigger_command: z.string().optional().describe("Gotcha trigger: shell command that hits this gotcha (e.g. 'npm run seed'). Injected by the Bash PreToolUse hook"),
+      trigger_command: z.string().optional().describe("Gotcha trigger: shell command that hits this gotcha. Injected by the Bash PreToolUse hook"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / gotcha description / arch_flow record"),
       record: z.string().optional().describe("JSON record string for research_save"),
@@ -86,8 +100,8 @@ export function registerAllTools(server: McpServer): void {
       context: z.string().optional().describe("Decision context"),
       rationale: z.string().optional().describe("Decision rationale (required for decision)"),
       outcome: z.string().optional().describe("Decision outcome (default: implemented)"),
-      status: z.string().optional().describe("Gotcha severity for gotcha action (low|medium|high|critical)"),
-      description: z.string().optional().describe("Gotcha workaround for gotcha action"),
+      status: z.string().optional().describe("Gotcha severity (low|medium|high|critical)"),
+      description: z.string().optional().describe("Gotcha workaround"),
       topic: z.string().optional().describe("Memory topic for session action"),
       limit: z.number().min(1).max(100).optional().describe("Result limit for search/mine"),
       target: z.string().optional().describe("File path for changes / node ID for delete_node"),
@@ -95,7 +109,7 @@ export function registerAllTools(server: McpServer): void {
     },
     async (params) => {
       try {
-        // Pilar 1: Auto-init on first call
+        // Auto-init on first call
         await ensureInitialized();
 
         const text = await handleMemory({
@@ -130,9 +144,13 @@ export function registerAllTools(server: McpServer): void {
   // ============================================================
   server.tool(
     "kuma_safety",
-    "Safety checks, policy enforcement, and auto-verification.\n\nWORKFLOW:\n• STEP 2 (BEFORE work): `guard` — detect anti-patterns, drift, runaway loops\n• STEP 9 (AFTER research/edits): `verify` — auto-run scoped tests + AST validation\n\nOther actions: check (pre-exec safety), audit (query trail), health (score 0-100), ast (code validation), checkpoint (snapshot before refactors), gotcha_staleness (verify recorded gotchas are still valid).",
+    "Safety & verification. Use at task boundaries, not on every edit." +
+      CORE_NOTE +
+      "`guard` (before risky work: anti-patterns, drift, loops), `verify` (after edits: scoped tests + validation). Other actions are internal/deprecated: check, audit, health, security, gc, ast, validate, checkpoint, rollback_label, checkpoint_list, gotcha_staleness.",
     {
-      action: z.enum(["guard", "verify", "check", "audit", "health", "security", "gc", "ast", "validate", "checkpoint", "rollback_label", "checkpoint_list", "gotcha_staleness"]).describe("Safety action: guard=anti-patterns, verify=auto-run tests, check=pre-exec safety, audit=query trail, health=project score, security=scan leaks, gc=garbage collect, ast/validate=AST validation, checkpoint=create snapshot, rollback_label=restore from checkpoint, checkpoint_list=list checkpoints, gotcha_staleness=verify gotcha file refs still valid"),
+      action: z.enum(["guard", "verify", "check", "audit", "health", "security", "gc", "ast", "validate", "checkpoint", "rollback_label", "checkpoint_list", "gotcha_staleness"]).describe(
+        "guard=anti-patterns/drift/loops before risky work (CORE), verify=scoped tests after edits (CORE); internal/deprecated (avoid unless needed): check, audit, health, security, gc, ast, validate, checkpoint, rollback_label, checkpoint_list, gotcha_staleness"
+      ),
       // Verify params
       scope: z.string().optional().describe("Scope for verify/ast/validate (e.g. 'auth', file path)"),
       // Guard params
@@ -148,13 +166,13 @@ export function registerAllTools(server: McpServer): void {
       limit: z.number().min(1).max(100).optional().describe("Audit result limit"),
       since: z.number().optional().describe("Timestamp filter for audit"),
       force: z.boolean().optional().describe("Force re-run even if cache is fresh (verify)"),
-      // Checkpoint params (#29)
+      // Checkpoint params
       label: z.string().optional().describe("Checkpoint label for checkpoint/rollback_label actions"),
       description: z.string().optional().describe("Description for checkpoint"),
     },
     async (params) => {
       try {
-        // Pilar 1: Auto-init on first call
+        // Auto-init on first call
         await ensureInitialized();
 
         const text = await handleSafety({
@@ -180,7 +198,7 @@ export function registerAllTools(server: McpServer): void {
     }
   );
 
-  console.error("[Manifest] Registered 3 V3 coarse-grained tools (kuma_context, kuma_memory, kuma_safety).");
-  console.error("[Manifest] Pilar 1: Auto-init hooks installed on all tools.");
-  console.error("[Manifest] Pilar 2: Namespace aliases active (kuma_kuma_* → kuma_*, context → kuma_context).");
+  console.error("[Manifest] Registered 3 coarse-grained tools (kuma_context, kuma_memory, kuma_safety).");
+  console.error("[Manifest] Auto-init hooks installed on all tools.");
+  console.error("[Manifest] Namespace aliases active (kuma_kuma_* → kuma_*, context → kuma_context).");
 }

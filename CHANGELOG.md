@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.0] — 2026-08-07
+
+### 🐻 Total Overhaul — Super-Lean & Standalone-First
+
+- **Manifest simplified**: 3 tool descriptions cut from ~2,100 → ~264 chars (~66 tokens), highlighting the **6 core actions** (`init`/`research`/`history` · `gotcha`/`decision`/`arch_flow`/`research_save` · `guard`/`verify`). All other actions preserved but labeled internal/deprecated so agents stop second-guessing.
+- **Bootstrap skill super-lean**: 6 core actions only, re-adds the anti-token-waste rule (don't record what grep/glob answers faster). OpenCode prefixing now uses split/join (no Node 15+ floor).
+- **`.kuma/init.md` standalone-first**: 6 Core Actions table + standalone workflow. Matcha is explicitly optional enhancement.
+- **Version references cleansed**: all V2/V3 mentions removed from src comments, README, CONTRIBUTING, tests, plan files (CHANGELOG kept as historical record).
+- **Guard consolidation**: kumaGuard now uses the single `getPrioritySuggestion` source of truth; native tool detection helpers (`isEditTool`/`isTestTool`/`isReadTool`/`isBashTool`) are provider-agnostic.
+- **matcha integration synced**: `.agents/skills/kuma/SKILL.md` mirrors the 6 core actions.
+
 ## [2.3.34] — 2026-08-04
 
 ### 🐻 Core Architecture Maturity — Zero Gimmicks, Maximum Impact

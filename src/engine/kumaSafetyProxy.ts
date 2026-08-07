@@ -94,7 +94,7 @@ export async function preCheck(
     }
   }
 
-  // 4. Check for research done (V3: research should precede changes)
+  // 4. Check for research done (research should precede changes)
   try {
     const db = await getDb();
     const researchCount = (db.exec("SELECT COUNT(*) as c FROM research_cache")[0]?.values[0][0] as number) ?? 0;

@@ -393,7 +393,7 @@ table tbody tr:last-child td { border-bottom: none; }
       <a href="#storage">Storage Layout</a>
       <span class="sidebar-section">Reference</span>
       <a href="#api">API Reference</a>
-      <a href="#v3">V3 Changes</a>
+      <a href="#architecture">Architecture</a>
       <a href="#comparison">Comparison</a>
     </div>
   </aside>
@@ -483,7 +483,7 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     <!-- ─── 3 Tools ─── -->
     <section id="tools">
       <h2><span class="hash">#</span>3 Coarse-Grained Tools</h2>
-      <p class="lead">Kuma V3 consolidates 46+ micro-tools into <strong>3 pipeline-driven tools</strong>. Each action triggers an internal multi-step workflow — the agent doesn't chain individual calls.</p>
+      <p class="lead">Kuma exposes <strong>3 coarse-grained tools</strong> with <strong>6 core actions</strong> — the agent picks an action, Kuma runs the internal workflow.</p>
 
       <h3>🧠 kuma_context — Context &amp; Research</h3>
       <div class="table-wrap"><table>
@@ -792,37 +792,29 @@ kuma hook pre-bash    # injects command-triggered gotchas
       </table></div>
     </section>
 
-    <!-- ─── V3 Changes ─── -->
-    <section id="v3">
-      <h2><span class="hash">#</span>What Changed in V3</h2>
-      <p>Kuma V3 dropped ~15 tools that overlap with native AI agent capabilities:</p>
+    <!-- ─── Architecture ─── -->
+    <section id="architecture">
+      <h2><span class="hash">#</span>Architecture — 6 Core Actions</h2>
+      <p>Kuma is memory &amp; safety, not a code manager. The agent uses its <strong>own native tools</strong> for editing, searching, and execution.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Dropped Tool</th><th>Why</th></tr></thead>
+        <thead><tr><th>Tool</th><th>Core Actions</th><th>Purpose</th></tr></thead>
         <tbody>
-          <tr><td><code>precise_diff_editor</code></td><td>Agent has native edit tools</td></tr>
-          <tr><td><code>safe_terminal_exec</code></td><td>Agent executes commands natively</td></tr>
-          <tr><td><code>smart_grep</code></td><td>Agent searches natively (ripgrep, semantic)</td></tr>
-          <tr><td><code>batch_file_writer</code></td><td>Agent creates files natively</td></tr>
-          <tr><td><code>code_reviewer</code></td><td>Agent reviews code natively</td></tr>
-          <tr><td><code>static_analysis</code></td><td>Agent runs linters natively</td></tr>
-          <tr><td><code>git_log / git_diff</code></td><td>Agent has native git access</td></tr>
-          <tr><td><code>lsp_query</code></td><td>Agent uses LSP natively</td></tr>
-          <tr><td><code>project_structure</code></td><td>Agent can ls/glob natively</td></tr>
-          <tr><td><code>project_conventions</code></td><td>Merged into lightweight init</td></tr>
+          <tr><td><code>kuma_context</code></td><td><code>init</code>, <code>research</code>, <code>history</code></td><td>Load project context, understand unfamiliar code</td></tr>
+          <tr><td><code>kuma_memory</code></td><td><code>gotcha</code>, <code>decision</code>, <code>arch_flow</code>, <code>research_save</code></td><td>Persistent knowledge that saves future sessions</td></tr>
+          <tr><td><code>kuma_safety</code></td><td><code>guard</code>, <code>verify</code></td><td>Pre-risk check, post-edit verification</td></tr>
         </tbody>
       </table></div>
-      <div class="callout info"><span class="ico">💡</span><div><strong>What stayed:</strong> Knowledge graph, session memory, auto-inject hooks, safety layer, audit, checkpoints — refactored into 3 pipeline-driven tools.</div></div>
-      <h3>New in V3</h3>
+      <div class="callout info"><span class="ico">💡</span><div><strong>Everything else is internal</strong> — available for power users but not spotlighted to agents, so they never second-guess which action to pick.</div></div>
+      <h3>What Kuma Provides</h3>
       <div class="table-wrap"><table>
         <thead><tr><th>Feature</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><strong>Kuma Studio</strong></td><td>Web-based dashboard with knowledge graph visualization, efficiency metrics, and activity tracking.</td></tr>
           <tr><td><strong>Arch Flow Anchors</strong></td><td><code>feature_domain</code> nodes anchor architecture flows with owns edges to files.</td></tr>
           <tr><td><strong>Guard System</strong></td><td>Real-time monitoring with blocking warnings for anti-patterns and missing recordings.</td></tr>
-          <tr><td><strong>Session Memory</strong></td><td>Track tool calls, recordings, and efficiency per session with enforcement.</td></tr>
+          <tr><td><strong>Shadow Injection</strong></td><td>Gotchas injected before edits via hooks — zero token waste when clean.</td></tr>
           <tr><td><strong>Checkpoint/Rollback</strong></td><td>Atomic snapshots before major refactors with selective restore.</td></tr>
-          <tr><td><strong>Policy-as-Code</strong></td><td>Configurable safety rules in YAML for never_touch, require_review, and block_commands.</td></tr>
-          <tr><td><strong>3 Coarse-Grained Tools</strong></td><td>Simplified API: kuma_context, kuma_memory, kuma_safety with pipeline-driven actions.</td></tr>
+          <tr><td><strong>Knowledge Graph</strong></td><td>SQLite + FTS5 full-text search with derived flow cache.</td></tr>
         </tbody>
       </table></div>
     </section>

@@ -4,6 +4,32 @@ import { getProjectRoot } from "./pathValidator.js";
 import type { GuardWarning } from "../guards/antiPatternDetector.js";
 
 // ============================================================
+// NATIVE TOOL DETECTION — the agent uses its own native tools
+// (edit/write/read/grep/bash/test). These helpers keep guard and
+// anti-pattern logic provider-agnostic.
+// ============================================================
+
+export function isEditTool(toolName: string): boolean {
+  const n = (toolName || "").toLowerCase();
+  return n.includes("edit") || n.includes("write") || n.includes("patch") || n.includes("apply") || n.includes("replace");
+}
+
+export function isTestTool(toolName: string): boolean {
+  const n = (toolName || "").toLowerCase();
+  return n.includes("test") || n.includes("typecheck");
+}
+
+export function isReadTool(toolName: string): boolean {
+  const n = (toolName || "").toLowerCase();
+  return n.includes("read") || n.includes("grep") || n.includes("glob") || n.includes("search") || n.includes("list");
+}
+
+export function isBashTool(toolName: string): boolean {
+  const n = (toolName || "").toLowerCase();
+  return n === "bash" || n.startsWith("bash") || n.includes("command") || n.includes("shell") || n.includes("terminal");
+}
+
+// ============================================================
 // KUMA SHARED — Extracted common logic from kumaGuard & kumaReflect
 // ============================================================
 
@@ -40,7 +66,7 @@ export function getSessionStats(inputGoal?: string): SessionStats {
     failedFiles,
     hasLoop: loop.isLooping,
     loopMessage: (loop as any).message,
-    hasRunTests: toolCalls.some((c: any) => c.toolName === "execute_safe_test"),
+    hasRunTests: toolCalls.some((c: any) => isTestTool(c.toolName)),
   };
 }
 
@@ -91,9 +117,7 @@ export function checkLadderViolations(
   hasRunTests: boolean,
 ): string[] {
   const violations: string[] = [];
-  const editCalls = toolCalls.filter(
-    (c: any) => c.toolName === "precise_diff_editor" || c.toolName === "batch_file_writer",
-  ).length;
+  const editCalls = toolCalls.filter((c: any) => isEditTool(c.toolName)).length;
   if (editCalls > 5) {
     violations.push(`${editCalls} file ops in a row — consider if all are needed`);
   }
@@ -138,7 +162,7 @@ export function getPrioritySuggestion(
   editCalls: number,
 ): string {
   if (warnings.some((w) => w.severity === "high" && w.pattern === "script-patching")) {
-    return "Remove patch scripts and use precise_diff_editor for all file modifications";
+    return "Remove patch scripts and use your native edit tools for all file modifications";
   }
   if (hasLoop) {
     return "Switch approach — current tool is not making progress";
@@ -150,7 +174,7 @@ export function getPrioritySuggestion(
     return "Fix unresolved failures before continuing";
   }
   if (warnings.some((w) => w.pattern === "bash-grep")) {
-    return "Use smart_grep for code search instead of bash grep";
+    return "Use your native grep tool for code search instead of bash grep";
   }
   if (warnings.some((w) => w.pattern === "excessive-edits") || editCalls > 10) {
     return "Consider if refactoring can be simplified — fewer files = fewer bugs";
@@ -166,7 +190,5 @@ export function getPrioritySuggestion(
 
 /** Count edit-type tool calls */
 export function countEditCalls(toolCalls: Array<Record<string, unknown>>): number {
-  return toolCalls.filter(
-    (c: any) => c.toolName === "precise_diff_editor" || c.toolName === "batch_file_writer",
-  ).length;
+  return toolCalls.filter((c: any) => isEditTool(c.toolName)).length;
 }

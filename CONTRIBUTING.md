@@ -101,12 +101,12 @@ Each tool should have a single clear purpose. No overlap, no confusion.
 
 ## Project Structure
 
-Kuma uses a **V3 coarse-grained architecture**: 3 tools, each triggering a complete internal workflow in one MCP call.
+Kuma uses a **coarse-grained architecture**: 3 tools, each triggering a complete internal workflow in one MCP call.
 
 ```
 src/
 ├── index.ts                      # MCP server entry point + CLI (init / studio)
-├── manifest.ts                   # Tool registration (3 V3 tools: kuma_context, kuma_memory, kuma_safety)
+├── manifest.ts                   # Tool registration (3 tools: kuma_context, kuma_memory, kuma_safety)
 ├── tools/
 │   ├── kumaContextTool.ts        # kuma_context handler (research, impact, navigate, digest, sync...)
 │   ├── kumaMemoryTool.ts         # kuma_memory handler (decision, arch_flow, gotcha, search...)

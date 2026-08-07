@@ -7,7 +7,6 @@ import { getKumaDir } from "../utils/pathValidator.js";
 
 // ============================================================
 // KUMA DB — SQLite database manager (via sql.js, zero native build)
-// Schema v3.2 — UUID-based IDs + severity/confidence columns
 // ============================================================
 
 const DB_FILENAME = "kuma.db";
@@ -103,10 +102,10 @@ export function flushDb(db?: SqlJsDatabase): void {
 export function saveDb(db?: SqlJsDatabase): void {
   const d = db ?? dbInstance;
   if (!d) return;
-  
+
   _pendingDb = d;
   if (_saveTimeout) return;
-  
+
   _saveTimeout = setTimeout(() => {
     flushDb(d);
   }, SAVE_DEBOUNCE_MS);
@@ -1248,5 +1247,3 @@ export function rebuildFtsIndex(): void {
     // FTS5 might not be available
   }
 }
-
-

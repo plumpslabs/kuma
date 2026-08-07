@@ -7,39 +7,35 @@
 
 import type { AgentType } from "./agentDetector.js";
 
-// Shared bootstrap message — lean mode as default (3 steps, not 10)
+// Shared bootstrap message — 6 core actions only, super-lean.
+const CORE_ACTIONS = [
+  "🧠 **Before coding:** `kuma_context({ action: \"init\" })`",
+  "🔬 **Unfamiliar code:** `kuma_context({ action: \"research\", scope: \"<area>\" })`",
+  "🐛 **Found a bug/quirk:** `kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
+  "🧭 **Chose between options:** `kuma_memory({ action: \"decision\" })`",
+  "🔀 **Traced a flow:** `kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
+  "🛡️ **Before risky work / after edits:** `kuma_safety({ action: \"guard\" | \"verify\" })`",
+].join("\n");
+
 const BOOTSTRAP = [
-  "Kuma MCP tools are available (kuma_context, kuma_memory, kuma_safety).",
-  "**Before coding, call `kuma_context({ action: \"init\" })`** to load project context.",
+  "Kuma MCP tools: kuma_context, kuma_memory, kuma_safety.",
+  "Record what matters, skip what doesn't.",
   "",
-  "⚡ **DEFAULT WORKFLOW (Lean — 3 steps):**",
-  "  1. `init` — load context",
-  "  2. *(edit/read using native tools)*",
-  "  3. `changes` — review session",
-  "",
-  "📝 **RECORD when needed (don't force it):**",
-  "  • Found a bug? → `kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
-  "  • Traced a flow? → `kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
-  "  • Chose between options? → `kuma_memory({ action: \"decision\" })`",
+  CORE_ACTIONS,
   "",
   "📖 Full rules: `.kuma/init.md`",
 ].join("\n");
 
-// OpenCode-specific bootstrap — uses kuma_kuma_* prefix
-// OpenCode-specific bootstrap — uses kuma_kuma_* prefix
+// OpenCode-specific bootstrap — uses kuma_kuma_* prefix (client adds server name)
+const PREFIX_TOOLS = (s: string, prefix: string): string =>
+  s.split(prefix).join("kuma_" + prefix);
+
 const BOOTSTRAP_OPENCODE = [
-  "Kuma MCP tools are available (kuma_kuma_context, kuma_kuma_memory, kuma_kuma_safety).",
-  "**Before coding, call `kuma_kuma_context({ action: \"init\" })`** to load project context.",
+  "Kuma MCP tools: kuma_kuma_context, kuma_kuma_memory, kuma_kuma_safety.",
+  "Record what matters, skip what doesn't.",
   "",
-  "⚡ **DEFAULT WORKFLOW (Lean — 3 steps):**",
-  "  1. `init` — load context",
-  "  2. *(edit/read using native tools)*",
-  "  3. `changes` — review session",
-  "",
-  "📝 **RECORD when needed:**",
-  "  • Found a bug? → `kuma_kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
-  "  • Traced a flow? → `kuma_kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
-  "  • Chose between options? → `kuma_kuma_memory({ action: \"decision\" })`",
+  ["kuma_context", "kuma_memory", "kuma_safety"]
+    .reduce((acc, tool) => PREFIX_TOOLS(acc, tool), CORE_ACTIONS),
   "",
   "📖 Full rules: `.kuma/init.md`",
 ].join("\n");

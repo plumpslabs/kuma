@@ -3,6 +3,7 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import { sessionMemory } from "../engine/sessionMemory.js";
+import { isBashTool } from "../utils/kumaShared.js";
 
 // ============================================================
 // ANTI-PATTERN DETECTOR — Detect when AI agents do the wrong thing
@@ -68,7 +69,7 @@ function findPatchScripts(projectRoot: string): GuardWarning[] {
           severity: "high",
           pattern: "script-patching",
           message: `Created script file that modifies other files: ${path.basename(file)}`,
-          suggestion: "Use **precise_diff_editor** instead — it has fuzzy matching, auto-backup, and rollback support",
+          suggestion: "Use your native edit tools instead — targeted edits with auto-backup and rollback",
           evidence: `File: ${relativePath} contains '${matchedPattern}'`,
           filePath: relativePath,
         });
@@ -89,7 +90,7 @@ function detectBashGrepUsage(): GuardWarning[] {
   const toolCalls = sessionMemory.getToolCallHistory(100);
 
   for (const call of toolCalls) {
-    if (call.toolName !== "execute_safe_test") continue;
+    if (!isBashTool(call.toolName)) continue;
     const cmd = (call.params as Record<string, unknown>)?.customCommand as string
                || (call.params as Record<string, unknown>)?.command as string
                || "";
@@ -99,8 +100,8 @@ function detectBashGrepUsage(): GuardWarning[] {
       warnings.push({
         severity: "medium",
         pattern: "bash-grep",
-        message: `Used bash grep instead of smart_grep`,
-        suggestion: "Use **smart_grep** — it returns line numbers + context, caches results, respects .gitignore",
+        message: `Used bash grep instead of the native grep tool`,
+        suggestion: "Use your native grep tool — it returns line numbers + context and respects .gitignore",
         evidence: `Command: ${cmd.substring(0, 120)}`,
       });
       break;
@@ -180,8 +181,8 @@ function detectGitPatchScripts(projectRoot: string): GuardWarning[] {
               severity: "high",
               pattern: "script-patching",
               message: `Patch script detected: ${file}`,
-              suggestion: "Use **precise_diff_editor** instead — it has fuzzy matching, auto-backup, and rollback support",
-              evidence: `File: ${file} (contains '${matchedPattern}')`,
+            suggestion: "Use your native edit tools instead — targeted edits with auto-backup and rollback",
+            evidence: `File: ${file} (contains '${matchedPattern}')`,
               filePath: file,
             });
           }
@@ -205,7 +206,7 @@ function detectGitPatchScripts(projectRoot: string): GuardWarning[] {
             severity: "high",
             pattern: "script-patching",
             message: `Patch script was tracked then deleted: ${file}`,
-            suggestion: "Use **precise_diff_editor** instead of creating disposable scripts. It has auto-backup + rollback.",
+            suggestion: "Use your native edit tools instead of creating disposable scripts. They have auto-backup + rollback.",
             evidence: `Git shows ${file} was deleted`,
             filePath: file,
           });
@@ -221,7 +222,7 @@ function detectGitPatchScripts(projectRoot: string): GuardWarning[] {
 
 /**
  * Check for bash sed/awk command usage in session memory.
- * These are often used as quick alternatives to precise_diff_editor.
+ * These are often used as quick alternatives to native edit tools.
  */
 function detectBashSedUsage(): GuardWarning[] {
   const warnings: GuardWarning[] = [];
@@ -242,7 +243,7 @@ function detectBashSedUsage(): GuardWarning[] {
   ];
 
   for (const call of toolCalls) {
-    if (call.toolName !== "execute_safe_test") continue;
+    if (!isBashTool(call.toolName)) continue;
     const cmd = (call.params as Record<string, unknown>)?.customCommand as string
                || (call.params as Record<string, unknown>)?.command as string
                || "";
@@ -251,8 +252,8 @@ function detectBashSedUsage(): GuardWarning[] {
       warnings.push({
         severity: "high",
         pattern: "bash-sed-editing",
-        message: "Used bash sed/awk to edit source files instead of precise_diff_editor",
-        suggestion: "Use **precise_diff_editor** for all file modifications — it has fuzzy matching, auto-backup, and rollback.\n\n✅ Correct format:\nprecise_diff_editor({\n  filePath: \"src/file.ts\",\n  edits: [\n    { searchBlock: \"old code\", replaceBlock: \"new code\" }\n  ]\n})",
+        message: "Used bash sed/awk to edit source files instead of native edit tools",
+        suggestion: "Use your native edit tools for all file modifications — targeted edits with auto-backup and rollback.",
         evidence: `Command: ${cmd.substring(0, 150)}`,
       });
       break;

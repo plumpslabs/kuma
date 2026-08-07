@@ -218,7 +218,7 @@ export async function generateContextDigest(): Promise<string> {
     lines.push(`📊 *~${estimatedTokens} tokens, fits under 500 limit*`);
   }
 
-  return lines.join("\n") + "\n\n💡 Use kuma_context({ action: 'sync' }) for full state.";
+  return lines.join("\n") + "\n\n💡 Use kuma_context({ action: 'digest' }) for the full state.";
 }
 
 /**

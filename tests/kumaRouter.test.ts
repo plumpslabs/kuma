@@ -10,7 +10,7 @@ jest.unstable_mockModule("../src/tools/kumaSafetyTool.js", () => ({ handleSafety
 
 const { handleContext, handleMemory, handleSafety } = await import("../src/engine/kumaRouter.js");
 
-describe("kumaRouter V3", () => {
+describe("kumaRouter", () => {
   test("handleContext delegates", async () => {
     const result = await handleContext({ action: "init", goal: "test" });
     expect(result).toBe("context done");

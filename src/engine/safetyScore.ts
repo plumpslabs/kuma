@@ -83,7 +83,7 @@ export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScor
     totalScore += 20;
   }
 
-  // 2. Graph health (weight: 10) — V3: knowledge graph confidence
+  // 2. Graph health (weight: 10) — knowledge graph confidence
   try {
     const { getDb } = await import("./kumaDb.js");
     const db = await getDb();
@@ -116,7 +116,7 @@ export async function computeSafetyScore(inputGoal?: string): Promise<SafetyScor
     totalScore += 5;
   }
 
-  // 3. Research cached (weight: 10) — V3: has research been done?
+  // 3. Research cached (weight: 10) — has research been done?
   try {
     const { getDb } = await import("./kumaDb.js");
     const db = await getDb();

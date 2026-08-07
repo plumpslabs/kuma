@@ -1,5 +1,5 @@
 // ============================================================
-// KUMA GRAPH — Knowledge Graph engine (V3)
+// KUMA GRAPH — Knowledge Graph engine
 // ============================================================
 // Builds incrementally from AI agent research + code changes.
 // Stored in SQLite. Supports impact analysis, flow navigation,
@@ -1373,7 +1373,7 @@ export async function getGraphStats(): Promise<string> {
 }
 
 // ============================================================
-// V3: Impact Analysis
+// Impact Analysis
 // ============================================================
 
 export interface ImpactResult {
@@ -1538,7 +1538,7 @@ export function formatImpact(result: ImpactResult): string {
 }
 
 // ============================================================
-// V3: Flow Navigation
+// Flow Navigation
 // ============================================================
 
 export interface FlowStep {

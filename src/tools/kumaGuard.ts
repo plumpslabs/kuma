@@ -6,6 +6,11 @@ import {
   getGitDiffStat,
   getUnresolvedCount,
   buildDriftMessages,
+  getPrioritySuggestion,
+  countEditCalls,
+  isEditTool,
+  isReadTool,
+  isBashTool,
 } from "../utils/kumaShared.js";
 
 interface GuardParams {
@@ -51,7 +56,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
       severity: "high",
       pattern: "tool-loop",
       message: (loop as any).message ?? "Detected potential tool call loop",
-      suggestion: "Switch approach — try reading the file first with smart_file_picker",
+      suggestion: "Switch approach — try reading the file first with your native read/search tools",
     });
   }
 
@@ -60,9 +65,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
   if (check === "all" || check === "drift") {
     const unresolvedCount = getUnresolvedCount(stats.failedFiles);
     const gitStat = getGitDiffStat();
-    const editCalls = stats.toolCalls.filter(
-      (c: any) => c.toolName === "precise_diff_editor" || c.toolName === "batch_file_writer",
-    ).length;
+    const editCalls = stats.toolCalls.filter((c: any) => isEditTool(c.toolName)).length;
 
     drifts.push(...buildDriftMessages(
       stats.modifiedFiles.length,
@@ -76,7 +79,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
         severity: "medium",
         pattern: "no-test-after-edit",
         message: `${stats.modifiedFiles.length} file(s) modified without running tests`,
-        suggestion: "Run execute_safe_test({ task: \"typecheck\" }) to verify changes",
+        suggestion: "Run the project's test/typecheck command to verify changes",
       });
     }
 
@@ -93,9 +96,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
   // 4. Recording enforcement — detect if agent hasn't recorded anything
   const recordingSummary = sessionMemory.getRecordingSummary();
   if (check === "all" || check === "drift") {
-    const readCalls = stats.toolCalls.filter(
-      (c: any) => c.toolName === "read" || c.toolName === "grep" || c.toolName === "glob" || c.toolName === "smart_file_picker"
-    ).length;
+    const readCalls = stats.toolCalls.filter((c: any) => isReadTool(c.toolName)).length;
 
     // CRITICAL: 10+ tool calls with 0 recordings = blocking warning
     if (stats.toolCallCount >= 10 && !recordingSummary.hasAnyRecordings) {
@@ -131,7 +132,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
 
     // Auto-gotcha reminder — detect error patterns
     const errorCalls = stats.toolCalls.filter(
-      (c: any) => c.toolName === "execute_safe_command" && JSON.stringify(c.params).includes("error")
+      (c: any) => isBashTool(c.toolName) && JSON.stringify(c.params).includes("error")
     ).length;
     if (errorCalls >= 2 && recordingSummary.gotchas === 0) {
       warnings.push({
@@ -177,23 +178,16 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
   const hasDrifts = drifts.length > 0;
   const onTrack = !hasWarnings && !hasDrifts;
 
-  // Build suggestion matching original kumaGuard priority order
-  let suggestion: string;
-  if (warnings.some((w) => w.severity === "high" && w.pattern === "script-patching")) {
-    suggestion = "Remove patch scripts and use precise_diff_editor for all file modifications";
-  } else if (warnings.some((w) => w.pattern === "tool-loop")) {
-    suggestion = "Switch approach — current tool is not making progress";
-  } else if (warnings.some((w) => w.pattern === "no-test-after-edit")) {
-    suggestion = "Run tests to verify your changes before continuing";
-  } else if (warnings.some((w) => w.pattern === "bash-grep")) {
-    suggestion = "Use smart_grep for code search instead of bash grep";
-  } else if (warnings.some((w) => w.pattern === "excessive-edits")) {
-    suggestion = "Pause and review: are all these edits necessary?";
-  } else if (!stats.goal) {
-    suggestion = "No goal set — use goal parameter or setGoal to track intent";
-  } else {
-    suggestion = "On track — continue with current approach";
-  }
+  // Single source of truth for suggestions (see getPrioritySuggestion in kumaShared)
+  const suggestion = getPrioritySuggestion(
+    stats.goal,
+    warnings,
+    loop.isLooping,
+    getUnresolvedCount(stats.failedFiles),
+    stats.modifiedFiles.length,
+    stats.hasRunTests,
+    countEditCalls(stats.toolCalls),
+  );
 
   const report: GuardReport = {
     timestamp: new Date().toISOString(),

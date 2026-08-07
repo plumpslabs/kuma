@@ -109,7 +109,7 @@ describe("handleKumaGuard", () => {
           pattern: "script-patching",
           message: "Created script file that modifies other files: patch.py",
           suggestion:
-            "Use **precise_diff_editor** instead \u2014 it has fuzzy matching, auto-backup, and rollback support",
+            "Use your native edit tools instead \u2014 targeted edits with auto-backup and rollback",
           evidence: "File: patch.py contains 'writeFileSync'",
           filePath: "patch.py",
         },
@@ -132,7 +132,7 @@ describe("handleKumaGuard", () => {
           severity: "high",
           pattern: "script-patching",
           message: "Created script file: patch_service.py",
-          suggestion: "Use precise_diff_editor instead",
+          suggestion: "Use your native edit tools instead",
           evidence: "File: patch_service.py contains 'sed'",
           filePath: "patch_service.py",
         },
@@ -151,9 +151,9 @@ describe("handleKumaGuard", () => {
         {
           severity: "medium",
           pattern: "bash-grep",
-          message: "Used bash grep instead of smart_grep",
+          message: "Used bash grep instead of the native grep tool",
           suggestion:
-            "Use **smart_grep** \u2014 it returns line numbers + context, caches results, respects .gitignore",
+            "Use your native grep tool \u2014 it returns line numbers + context and respects .gitignore",
           evidence: "Command: grep -rn 'auth' src/",
         },
       ]);
@@ -162,15 +162,15 @@ describe("handleKumaGuard", () => {
       const report = parseReport(result);
 
       expect(report.onTrack).toBe(false);
-      expect(report.suggestion).toContain("smart_grep");
+      expect(report.suggestion).toContain("native grep");
     });
 
     test("detects tool loop from session memory", async () => {
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
+        toolName: "grep",
         message:
-          'Detected potential loop: "smart_grep" called 5 times in last 10 tool calls',
+          'Detected potential loop: "grep" called 5 times in last 10 tool calls',
       });
 
       const result = await handleKumaGuard({});
@@ -195,7 +195,7 @@ describe("handleKumaGuard", () => {
       jest
         .spyOn(sessionMemory, "getToolCallHistory")
         .mockReturnValue([
-          { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+          { toolName: "edit", params: {}, timestamp: 1 },
         ] as any);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
@@ -245,7 +245,7 @@ describe("handleKumaGuard", () => {
 
     test("detects excessive edits (ladder violation)", async () => {
       const editCalls = Array.from({ length: 7 }, (_, i) => ({
-        toolName: "precise_diff_editor",
+        toolName: "edit",
         params: {},
         timestamp: i,
       }));
@@ -268,7 +268,7 @@ describe("handleKumaGuard", () => {
           (w) => w.pattern === "excessive-edits",
         ),
       ).toBe(true);
-      expect(report.suggestion).toContain("Pause");
+      expect(report.suggestion).toContain("simplified");
     });
 
     test("records tool call in session memory", async () => {
@@ -286,8 +286,15 @@ describe("handleKumaGuard", () => {
       jest
         .spyOn(sessionMemory, "getToolCallHistory")
         .mockReturnValue([
-          { toolName: "execute_safe_test", params: {}, timestamp: 1 },
+          { toolName: "test", params: {}, timestamp: 1 },
         ] as any);
+      jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
+        {
+          filePath: "src/auth.ts",
+          modifiedAt: Date.now(),
+          status: "modified",
+        },
+      ] as any);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
         currentGoal: "refactor",
@@ -332,7 +339,7 @@ describe("handleKumaGuard", () => {
     test("only runs anti-pattern detection, not loop or drift", async () => {
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
+        toolName: "grep",
         message: "Loop detected",
       });
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
@@ -360,7 +367,7 @@ describe("handleKumaGuard", () => {
           severity: "high",
           pattern: "script-patching",
           message: "Script detected: patch.py",
-          suggestion: "Use precise_diff_editor instead",
+          suggestion: "Use your native edit tools instead",
           evidence: "File: patch.py",
           filePath: "patch.py",
         },
@@ -397,8 +404,8 @@ describe("handleKumaGuard", () => {
     test("reports loop when detected", async () => {
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
-        message: 'Loop: "smart_grep" called too many times',
+        toolName: "grep",
+        message: 'Loop: "grep" called too many times',
       });
 
       const result = await handleKumaGuard({ check: "loop" });
@@ -427,7 +434,7 @@ describe("handleKumaGuard", () => {
     test("only runs drift detection, not anti-pattern or loop", async () => {
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
+        toolName: "grep",
         message: "Loop detected",
       });
       mockDetectAllAntiPatterns.mockReturnValue([
@@ -458,7 +465,7 @@ describe("handleKumaGuard", () => {
       jest
         .spyOn(sessionMemory, "getToolCallHistory")
         .mockReturnValue([
-          { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+          { toolName: "edit", params: {}, timestamp: 1 },
         ] as any);
 
       const result = await handleKumaGuard({ check: "drift" });
@@ -476,9 +483,9 @@ describe("handleKumaGuard", () => {
         },
       ] as any);
       jest.spyOn(sessionMemory, "getToolCallHistory").mockReturnValue([
-        { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+        { toolName: "edit", params: {}, timestamp: 1 },
         {
-          toolName: "execute_safe_test",
+          toolName: "test",
           params: { task: "typecheck" },
           timestamp: 2,
         },
@@ -544,7 +551,7 @@ describe("handleKumaGuard", () => {
       ]);
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
+        toolName: "grep",
         message: "Loop detected",
       });
 
@@ -616,12 +623,12 @@ describe("handleKumaGuard", () => {
           severity: "high",
           pattern: "script-patching",
           message: "Script detected",
-          suggestion: "Use precise_diff_editor",
+          suggestion: "Use edit",
         },
       ]);
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
+        toolName: "grep",
         message: "Loop detected",
       });
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
@@ -641,7 +648,7 @@ describe("handleKumaGuard", () => {
     test("tool-loop suggestion when loop detected without script-patching", async () => {
       jest.spyOn(sessionMemory, "detectLoop").mockReturnValue({
         isLooping: true,
-        toolName: "smart_grep",
+        toolName: "grep",
         message: "Loop detected",
       });
 
@@ -662,7 +669,7 @@ describe("handleKumaGuard", () => {
       jest
         .spyOn(sessionMemory, "getToolCallHistory")
         .mockReturnValue([
-          { toolName: "precise_diff_editor", params: {}, timestamp: 1 },
+          { toolName: "edit", params: {}, timestamp: 1 },
         ] as any);
       jest.spyOn(sessionMemory, "getSummary").mockReturnValue({
         projectRoot: "/test/project",
@@ -690,14 +697,14 @@ describe("handleKumaGuard", () => {
           severity: "medium",
           pattern: "bash-grep",
           message: "Used bash grep",
-          suggestion: "Use smart_grep",
+          suggestion: "Use grep",
         },
       ]);
 
       const result = await handleKumaGuard({ goal: "test" });
       const report = parseReport(result);
 
-      expect(report.suggestion).toContain("smart_grep");
+      expect(report.suggestion).toContain("native grep");
     });
   });
 

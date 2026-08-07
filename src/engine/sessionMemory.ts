@@ -3,7 +3,7 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 
 // ============================================================
-// SESSION MEMORY — State tracker & change log (V3)
+// SESSION MEMORY — State tracker & change log
 // ============================================================
 
 const MEMORY_TOPICS = ["decisions", "glossary", "architecture", "conventions", "known-issues"] as const;
@@ -913,7 +913,7 @@ class SessionMemory {
   }
 
   // ============================================================
-  // V3: Change Tracking (Selective Undo)
+  // Change Tracking (Selective Undo)
   // ============================================================
 
   /**

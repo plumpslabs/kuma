@@ -98,32 +98,26 @@ Kuma provides **3 coarse-grained tools** with impactful actions. Removed gimmick
 
 ---
 
-## V3 Changes: What's New
+## Architecture
 
-Kuma V3 is a major evolution focusing on **simplicity, safety, and agent-native workflows**.
+Kuma exposes exactly **3 coarse-grained tools** — the agent picks an *action*, Kuma runs the internal workflow:
 
-### Dropped Tools (Now Handled by Agents)
+| Tool | Core Actions | Purpose |
+|------|--------------|---------|
+| `kuma_context` | `init`, `research`, `history` | Load project context, understand unfamiliar code |
+| `kuma_memory` | `gotcha`, `decision`, `arch_flow`, `research_save` | Persistent knowledge that saves future sessions |
+| `kuma_safety` | `guard`, `verify` | Pre-risk check, post-edit verification |
 
-| Dropped Tool | Why Dropped |
-|--------------|-------------|
-| `precise_diff_editor` | Agent has native edit tools |
-| `safe_terminal_exec` | Agent executes commands natively |
-| `smart_grep` | Agent searches natively (ripgrep, semantic) |
-| `batch_file_writer` | Agent creates files natively |
-| `ast_validator` (standalone) | Merged into `kuma_safety` as `ast`/`validate` action |
-| `git_diff_analyzer` | Merged into `kuma_context` as `impact` action |
+Everything else is an internal action for power users. The agent uses its **own native tools** for editing, searching, and execution — Kuma is memory & safety, not a code manager.
 
-### New Features in V3
+### What Kuma Provides
 
-| Feature | Description |
-|---------|-------------|
-| **3 Coarse-Grained Tools** | Simplified API: `kuma_context`, `kuma_memory`, `kuma_safety` |
-| **Pipeline-Driven Actions** | Each action triggers internal multi-step workflows |
-| **Knowledge Graph** | SQLite + FTS5 full-text search with WASM engine (derived cache) |
-| **Session Memory** | Track tool calls, recordings, and efficiency per session |
-| **Guard System** | Real-time monitoring with blocking warnings for anti-patterns |
-| **Kuma Studio** | Visual dashboard with graph, gotchas, and injection metrics |
-| **Checkpoint/Rollback** | Atomic snapshots before major refactors |
+- **Knowledge Graph** — SQLite + FTS5 full-text search (derived cache)
+- **Session Memory** — track tool calls, recordings, and efficiency per session
+- **Guard System** — real-time monitoring with blocking warnings for anti-patterns
+- **Shadow Injection** — gotchas injected before edits via hooks (zero token waste when clean)
+- **Kuma Studio** — visual dashboard with graph, gotchas, and injection metrics
+- **Checkpoint/Rollback** — atomic snapshots before major refactors
 
 ---
 

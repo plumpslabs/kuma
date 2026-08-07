@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { sessionMemory } from "./sessionMemory.js";
 import { getProjectRoot } from "../utils/pathValidator.js";
+import { isEditTool } from "../utils/kumaShared.js";
 
 interface ScoredMemory {
   topic: string;
@@ -185,7 +186,7 @@ let decisionCooldown = 0;
 export function shouldRecordDecision(): { worth: boolean; title?: string } {
   // Cooldown: only suggest once per 10 edits
   const history = sessionMemory.getToolCallHistory(30);
-  const edits = history.filter(c => c.toolName === "precise_diff_editor");
+  const edits = history.filter(c => isEditTool(c.toolName));
 
   if (edits.length > decisionCooldown + 10 && edits.length >= 10) {
     decisionCooldown = edits.length;
