@@ -523,7 +523,6 @@ export async function clearGraph(): Promise<number> {
     db.run("DELETE FROM edges;");
     db.run("DELETE FROM known_gotchas;");
     db.run("DELETE FROM trajectories;");
-    db.run("DELETE FROM health_snapshots;");
     db.run("DELETE FROM research_cache;");
     flushDb(db);
     return 0;

@@ -60,7 +60,7 @@ Kuma stores all context locally in `.kuma/`:
 `changes` · `arch_flow` · `gotcha` · `delete_node` · `clear` · `goal_progress`
 
 ### `kuma_safety` — when risky
-`guard` · `verify` · `check` · `audit` · `health` · `security` ·
+`guard` · `verify` · `check` · `audit` · `security` ·
 `gc` · `ast` · `validate` · `checkpoint` · `rollback_label` · `checkpoint_list` · `gotcha_staleness`
 
 ---

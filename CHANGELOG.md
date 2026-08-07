@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.4.1] — 2026-08-07
+
+### 🧹 Zero-Gimmick — `health` action removed
+
+- **Removed `kuma_safety({ action: "health" })`** entirely: project health 0-100 score was cosmetic (for humans, not agents). Deleted `safetyScore.ts` (391 lines) + `saveHealthSnapshot` + `health_snapshots` table/index/GC + schema-list entry.
+- **Manifest leaner**: safety action enum down to 12, description no longer mentions health.
+- **Docs synced**: README action table, docs/api.md, docs/index.html (table + enum), CORE_WORKFLOW.md all drop `health`.
+- **Graph reset** no longer wipes `health_snapshots`.
+- All other actions (incl. security/gc/ast) preserved — only the cosmetic score went away.
+
+# Changelog
+
 ## [2.4.0] — 2026-08-07
 
 ### 🐻 Total Overhaul — Super-Lean & Standalone-First

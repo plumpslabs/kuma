@@ -1,10 +1,10 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
 import { safetyCheck } from "../engine/kumaSafetyLayer.js";
 import { queryAudit, auditStats } from "../engine/safetyAudit.js";
-import { saveHealthSnapshot, getSecurityFindings, addSecurityFinding, runGarbageCollection } from "../engine/kumaDb.js";
+import { getSecurityFindings, addSecurityFinding, runGarbageCollection } from "../engine/kumaDb.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
 
-type SafetyAction = "guard" | "check" | "audit" | "health" | "security" | "gc" | "verify" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "gotcha_staleness";
+type SafetyAction = "guard" | "check" | "audit" | "security" | "gc" | "verify" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "gotcha_staleness";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -32,7 +32,6 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
     case "verify": return handleVerify(params);
     case "check": return handleCheck(params);
     case "audit": return handleAudit(params);
-    case "health": return handleHealth(params);
     case "security": return handleSecurity(params);
     case "gc": return handleGc(params);
     case "ast":
@@ -77,21 +76,6 @@ async function handleAudit(params: SafetyParams): Promise<string> {
     limit: params.limit || 20,
     since: params.since,
   });
-}
-
-// ============================================================
-// HEALTH — Project health dashboard (0-100 score)
-// ============================================================
-
-async function handleHealth(_params: SafetyParams): Promise<string> {
-  try {
-    const { computeSafetyScore, formatSafetyScore } = await import("../engine/safetyScore.js");
-    const score = await computeSafetyScore();
-    await saveHealthSnapshot(score.score, score.risk, JSON.stringify(score.checks), score.summary);
-    return formatSafetyScore(score);
-  } catch (err) {
-    return `Error computing health: ${err}`;
-  }
 }
 
 // ============================================================

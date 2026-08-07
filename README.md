@@ -89,7 +89,6 @@ Kuma provides **3 coarse-grained tools** with impactful actions. Removed gimmick
 | `verify` | Auto-run scoped tests after edits | 🔴 High |
 | `check` | Pre-execution safety check | 🟡 Linear |
 | `audit` | Query safety audit trail | 🟡 Linear |
-| `health` | Project health score (optional/cosmetic) | 🟢 Skip |
 | `security` | Scan for leaked secrets/tokens | 🟡 Linear |
 | `gc` | Garbage collect stale data | 🟢 Skip |
 | `ast` / `validate` | AST-based code validation | 🟡 Linear |

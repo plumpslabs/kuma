@@ -331,7 +331,7 @@ table tbody tr:last-child td { border-bottom: none; }
   <div class="topbar-inner">
     <a class="brand" href="#top">
       <img src="../public/kuma.png" alt="Kuma" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png';">
-      <span class="brand-name">Kuma<small>v2.3.34</small></span>
+      <span class="brand-name">Kuma<small>v2.4.1</small></span>
     </a>
     <nav class="topnav" id="topnav">
       <a href="#overview">Overview</a>
@@ -529,7 +529,6 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
           <tr><td><code>verify</code></td><td>Auto-verification — auto-detect runner, scope tests, 5-layer safety guard.</td></tr>
           <tr><td><code>check</code></td><td>Pre-exec safety: policy, path, risk.</td></tr>
           <tr><td><code>audit</code></td><td>Query audit trail with stats.</td></tr>
-          <tr><td><code>health</code></td><td>Health score 0-100 with breakdown.</td></tr>
           <tr><td><code>security</code></td><td>Leak scanner — credential/token detection.</td></tr>
           <tr><td><code>gc</code></td><td>Garbage collection — orphan cleanup, VACUUM.</td></tr>
           <tr><td><code>ast</code> / <code>validate</code></td><td>AST-based code validation.</td></tr>
@@ -774,7 +773,7 @@ kuma hook pre-bash    # injects command-triggered gotchas
       <div class="table-wrap"><table>
         <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>action</code></td><td><code>"guard" | "verify" | "check" | "audit" | "health" | "security" | "gc" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "gotcha_staleness"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>action</code></td><td><code>"guard" | "verify" | "check" | "audit" | "security" | "gc" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "gotcha_staleness"</code></td><td>Action to perform</td></tr>
           <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
           <tr><td><code>guardCheck</code></td><td><code>"anti-pattern" | "loop" | "drift" | "context" | "all"?</code></td><td>Guard check type</td></tr>
           <tr><td><code>filePath</code></td><td><code>string?</code></td><td>File for check/security scan</td></tr>

@@ -228,13 +228,6 @@ Query audit trail.
 { "action": "audit", "toolName": "kuma_safety", "limit": 10 }
 ```
 
-### `health`
-Project health score (0-100). Optional/cosmetic.
-
-```json
-{ "action": "health" }
-```
-
 ### `security`
 Security leak scanner for credentials/tokens/secrets in code.
 

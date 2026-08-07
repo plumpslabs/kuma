@@ -257,16 +257,6 @@ function createSchema(db: SqlJsDatabase): void {
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   )`);
 
-  // Health snapshots
-  db.run(`CREATE TABLE IF NOT EXISTS health_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    score INTEGER NOT NULL,
-    risk_level TEXT NOT NULL DEFAULT 'low',
-    checks TEXT DEFAULT '[]',
-    summary TEXT,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-  )`);
-
   // Safety audit
   try {
     db.run(`CREATE TABLE IF NOT EXISTS safety_audit (
@@ -595,7 +585,6 @@ function createSchema(db: SqlJsDatabase): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_session ON change_log(session_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_file ON change_log(file_path)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_health_created ON health_snapshots(created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_scope ON todos(scope)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_security_file ON security_findings(file_path)`);
@@ -993,12 +982,6 @@ export async function runGarbageCollection(): Promise<string> {
       db.exec(`DELETE FROM verifications WHERE id IN (SELECT id FROM verifications ORDER BY created_at ASC LIMIT ${verifCount - 100})`);
     }
 
-    // 7. Health snapshots — keep only last 50
-    const healthCount = getCount("SELECT COUNT(*) FROM health_snapshots");
-    if (healthCount > 50) {
-      db.exec(`DELETE FROM health_snapshots WHERE id IN (SELECT id FROM health_snapshots ORDER BY created_at ASC LIMIT ${healthCount - 50})`);
-    }
-
     // 8. Safety audit — keep only last 200
     const auditCount = getCount("SELECT COUNT(*) FROM safety_audit");
     if (auditCount > 200) {
@@ -1074,7 +1057,7 @@ export async function runDoctor(): Promise<string> {
     } catch { checks.push("**Database Integrity**: ❌ check failed"); }
 
     // 2. Schema health
-    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries", "verifications", "health_snapshots", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "scratch_entries", "portability_entries", "blackboard_events", "known_gotchas", "trajectories", "distilled_skills"];
+    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries", "verifications", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "scratch_entries", "portability_entries", "blackboard_events", "known_gotchas", "trajectories", "distilled_skills"];
     let existing = 0;
     for (const t of allTables) {
       try {
@@ -1188,15 +1171,6 @@ export async function ensureGitignore(): Promise<string> {
     }
     return "✅ Added .kuma/ to .gitignore";
   } catch (err) { return `❌ Failed: ${err}`; }
-}
-
-export async function saveHealthSnapshot(score: number, riskLevel: string, checks: string, summary: string): Promise<void> {
-  try {
-    const db = await getDb();
-    db.run(`INSERT INTO health_snapshots (score, risk_level, checks, summary) VALUES (?, ?, ?, ?)`,
-      [score, riskLevel, checks, summary]);
-    saveDb();
-  } catch (err) { console.error(`[KumaDB] Failed to save health snapshot: ${err}`); }
 }
 
 export async function saveVerification(scope: string, runner: string, command: string, passed: boolean, output: string, durationMs = 0): Promise<void> {

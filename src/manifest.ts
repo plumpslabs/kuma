@@ -146,10 +146,10 @@ export function registerAllTools(server: McpServer): void {
     "kuma_safety",
     "Safety & verification. Use at task boundaries, not on every edit." +
       CORE_NOTE +
-      "`guard` (before risky work: anti-patterns, drift, loops), `verify` (after edits: scoped tests + validation). Other actions are internal/deprecated: check, audit, health, security, gc, ast, validate, checkpoint, rollback_label, checkpoint_list, gotcha_staleness.",
+      "`guard` (before risky work: anti-patterns, drift, loops), `verify` (after edits: scoped tests + validation). Other actions are internal/deprecated: check, audit, security, gc, ast, validate, checkpoint, rollback_label, checkpoint_list, gotcha_staleness.",
     {
-      action: z.enum(["guard", "verify", "check", "audit", "health", "security", "gc", "ast", "validate", "checkpoint", "rollback_label", "checkpoint_list", "gotcha_staleness"]).describe(
-        "guard=anti-patterns/drift/loops before risky work (CORE), verify=scoped tests after edits (CORE); internal/deprecated (avoid unless needed): check, audit, health, security, gc, ast, validate, checkpoint, rollback_label, checkpoint_list, gotcha_staleness"
+      action: z.enum(["guard", "verify", "check", "audit", "security", "gc", "ast", "validate", "checkpoint", "rollback_label", "checkpoint_list", "gotcha_staleness"]).describe(
+        "guard=anti-patterns/drift/loops before risky work (CORE), verify=scoped tests after edits (CORE); internal/deprecated (avoid unless needed): check, audit, security, gc, ast, validate, checkpoint, rollback_label, checkpoint_list, gotcha_staleness"
       ),
       // Verify params
       scope: z.string().optional().describe("Scope for verify/ast/validate (e.g. 'auth', file path)"),
