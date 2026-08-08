@@ -1,6 +1,6 @@
 {
   "name": "@plumpslabs/kuma",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "Safety-first context & orchestration engine for AI coding agents. MCP server with mandatory research pipeline, knowledge graph, impact analysis, decision memory, and safety guard — works with any MCP client.",
   "type": "module",
   "main": "dist/index.js",

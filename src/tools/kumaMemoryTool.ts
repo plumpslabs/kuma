@@ -312,21 +312,40 @@ async function handleArchFlow(params: MemoryParams): Promise<string> {
 // ============================================================
 
 async function handleGotchaAction(params: MemoryParams): Promise<string> {
-  if (params.content && params.scope) {
-    if (!params.scope.trim()) return "❌ **gotcha format error:** scope (file path) is required.";
-    if (!params.content.trim()) return "❌ **gotcha format error:** content (description) is required.";
-    const normalizedScope = normalizeScope(params.scope) || params.scope;
+  // Back-compat: V2-era calls used `description` (or a `title`) for the bug text
+  // while V3 writes use `content`. Accept either so a correct write never
+  // silently falls through to a read-only listing (the gotcha would be lost).
+  const content = (params.content ?? params.description ?? "").trim();
+  const scope = (params.scope ?? "").trim();
+
+  if (content && scope) {
+    const normalizedScope = normalizeScope(scope) || scope;
     const { addGotcha } = await import("../engine/kumaGotchas.js");
     const result = await addGotcha({
       filePath: normalizedScope,
-      description: params.content,
+      description: content,
       severity: (params.status as "low" | "medium" | "high" | "critical") || "medium",
-      workaround: params.description,
+      // `description` doubles as workaround only when the canonical `content` field was used.
+      workaround: params.content ? params.description : undefined,
       triggerCommand: params.trigger_command,
     });
     sessionMemory.recordMemoryAction("gotcha");
     return result;
   }
+
+  // Write-intent detected but incomplete -> fail loud with the exact format,
+  // instead of silently returning a misleading "no gotchas recorded" listing.
+  if (scope || params.title || params.status || params.trigger_command || params.description) {
+    return (
+      "❌ **Gotcha NOT saved** — missing `content` (bug description).\n" +
+      "✅ Use: kuma_memory({ action: \"gotcha\", scope: \"<file_path>\", content: \"<what went wrong>\", status: \"high\" })\n" +
+      "- `scope` — file path where the bug was found\n" +
+      "- `content` — bug description (required to save)\n" +
+      "- `status` — low | medium | high | critical"
+    );
+  }
+
+  // No write intent at all -> read-only listing.
   const { listGotchas, syncGotchasToDb } = await import("../engine/kumaGotchas.js");
   await syncGotchasToDb();
   return await listGotchas({ filePath: params.scope, severity: params.status });

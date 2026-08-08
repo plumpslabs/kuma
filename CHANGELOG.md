@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.2] — 2026-08-08
+
+### 🐛 Gotcha silent-loss fix + GC crash fixes
+
+- **Fix: gotcha write silently no-op'd** — `kuma_memory({ action: "gotcha" })` without `content` fell through to a read-only listing and replied "✅ No gotchas recorded — legacy codebase looks clean", so agents using the older V2 field names (`title`/`description`) lost the gotcha with zero error signal. Now: (1) `description` is accepted as a fallback for `content` (V2 back-compat — the record is saved), and (2) any write-intent without `content` returns a loud error with the exact format (`scope` + `content` + `status`) instead of a misleading listing.
+- **Fix: `kuma_safety({ action: "gc" })` crashed on every run since the first release** — `DELETE FROM edges WHERE ... updated_at ...` referenced a column `edges` does not have (schema has only `created_at`). GC now completes: "🧹 GC complete — cleaned 17 tables. Database vacuumed."
+- **Fix: latent GC crash on `safety_audit`** — retention query used `ORDER BY created_at` but the table stores `timestamp`; would have crashed once 200+ audit records accumulated.
+- **Validation**: 139/139 jest tests, typecheck + build clean, 30/30 MCP tool actions smoke-tested round-trip on a fresh project (incl. gc + gotcha edge cases).
+
 ## [2.4.1] — 2026-08-07
 
 ### 🧹 Zero-Gimmick — `health` action removed

@@ -961,7 +961,9 @@ export async function runGarbageCollection(): Promise<string> {
     removed += orphanResult[0]?.values?.length || 0;
 
     // 2. Stale edges (weight < 0.1, older than 30 days)
-    const staleEdges = db.exec(`DELETE FROM edges WHERE weight < 0.1 AND updated_at < strftime('%s','now','-30 days')`);
+    // NOTE: edges has no `updated_at` column — use created_at (was crashing GC with
+    // "no such column: updated_at" on every run since the very first release).
+    const staleEdges = db.exec(`DELETE FROM edges WHERE weight < 0.1 AND created_at < strftime('%s','now','-30 days')`);
     removed += staleEdges[0]?.values?.length || 0;
 
     // 3. Tool calls > 90 days
@@ -983,9 +985,10 @@ export async function runGarbageCollection(): Promise<string> {
     }
 
     // 8. Safety audit — keep only last 200
+    // NOTE: safety_audit has no `created_at` column — it stores `timestamp`.
     const auditCount = getCount("SELECT COUNT(*) FROM safety_audit");
     if (auditCount > 200) {
-      db.exec(`DELETE FROM safety_audit WHERE id IN (SELECT id FROM safety_audit ORDER BY created_at ASC LIMIT ${auditCount - 200})`);
+      db.exec(`DELETE FROM safety_audit WHERE id IN (SELECT id FROM safety_audit ORDER BY timestamp ASC LIMIT ${auditCount - 200})`);
     }
 
     // 9. Research cache — remove entries older than 60 days
