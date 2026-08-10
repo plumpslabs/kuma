@@ -7,14 +7,27 @@
 
 import type { AgentType } from "./agentDetector.js";
 
-// Shared bootstrap message — 6 core actions only, super-lean.
+// Shared bootstrap message — core actions only, super-lean.
+// XML delimiters (<kuma_rules>/<kuma_workflow>) are used like matcha's
+// <execution_filter>/<core_principles>: LLMs treat them as hard boundaries
+// between instruction and data, which measurably raises compliance.
 const CORE_ACTIONS = [
+  "<kuma_obedience>",
+  "## 🔒 Obedience (non-negotiable)",
+  "- MUST call `kuma_context({ action: \"init\" })` at session start.",
+  "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
+  "- MUST call `kuma_safety({ action: \"verify\" })` after edits.",
+  "- MUST NOT call actions outside the 13 core actions.",
+  "</kuma_obedience>",
+  "",
+  "<kuma_workflow>",
   "🧠 **Before coding:** `kuma_context({ action: \"init\" })`",
   "🔬 **Unfamiliar code:** `kuma_context({ action: \"research\", scope: \"<area>\" })`",
   "🐛 **Found a bug/quirk:** `kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
   "🧭 **Chose between options:** `kuma_memory({ action: \"decision\" })`",
   "🔀 **Traced a flow:** `kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
   "🛡️ **Before risky work / after edits:** `kuma_safety({ action: \"guard\" | \"verify\" })`",
+  "</kuma_workflow>",
 ].join("\n");
 
 const BOOTSTRAP = [
@@ -112,7 +125,7 @@ function generateClaudeSkill(): string {
     "  • `kuma_safety({ action: \"guard\" })` — safety check before risky ops",
     "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
-    "  • `.kuma/memories/` — persistent project knowledge",
+    "  • `.kuma/KNOWN_GOTCHAS.md` — gotchas · `.kuma/memories/decisions.md` — decisions (readable)",
   ].join("\n");
 }
 
@@ -134,7 +147,7 @@ function generateCursorSkill(): string {
     "  • `kuma_safety({ action: \"guard\" })` — safety check before risky ops",
     "  • `kuma_safety({ action: \"verify\", scope: \"<area>\" })` — verify after edits",
     "  • `.kuma/init.md` — full behavioral rules",
-    "  • `.kuma/memories/` — persistent project knowledge",
+    "  • `.kuma/KNOWN_GOTCHAS.md` — gotchas · `.kuma/memories/decisions.md` — decisions (readable)",
   ].join("\n");
 }
 

@@ -3,9 +3,8 @@ dist/
 coverage/
 .agent-backups/
 .kuma/
+.agents/
 *.log
 .env
 .env.local
 *.tsbuildinfo
-.agents/plan/
-.agents/reports/

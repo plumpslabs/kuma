@@ -260,7 +260,7 @@ export async function getDashboardData() {
     const verifTotal = first(`SELECT COUNT(*) as c FROM verifications`, "c");
     const verifPassed = first(`SELECT COUNT(*) as c FROM verifications WHERE passed = 1`, "c");
     const recentSessions = run(
-      `SELECT started_at, COALESCE(goal,'') as goal, tool_calls, edits, rollbacks, failures, safety_score
+      `SELECT started_at, COALESCE(goal,'') as goal, tool_calls, edits, rollbacks, failures
        FROM (SELECT * FROM sessions ORDER BY started_at DESC LIMIT 8)`
     ).map((r) => ({
       startedAt: Number(r.started_at ?? 0),
@@ -277,7 +277,7 @@ export async function getDashboardData() {
       toolCalls: first(`SELECT COUNT(*) as c FROM tool_calls`, "c"),
       gotchas: first(`SELECT COUNT(*) as c FROM known_gotchas`, "c"),
       archFlows: sessionMetrics.recordings.archFlows,
-      decisions: first(`SELECT COUNT(*) as c FROM (SELECT id FROM decision_log UNION SELECT id FROM nodes WHERE type = 'decision')`, "c"),
+      decisions: first(`SELECT COUNT(*) as c FROM nodes WHERE type = 'decision'`, "c"),
       researchCacheScopes: first(`SELECT COUNT(*) as c FROM research_cache`, "c"),
       verifications: verifTotal,
       verificationPassRate: verifTotal > 0 ? Math.round((verifPassed / verifTotal) * 100) : null,

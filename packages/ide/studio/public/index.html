@@ -828,8 +828,10 @@ function setupTabs(){
 function renderFeatures(data) {
   var items = data.features || [];
   var el = document.getElementById("panel-features");
+  var tab=document.querySelector('[data-tab="features"]');
   if(!el) return;
-  if(!items.length){el.innerHTML='<div class="empty">No features recorded yet.<br><br>Use:<br><code style="color:var(--accent)">kuma_memory</code></div>';return;}
+  if(!items.length){if(tab)tab.style.display='none';if(tab&&tab.classList.contains('active')){tab.classList.remove('active');var gt=document.querySelector('[data-tab="gotchas"]');if(gt){gt.classList.add('active');}var gp=document.getElementById('panel-gotchas');if(gp){gp.classList.add('active');}el.classList.remove('active');}return;}
+  if(tab)tab.style.display='';
   el.innerHTML = items.map(function(f){
     var feat = typeof f === 'string' ? JSON.parse(f) : f;
     var meta = {};

@@ -49,7 +49,7 @@ Kuma auto-generates:
 
 ## Core Architecture: 3 Pipeline-Driven Tools
 
-Kuma provides **3 coarse-grained tools** with impactful actions. Removed gimmick actions (add_node, feature, heal, harvest, session_mine, todo, context, benchmark, domain_rules, layers, noise_policy, lock, override, policy, contract, portability, doctor, gitignore, clean, progressive, sync, visualize, researches) are no longer documented.
+Kuma exposes **3 coarse-grained tools** with **13 core actions** — the full agent surface. Anything else (impact, navigate, changes, digest, drift, resume, mine, session, delete_node, clear, goal_progress, check, audit, security, gc, ast, validate, gotcha_staleness) was **removed** — not hidden, gone — so the agent never has to choose from 30+ options and there is no dead surface to maintain.
 
 ### 🧠 `kuma_context` — Context & Research
 
@@ -58,14 +58,7 @@ Kuma provides **3 coarse-grained tools** with impactful actions. Removed gimmick
 | `init` | Lean project brief + restore session | 🔴 Required first |
 | `research` | 5-step pipeline: cache → graph → scan → impact → decision | 🔴 Required before edits |
 | `history` | Why is this file written this way (cross-session trace) | 🔴 High |
-| `flow` | Hash-verified derived flow cache (F13) | 🔴 High |
-| `impact` | Analyze change effects on related code | 🟡 Linear |
-| `navigate` | Trace code flow across files | 🟡 Linear |
-| `changes` | View change log for current session | 🟡 Linear |
-| `rollback` | Undo a specific change by ID | 🟡 Linear |
-| `digest` | Ultra-compact <500 token project briefing | 🟡 Linear |
-| `drift` | Detect memory staleness & code drift | 🟡 Linear |
-| `resume` | Load previous session context | 🟡 Linear |
+| `flow` | Read a recorded architecture flow | 🔴 High |
 
 ### 💾 `kuma_memory` — Decision & Knowledge
 
@@ -75,11 +68,7 @@ Kuma provides **3 coarse-grained tools** with impactful actions. Removed gimmick
 | `arch_flow` | Record architecture flow (max 5 core files) | 🔴 Exponential |
 | `decision` | Record ADR-style decision with rationale | 🔴 Exponential |
 | `research_save` | Save research findings to cache | 🟡 Linear |
-| `mine` | Mine git history for hidden decisions | 🟡 Linear |
-| `session` | View session summary | 🟢 Skip |
-| `search` | Search knowledge graph | 🟡 Linear |
-| `delete_node` | Remove node/gotcha from graph + table | 🟡 Linear |
-| `goal_progress` | Track goal completion | 🟢 Skip |
+| `search` | Quick lookup of memory + knowledge graph | 🟡 Linear |
 
 ### 🛡️ `kuma_safety` — Safety & Verification
 
@@ -87,13 +76,8 @@ Kuma provides **3 coarse-grained tools** with impactful actions. Removed gimmick
 |--------|---------|--------|
 | `guard` | Detect anti-patterns, drift, runaway loops | 🔴 Required |
 | `verify` | Auto-run scoped tests after edits | 🔴 High |
-| `check` | Pre-execution safety check | 🟡 Linear |
-| `audit` | Query safety audit trail | 🟡 Linear |
-| `security` | Scan for leaked secrets/tokens | 🟡 Linear |
-| `gc` | Garbage collect stale data | 🟢 Skip |
-| `ast` / `validate` | AST-based code validation | 🟡 Linear |
-| `checkpoint` | Atomic snapshot before refactors | 🟡 Linear |
-| `rollback_label` | Restore from checkpoint | 🟡 Linear |
+| `checkpoint` | Labeled snapshot before risky work | 🟡 Linear |
+| `rollback_label` | Restore a labeled snapshot | 🟡 Linear |
 
 ---
 
@@ -103,11 +87,11 @@ Kuma exposes exactly **3 coarse-grained tools** — the agent picks an *action*,
 
 | Tool | Core Actions | Purpose |
 |------|--------------|---------|
-| `kuma_context` | `init`, `research`, `history` | Load project context, understand unfamiliar code |
-| `kuma_memory` | `gotcha`, `decision`, `arch_flow`, `research_save` | Persistent knowledge that saves future sessions |
-| `kuma_safety` | `guard`, `verify` | Pre-risk check, post-edit verification |
+| `kuma_context` | `init`, `research`, `history`, `flow` | Load project context, understand unfamiliar code |
+| `kuma_memory` | `gotcha`, `decision`, `arch_flow`, `research_save`, `search` | Persistent knowledge that saves future sessions |
+| `kuma_safety` | `guard`, `verify`, `checkpoint`, `rollback_label` | Pre-risk check, post-edit verification, snapshot/restore |
 
-Everything else is an internal action for power users. The agent uses its **own native tools** for editing, searching, and execution — Kuma is memory & safety, not a code manager.
+Everything else is an internal action — not exposed to the agent. The agent uses its **own native tools** for editing, searching, and execution — Kuma is memory & safety, not a code manager.
 
 ### What Kuma Provides
 
@@ -205,10 +189,10 @@ A typical Kuma-powered session follows this flow:
                    Record what was learned for future sessions
 
 6. VERIFY        → kuma_safety({ action: 'verify' })
-                   Auto-run scoped tests + AST validation
+                   Auto-run scoped tests + validation
 
-7. REVIEW        → kuma_context({ action: 'changes' })
-                   Review what was modified this session
+7. CHECKPOINT    → kuma_safety({ action: 'checkpoint', label: 'post-<feature>' })
+                   Snapshot once stable — restore with rollback_label if needed
 ```
 
 ---
@@ -224,9 +208,8 @@ Kuma stores all context locally in `.kuma/`:
 ├── memory.json      # Session state + metrics (auto)
 ├── auto-gotcha.json # Self-learning loop state (auto)
 ├── policy.yml       # OPTIONAL safety policy — only read if you create it
-├── memories/        # Memory layer markdown (decisions.md, arch_flow.md, ...)
+├── memories/        # Decision log markdown (decisions.md)
 ├── checkpoints/     # Atomic snapshots (label/ with kuma.db + files/)
-└── scratch/         # Temp debug artifacts (auto, ephemeral)
 ```
 
 > Hooks are registered in `.claude/settings.json` (PreToolUse) — not stored under `.kuma/`.
@@ -246,7 +229,7 @@ Kuma stores all context locally in `.kuma/`:
 | **Impact** | Agent doesn't know what's affected | Impact analysis traces dependencies |
 | **Coordination** | Multiple agents conflict | Per-agent session state + audit trail avoid collisions |
 | **Memory** | Agent repeats past mistakes | Decision memory + gotchas prevent loops |
-| **Reversibility** | Hard to undo changes | Checkpoint snapshots + selective undo |
+| **Reversibility** | Hard to undo changes | Checkpoint snapshots + rollback_label |
 | **Staleness** | Knowledge becomes outdated | Drift detection + gotcha staleness checks flag stale data |
 
 ---

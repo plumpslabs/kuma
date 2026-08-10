@@ -1,25 +1,19 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { saveResearchCache, getChanges } from "../engine/kumaDb.js";
+import { saveResearchCache } from "../engine/kumaDb.js";
 import { recordDecision } from "../engine/kumaMemory.js";
 import { normalizeScope } from "../utils/pathValidator.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "session" | "search" | "changes" | "mine" | "arch_flow" | "gotcha" | "delete_node" | "clear" | "goal_progress";
+type MemoryAction = "decision" | "research_save" | "arch_flow" | "gotcha" | "search";
 
 const MEMORY_ALIASES: Record<string, string> = {
-  "session": "session", "summary": "session", "status": "session", "get": "session",
   "decision": "decision", "adr": "decision",
   "research_save": "research_save", "save": "research_save", "store": "research_save",
-  "mine": "mine", "dig": "mine",
   "search": "search", "find": "search", "query": "search", "lookup": "search",
-  "changes": "changes", "change-log": "changes", "history": "changes",
   "arch_flow": "arch_flow", "arch-flow": "arch_flow", "architecture": "arch_flow",
   "gotcha": "gotcha", "gotchas": "gotcha", "quirk": "gotcha",
-  "delete_node": "delete_node", "delete-node": "delete_node", "remove-node": "delete_node",
-  "clear": "clear", "clear-graph": "clear", "wipe": "clear", "reset": "clear",
-  "goal_progress": "goal_progress", "progress": "goal_progress",
 };
 
 interface MemoryParams {
@@ -29,43 +23,29 @@ interface MemoryParams {
   content?: string;
   record?: string;
   confidence?: number;
-  confirm?: boolean;
   title?: string;
   context?: string;
   rationale?: string;
   outcome?: string;
-  topic?: string;
   limit?: number;
-  since?: number | string;
-  target?: string;
   description?: string;
   status?: string;
   trigger_command?: string;
 }
 
 export async function handleMemory(params: MemoryParams): Promise<string> {
-  const rawAction = params.action || "session";
+  const rawAction = params.action || "search";
   const key = rawAction.toLowerCase().replace(/[\s_-]+/g, "-");
   const action = MEMORY_ALIASES[key] || rawAction;
   sessionMemory.recordToolCall("kuma_memory", { action: rawAction });
 
   switch (action) {
     case "decision": return handleDecision(params);
-    case "mine": return handleMine(params);
     case "research_save": return handleResearchSave(params);
-    case "session": return handleSession(params);
     case "search": return handleSearch(params);
-    case "changes": return handleChanges(params);
     case "arch_flow": return handleArchFlow(params);
     case "gotcha": return handleGotchaAction(params);
-    case "goal_progress": return handleGoalProgress(params);
-    case "delete_node": return handleDeleteNode(params);
-    case "clear": {
-      const { clearGraph } = await import("../engine/kumaGraph.js");
-      await clearGraph();
-      return "🗑️ **Knowledge Graph Cleared** — All nodes, edges, and gotchas have been wiped from disk and memory.";
-    }
-    default: return `Unknown action "${action}".`;
+    default: return `Unknown action "${action}". Use: gotcha, decision, arch_flow, research_save, search`;
   }
 }
 
@@ -127,46 +107,6 @@ async function handleResearchSave(params: MemoryParams): Promise<string> {
 }
 
 // ============================================================
-// SESSION — Session summary
-// ============================================================
-
-async function handleSession(params: MemoryParams): Promise<string> {
-  const topic = params.topic as any;
-  const summary = sessionMemory.getSummary(topic);
-  if (topic) return typeof summary.content === "string" ? summary.content : JSON.stringify(summary, null, 2);
-  const modifiedFiles = (summary.modifiedFiles as Array<{ filePath: string; status: string }>) || [];
-  const failures = (summary.unresolvedFailures as Array<{ task: string; error: string }>) || [];
-  const recordingSummary = sessionMemory.getRecordingSummary();
-  const metricsSummary = sessionMemory.getMetricsSummary();
-  const lines: string[] = [
-    "📋 **Session Summary**\n━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-    `🎯 Goal: ${(summary.currentGoal as string) || "not set"}`,
-    `🕐 Duration: ${summary.sessionDuration}`,
-    `🛠️ Tool calls: ${summary.toolCallCount}\n`,
-    `🧠 **Recordings:** ${recordingSummary.total} total — ` +
-      `${recordingSummary.archFlows} arch_flow, ${recordingSummary.gotchas} gotcha, ${recordingSummary.decisions} decision, ${recordingSummary.researchSaves} research_save`,
-    `📊 **Metrics:** ${metricsSummary.filesRead} files read, ${metricsSummary.filesEdited} files edited`,
-    `⏱️ **Time saved:** ~${metricsSummary.researchTimeSavedFormatted} (from research cache)`,
-  ];
-  if (recordingSummary.missingRecordings.length > 0 && recordingSummary.total === 0) {
-    lines.push(`\n⚠️ **No recordings yet!** Missing: ${recordingSummary.missingRecordings.join(", ")}`);
-    lines.push(`💡 Tip: Record findings after reading files. arch_flow + gotcha are exponential value.`);
-  }
-  if (modifiedFiles.length > 0) {
-    lines.push(`**Modified Files** (${modifiedFiles.length}):`);
-    for (const f of modifiedFiles.slice(0, 10)) {
-      lines.push(`  ${f.status === "created" ? "✨" : f.status === "modified" ? "📝" : "❌"} ${f.filePath}`);
-    }
-    if (modifiedFiles.length > 10) lines.push(`  ... and ${modifiedFiles.length - 10} more`);
-  }
-  if (failures.length > 0) {
-    lines.push(`**Unresolved Issues** (${failures.length}):`);
-    for (const f of failures.slice(0, 5)) lines.push(`  ❌ ${f.task}: ${f.error.substring(0, 80)}`);
-  }
-  return lines.join("\n");
-}
-
-// ============================================================
 // SEARCH — Search memory + graph
 // ============================================================
 
@@ -222,31 +162,7 @@ async function handleSearch(params: MemoryParams): Promise<string> {
 }
 
 // ============================================================
-// CHANGES — Change log
-// ============================================================
-
-async function handleChanges(params: MemoryParams): Promise<string> {
-  const sinceNum = typeof params.since === "number" ? params.since : typeof params.since === "string" ? parseInt(params.since, 10) || undefined : undefined;
-  return await getChanges({ filePath: params.target, since: sinceNum });
-}
-
-// ============================================================
-// MINE — Decision Mining from Git History
-// ============================================================
-
-async function handleMine(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_mine", { scope: params.scope });
-  const { mineHistoricalDecisions } = await import("../engine/kumaMiner.js");
-  return await mineHistoricalDecisions({
-    scope: params.scope,
-    since: typeof params.since === "string" ? params.since : undefined,
-    confirm: params.confirm,
-    limit: params.limit,
-  });
-}
-
-// ============================================================
-// ARCH_FLOW — 3-Layer Memory Engine (Issue #17)
+// ARCH_FLOW — Domain Flow Recording
 // ============================================================
 
 async function handleArchFlow(params: MemoryParams): Promise<string> {
@@ -349,86 +265,4 @@ async function handleGotchaAction(params: MemoryParams): Promise<string> {
   const { listGotchas, syncGotchasToDb } = await import("../engine/kumaGotchas.js");
   await syncGotchasToDb();
   return await listGotchas({ filePath: params.scope, severity: params.status });
-}
-
-// ============================================================
-// DELETE NODE — Remove specific nodes/gotchas/decisions
-// ============================================================
-
-async function handleDeleteNode(params: MemoryParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_memory_delete", { scope: params.scope, target: params.target });
-  const { getDb, saveDb } = await import("../engine/kumaDb.js");
-  const db = await getDb();
-
-  if (params.scope && params.target) {
-    const id = parseInt(params.target, 10);
-    if (isNaN(id)) return `⚠️ target "${params.target}" is not a valid numeric ID.`;
-    switch (params.scope) {
-      case "gotcha":
-      case "gotchas": {
-        const gotchaRow = db.prepare("SELECT file_path, description FROM known_gotchas WHERE id = ?");
-        gotchaRow.bind([id]);
-        let gotchaFilePath = "", gotchaDesc = "";
-        if (gotchaRow.step()) {
-          const row = gotchaRow.getAsObject() as { file_path: string; description: string };
-          gotchaFilePath = row.file_path; gotchaDesc = row.description;
-        }
-        gotchaRow.free();
-        db.run("DELETE FROM known_gotchas WHERE id = ?", [id]);
-        if (gotchaFilePath && gotchaDesc) {
-          const gotchaNodeId = `gotcha::${gotchaFilePath}::${gotchaDesc.substring(0, 30)}`;
-          db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [gotchaNodeId, gotchaNodeId]);
-          db.run("DELETE FROM nodes WHERE id = ?", [gotchaNodeId]);
-        }
-        saveDb(db);
-        return `🗑️ **Gotcha #${id} deleted** (table + graph).`;
-      }
-      default:
-        return `⚠️ Unknown scope "${params.scope}". Supported: gotcha`;
-    }
-  }
-
-  if (params.target || params.scope) {
-    const { flushDb } = await import("../engine/kumaDb.js");
-    const targetStr = params.target || "";
-    const targetId = params.scope && !targetStr.includes("::") ? `${targetStr}::${params.scope}` : targetStr;
-    if (targetId && (targetId.includes("::") || targetId.includes(":") || targetId.includes("-") || isNaN(parseInt(targetId, 10)))) {
-      try {
-        if (targetId.startsWith("feature_domain::")) {
-          const domainName = targetId.replace("feature_domain::", "");
-          db.run("DELETE FROM nodes WHERE id LIKE ? OR id LIKE ? OR id LIKE ?", [`feature_domain::${domainName}`, `cross_service_link::${domainName}::%`, `gotcha::${domainName}::%`]);
-          db.run("DELETE FROM edges WHERE source_id LIKE ? OR target_id LIKE ?", [`%${domainName}%`, `%${domainName}%`]);
-        } else if (targetId.startsWith("gotcha::")) {
-          db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [targetId, targetId]);
-          db.run("DELETE FROM nodes WHERE id = ?", [targetId]);
-          const parts = targetId.split("::");
-          if (parts.length >= 3) {
-            db.run("DELETE FROM known_gotchas WHERE file_path = ? AND description LIKE ?", [parts[1], `${parts.slice(2).join("::")}%`]);
-          }
-        } else {
-          db.run("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [targetId, targetId]);
-          db.run("DELETE FROM nodes WHERE id = ?", [targetId]);
-        }
-        flushDb(db);
-        return `🗑️ **Node & relations deleted:** ${targetId}`;
-      } catch (err) { return `❌ Failed to delete node: ${err}`; }
-    }
-    const id = parseInt(targetId, 10);
-    if (!isNaN(id)) { db.run("DELETE FROM nodes WHERE rowid = ?", [id]); flushDb(db); return `🗑️ **Node #${id} deleted.**`; }
-  }
-  return "⚠️ Provide `target` (node ID) to delete.\n\nExamples:\n- `delete_node`, target: 'function::sendMessage'\n- `delete_node`, scope: 'gotcha', target: '42'";
-}
-
-// ============================================================
-// GOAL PROGRESS — Track goal completion
-// ============================================================
-
-async function handleGoalProgress(params: MemoryParams): Promise<string> {
-  const pct = params.confidence ?? 0;
-  const ms = params.content || params.title;
-  sessionMemory.setGoalProgress(pct, ms);
-  const p = sessionMemory.getGoalProgress();
-  if (!p) return "Error";
-  const bar = "█".repeat(Math.floor(p.percentage / 10)) + "░".repeat(10 - Math.floor(p.percentage / 10));
-  return `📊 ${bar} ${p.percentage}%${p.milestone ? " — " + p.milestone : ""}`;
 }

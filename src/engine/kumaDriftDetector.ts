@@ -19,7 +19,7 @@ import { getProjectRoot } from "../utils/pathValidator.js";
 
 interface StaleRecord {
   id: number;
-  source: string;       // e.g., "research_cache", "decision_log", "file_summaries"
+  source: string;       // e.g., "research_cache", "file_summaries"
   description: string;   // e.g., scope name, decision title, file path
   filePath: string | null;
   oldHash: string;
@@ -128,40 +128,6 @@ export async function detectDrift(): Promise<StaleRecord[]> {
       }
     }
     fsStmt.free();
-
-    // 3. Check decision_log entries that reference files
-    const dlStmt = db.prepare(
-      "SELECT id, title, file_paths, created_at FROM decision_log WHERE file_paths IS NOT NULL ORDER BY created_at DESC LIMIT 50"
-    );
-    while (dlStmt.step()) {
-      const row = dlStmt.getAsObject() as Record<string, unknown>;
-      const filePaths: string[] = [];
-      try { filePaths.push(...JSON.parse(row.file_paths as string)); } catch { /* skip */ }
-
-      let hasStaleFile = false;
-      for (const fp of filePaths) {
-        if (!fp) continue;
-        const fullPath = path.resolve(getProjectRoot(), fp);
-        if (!fs.existsSync(fullPath)) {
-          hasStaleFile = true;
-          break;
-        }
-      }
-
-      if (hasStaleFile) {
-        records.push({
-          id: row.id as number,
-          source: "decision_log",
-          description: row.title as string,
-          filePath: filePaths[0] || null,
-          oldHash: "",
-          currentHash: "",
-          age: "—",
-          severity: "stale",
-        });
-      }
-    }
-    dlStmt.free();
   } catch (err) {
     console.error(`[DriftDetector] Error: ${err}`);
   }
@@ -241,12 +207,6 @@ export async function flagStaleRecords(): Promise<{ flagged: number; total: numb
       } else if (record.source === "file_summaries") {
         db.run(
           `UPDATE file_summaries SET content_hash = '' WHERE id = ?`,
-          [record.id]
-        );
-        flagged++;
-      } else if (record.source === "decision_log") {
-        db.run(
-          `UPDATE decision_log SET status = 'deprecated' WHERE id = ?`,
           [record.id]
         );
         flagged++;

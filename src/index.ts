@@ -501,20 +501,7 @@ async function main(): Promise<void> {
         console.error(`[${SERVER_NAME}] ⚠️ Graph auto-population: ${err}`);
       }
 
-      // 3. Ensure .kuma/scratch/ directory exists (Issue #10)
-      try {
-        const fs = await import("node:fs");
-        const path = await import("node:path");
-        const scratchDir = path.resolve(process.cwd(), ".kuma", "scratch");
-        if (!fs.existsSync(scratchDir)) {
-          fs.mkdirSync(scratchDir, { recursive: true });
-          console.error(`[${SERVER_NAME}] ✅ Created .kuma/scratch/ for temporary debug artifacts`);
-        }
-      } catch (err) {
-        console.error(`[${SERVER_NAME}] ⚠️ Scratch directory setup: ${err}`);
-      }
-
-      // 4. Create/update session record in DB
+      // 3. Create/update session record in DB
       try {
         const { getDb, saveDb } = await import("./engine/kumaDb.js");
         const db = await getDb();
@@ -538,7 +525,7 @@ async function main(): Promise<void> {
         console.error(`[${SERVER_NAME}] ⚠️ Search vector cache: ${err}`);
       }
 
-      // 7. Pre-warm graph connectivity (Pilar 3)
+      // 7. Pre-warm graph connectivity
       try {
         const { buildGraphConnectivity } = await import("./engine/kumaSearch.js");
         await buildGraphConnectivity();
@@ -575,22 +562,7 @@ async function main(): Promise<void> {
     `[${SERVER_NAME}] Session started: ${new Date().toISOString()}`,
   );
   console.error(
-    `[${SERVER_NAME}] Kuma v2.0 — Zero-Overhead Autonomous Brain Engine`,
-  );
-  console.error(
-    `[${SERVER_NAME}] ⚡ Auto-init: no manual init needed (Pilar 1)`,
-  );
-  console.error(
-    `[${SERVER_NAME}] 📛 Namespace normalized: kuma_kuma_* → kuma_* (Pilar 2)`,
-  );
-  console.error(
-    `[${SERVER_NAME}] 🧹 Noise filter: AST node types rejected (Pilar 4)`,
-  );
-  console.error(
-    `[${SERVER_NAME}] 🐙 Git auto-harvester installed (Pilar 5)`,
-  );
-  console.error(
-    `[${SERVER_NAME}] 🛡️ 3 coarse-grained tools: kuma_context, kuma_memory, kuma_safety`,
+    `[${SERVER_NAME}] 🛡️ 3 coarse-grained tools: kuma_context, kuma_memory, kuma_safety — 13 core actions`,
   );
 
   await server.connect(transport);

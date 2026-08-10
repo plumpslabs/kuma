@@ -13,7 +13,7 @@
 - **Memory is recorded only when it pays back.** Gotchas, decisions, and
   architecture flows — not every symbol or edge.
 - **Inject before edit, not on demand.** The hooks deliver context with zero
-  extra agent steps. On-demand tools (`history`, `flow`, `digest`) are fallbacks.
+  extra agent steps. On-demand tools (`history`, `flow`) are fallbacks.
 - **No gimmicks.** Anything a native tool (grep/glob) does faster was removed.
 
 ---
@@ -29,9 +29,8 @@ Kuma stores all context locally in `.kuma/`:
 ├── memory.json      # Session state + metrics (auto)
 ├── auto-gotcha.json # Self-learning loop state (auto)
 ├── policy.yml       # OPTIONAL safety policy — only read if you create it
-├── memories/        # Memory layer markdown (decisions.md, arch_flow.md, ...)
+├── memories/        # Decision log markdown (decisions.md)
 ├── checkpoints/     # Atomic snapshots (label/ with kuma.db + files/)
-└── scratch/         # Temp debug artifacts (auto, ephemeral)
 ```
 
 **Facts that matter:**
@@ -49,19 +48,16 @@ Kuma stores all context locally in `.kuma/`:
 
 ---
 
-## 3. Tools & Actions (28 impactful actions, 0 gimmicks)
+## 3. Tools & Actions (13 core actions, 0 gimmicks)
 
 ### `kuma_context` — understand before you change
-`init` · `research` · `impact` · `navigate` · `flow` · `history` ·
-`changes` · `rollback` · `digest` · `drift` · `resume`
+`init` · `research` · `history`
 
 ### `kuma_memory` — record what pays back
-`decision` · `mine` · `research_save` · `session` · `search` ·
-`changes` · `arch_flow` · `gotcha` · `delete_node` · `clear` · `goal_progress`
+`gotcha` · `decision` · `arch_flow` · `research_save`
 
 ### `kuma_safety` — when risky
-`guard` · `verify` · `check` · `audit` · `security` ·
-`gc` · `ast` · `validate` · `checkpoint` · `rollback_label` · `checkpoint_list` · `gotcha_staleness`
+`guard` · `verify` · `checkpoint` · `rollback_label`
 
 ---
 
@@ -87,8 +83,7 @@ START SESSION
   ├─ research_save ← explored an area? cache the findings
   │
   AFTER WORK
-  ├─ verify   ← scoped tests + AST validation
-  └─ changes  ← review what you modified
+  └─ verify   ← scoped tests + AST validation
 ```
 
 ---

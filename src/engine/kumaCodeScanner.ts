@@ -620,7 +620,7 @@ export function formatScanResult(result: ScanResult): string {
   lines.push(
     "",
     "💡 The knowledge graph now has richer code structure data.",
-    "💡 Use kuma_context({ action: 'digest' }) to see the graph overview.",
+    "💡 Use kuma_context({ action: 'research', scope: '<area>' }) to see the graph overview.",
   );
 
   return lines.join("\n");

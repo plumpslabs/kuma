@@ -1,26 +1,19 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
-import { getDb, getResearchCache, saveResearchCache, getChanges, rollbackChange } from "../engine/kumaDb.js";
-import { searchGraph, analyzeImpact, formatImpact, traceFlow, formatFlow } from "../engine/kumaGraph.js";
+import { getResearchCache, saveResearchCache } from "../engine/kumaDb.js";
+import { searchGraph, analyzeImpact } from "../engine/kumaGraph.js";
 import { scoreMemoryRelevance, getProactiveMemories } from "../engine/kumaMemory.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "impact" | "navigate" | "flow" | "changes" | "history" | "rollback" | "digest" | "drift" | "resume";
+type ContextAction = "init" | "research" | "history" | "flow";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "research": "research", "search": "research", "explore": "research", "inspect": "research",
-  "impact": "impact", "analyze": "impact", "whatif": "impact", "refactor": "impact",
-  "navigate": "navigate", "trace": "navigate", "flow-trace": "navigate",
   "flow": "flow", "domain-flow": "flow", "domain_flow": "flow", "flow-cache": "flow",
   "init": "init", "start": "init", "load": "init", "brief": "init", "project": "init",
-  "resume": "resume", "continue": "resume", "restore": "resume", "reload": "resume",
-  "changes": "changes", "log": "changes", "changelog": "changes",
   "history": "history", "why": "history", "touched": "history", "provenance": "history",
-  "rollback": "rollback", "undo": "rollback", "revert": "rollback",
-  "digest": "digest", "bootstrap": "digest", "briefing": "digest", "overview": "digest",
-  "drift": "drift", "staleness": "drift", "code-drift": "drift", "freshness": "drift",
 };
 
 interface ContextParams {
@@ -28,7 +21,6 @@ interface ContextParams {
   scope?: string;
   target?: string;
   goal?: string;
-  since?: number;
 }
 
 export async function handleContext(params: ContextParams): Promise<string> {
@@ -39,79 +31,10 @@ export async function handleContext(params: ContextParams): Promise<string> {
   switch (action) {
     case "init": return handleInit(params);
     case "research": return handleResearch(params);
-    case "impact": return handleImpact(params);
-    case "navigate": return handleNavigate(params);
-    case "flow": return handleFlow(params);
     case "history": return handleHistory(params);
-    case "changes": return handleChanges(params);
-    case "rollback": return handleRollback(params);
-    case "digest": return handleDigest(params);
-    case "drift": return handleDrift(params);
-    case "resume": return handleResume(params);
-    default: return `Unknown action "${action}". Use: init, research, impact, navigate, flow, history, changes, rollback, digest, drift, resume`;
+    case "flow": return handleFlow(params);
+    default: return `Unknown action "${action}". Use: init, research, history, flow`;
   }
-}
-
-// ============================================================
-// RESUME — Load Previous Session Context
-// ============================================================
-
-async function handleResume(_params: ContextParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_context_resume", {});
-  const lines: string[] = [
-    "🔄 **Kuma — Session Resume**",
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    "",
-  ];
-  try {
-    const db = await getDb();
-    const res = db.exec("SELECT goal, tool_calls, edits, rollbacks, failures, safety_score, started_at FROM sessions ORDER BY started_at DESC LIMIT 1");
-    if (res[0]?.values.length) {
-      const row = res[0].values[0];
-      const goal = (row[0] as string) || "no goal";
-      const calls = (row[1] as number) || 0;
-      const edits = (row[2] as number) || 0;
-      const rollbacks = (row[3] as number) || 0;
-      const failures = (row[4] as number) || 0;
-      const safety = row[5] == null ? null : (row[5] as number);
-      const time = new Date((row[6] as number) * 1000).toLocaleString();
-      lines.push("**Last Session**");
-      lines.push(`  🎯 Goal: ${goal.substring(0, 80)}`);
-      lines.push(`  🕐 ${time}`);
-      lines.push(`  🔧 ${calls} calls · 📝 ${edits} edits · ↩ ${rollbacks} rollbacks · ❌ ${failures} failures${safety != null ? ` · 🛡 safety ${safety}` : ""}`);
-      lines.push("");
-    }
-  } catch {}
-
-  const summary = sessionMemory.getSummary();
-  lines.push("**Current State**");
-  lines.push(`  🎯 Goal: ${(summary.currentGoal as string) || "not set"}`);
-  const progress = sessionMemory.getGoalProgress();
-  if (progress) lines.push(`  📊 Progress: ${progress.percentage}%${progress.milestone ? ` — ${progress.milestone}` : ""}`);
-  lines.push(`  📝 Modified: ${(summary.modifiedFiles as unknown[])?.length || 0} file(s)`);
-  lines.push(`  ✅ Completed steps: ${(summary.completedSteps as string[])?.length || 0}`);
-  lines.push(`  🛠️ Tool calls: ${summary.toolCallCount}`);
-  lines.push(`  ⏱️ Session duration: ${summary.sessionDuration}`);
-  const failures = summary.unresolvedFailures as Array<{ task: string; error: string }> | undefined;
-  if (failures?.length) lines.push(`  ⚠️ Unresolved failures: ${failures.length}`);
-  lines.push("");
-
-  try {
-    const changes = await getChanges({ limit: 5 });
-    if (changes && !changes.startsWith("No changes")) { lines.push("**Recent Changes**"); lines.push(changes); lines.push(""); }
-  } catch {}
-
-  const history = sessionMemory.getToolCallHistory(5);
-  if (history.length) {
-    lines.push("**Recent Tool Calls**");
-    for (const h of history) {
-      const action = (h.params as Record<string, unknown>)?.action || "";
-      lines.push(`  🛠 ${h.toolName}${action ? ` (${action})` : ""}`);
-    }
-    lines.push("");
-  }
-  lines.push("💡 Continue: kuma_context({ action: 'research', scope: '<area>' }) to pick up where you left off.");
-  return lines.join("\n");
 }
 
 // ============================================================
@@ -184,7 +107,7 @@ async function handleInit(_params: ContextParams): Promise<string> {
     if (rulesBlock) { lines.push(rulesBlock); lines.push(""); }
   } catch {}
 
-  lines.push("💡 Full view: kuma_context({ action: 'digest' }) · Research: kuma_context({ action: 'research', scope: '<area>' })");
+  lines.push("💡 Deeper: kuma_context({ action: 'history', target: '<file>' }) · Flow: kuma_context({ action: 'flow', target: '<domain>' }) · Research: kuma_context({ action: 'research', scope: '<area>' })");
   return lines.join("\n");
 }
 
@@ -297,38 +220,8 @@ async function handleResearch(params: ContextParams): Promise<string> {
 }
 
 // ============================================================
-// IMPACT, NAVIGATE, CHANGES, FLOW, HISTORY, ROLLBACK, DIGEST, DRIFT
+// HISTORY — Why is this file written this way
 // ============================================================
-
-async function handleImpact(params: ContextParams): Promise<string> {
-  const target = params.target || params.scope;
-  if (!target) return "⚠️ target or scope parameter required.";
-  sessionMemory.recordToolCall("kuma_context_impact", { target });
-  const impact = await analyzeImpact(target);
-  return formatImpact(impact);
-}
-
-async function handleNavigate(params: ContextParams): Promise<string> {
-  const entryPoint = params.target || params.scope;
-  if (!entryPoint) return "⚠️ target or scope parameter required.";
-  sessionMemory.recordToolCall("kuma_context_navigate", { entryPoint });
-  const steps = await traceFlow(entryPoint);
-  return formatFlow(entryPoint, steps);
-}
-
-async function handleChanges(params: ContextParams): Promise<string> {
-  const filePath = params.target;
-  const since = params.since;
-  return await getChanges({ filePath, since });
-}
-
-async function handleFlow(params: ContextParams): Promise<string> {
-  const domain = params.target || params.scope;
-  sessionMemory.recordToolCall("kuma_context_flow", { domain });
-  if (!domain) return "ℹ️ **kuma_context({ action: 'flow' })** — requires a `target` (domain name).\n\n  kuma_context({ action: 'flow', target: 'WhatsApp Omnichannel' })\n\nServes the domain flow from cache, re-deriving it from imports when stale (F13).";
-  const { getFreshDomainFlow } = await import("../engine/kumaFlowCache.js");
-  return await getFreshDomainFlow(domain);
-}
 
 async function handleHistory(params: ContextParams): Promise<string> {
   const target = params.target || params.scope;
@@ -368,36 +261,16 @@ async function handleHistory(params: ContextParams): Promise<string> {
   return lines.join("\n");
 }
 
-async function handleRollback(params: ContextParams): Promise<string> {
-  const target = params.target;
-  if (!target) return "⚠️ target parameter required (change ID, e.g. '5').";
-  const changeId = parseInt(target, 10);
-  if (isNaN(changeId)) return `⚠️ Invalid change ID: "${target}". Use a numeric ID from kuma_context({ action: 'changes' }).`;
-  sessionMemory.recordToolCall("kuma_context_rollback", { changeId });
-  return await rollbackChange(changeId);
-}
+// ============================================================
+// FLOW — Read a recorded domain flow
+// ============================================================
 
-async function handleDigest(_params: ContextParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_context_digest", {});
-  try {
-    const { generateContextDigest } = await import("../engine/contextDigest.js");
-    return await generateContextDigest();
-  } catch (err) {
-    try {
-      const { generateDigest } = await import("../engine/domainRules.js");
-      return generateDigest();
-    } catch { return `Error generating digest: ${err}`; }
-  }
-}
-
-async function handleDrift(_params: ContextParams): Promise<string> {
-  sessionMemory.recordToolCall("kuma_context_drift", {});
-  try {
-    const { detectDrift, formatDriftReport, flagStaleRecords } = await import("../engine/kumaDriftDetector.js");
-    await flagStaleRecords();
-    const records = await detectDrift();
-    return formatDriftReport(records);
-  } catch (err) { return `Error detecting drift: ${err}`; }
+async function handleFlow(params: ContextParams): Promise<string> {
+  const domain = params.target || params.scope;
+  sessionMemory.recordToolCall("kuma_context_flow", { domain });
+  if (!domain) return "ℹ️ **kuma_context({ action: 'flow' })** — requires a `target` (domain name).\n\n  kuma_context({ action: 'flow', target: 'WhatsApp Omnichannel' })\n\nServes the domain flow from cache, re-deriving it from imports when stale (F13).";
+  const { getFreshDomainFlow } = await import("../engine/kumaFlowCache.js");
+  return await getFreshDomainFlow(domain);
 }
 
 function computeProjectHash(scope: string): string {

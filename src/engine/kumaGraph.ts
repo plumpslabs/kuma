@@ -973,7 +973,7 @@ export async function queryGraph(params: GraphQuery): Promise<string> {
       // Find paths between two nodes (BFS, depth-limited)
       const parts = query.split("→").map((s) => s.trim());
       if (parts.length !== 2) {
-        return `⚠️ For path queries, use format: "sourceNodeID → targetNodeID"\nExample: kuma_context({ action: 'impact', target: 'login' }) → traces connections between nodes.`;
+        return `⚠️ For path queries, use format: "sourceNodeID → targetNodeID"\nExample: kuma_context({ action: 'research', scope: 'login' }) → traces connections between nodes.`;
       }
 
       const [sourceId, targetId] = parts;

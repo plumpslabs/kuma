@@ -331,7 +331,7 @@ table tbody tr:last-child td { border-bottom: none; }
   <div class="topbar-inner">
     <a class="brand" href="#top">
       <img src="../public/kuma.png" alt="Kuma" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png';">
-      <span class="brand-name">Kuma<small>v2.4.2</small></span>
+      <span class="brand-name">Kuma<small>v2.4.3</small></span>
     </a>
     <nav class="topnav" id="topnav">
       <a href="#overview">Overview</a>
@@ -354,7 +354,7 @@ table tbody tr:last-child td { border-bottom: none; }
 <section class="hero" id="top">
   <img class="hero-logo" src="../public/kuma.png" alt="Kuma Logo" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/plumpslabs/kuma/main/public/kuma.png';">
   <h1>Kuma<span class="sub">Safety-first context &amp; orchestration engine for AI coding agents</span></h1>
-  <p class="hero-tagline">Zero-setup MCP server that ensures AI agents never break your project — mandatory research pipeline, knowledge graph, impact analysis, decision memory, and a safety guard.</p>
+  <p class="hero-tagline">Zero-setup MCP server that gives AI agents discipline — research before touching unfamiliar code, knowledge that persists across sessions, and a safety guard that catches mistakes.</p>
   <div class="hero-badges">
     <span class="hero-badge">MCP Server</span>
     <span class="hero-badge">SQLite Graph</span>
@@ -483,41 +483,28 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
     <!-- ─── 3 Tools ─── -->
     <section id="tools">
       <h2><span class="hash">#</span>3 Coarse-Grained Tools</h2>
-      <p class="lead">Kuma exposes <strong>3 coarse-grained tools</strong> with <strong>6 core actions</strong> — the agent picks an action, Kuma runs the internal workflow.</p>
+      <p class="lead">Kuma exposes <strong>3 coarse-grained tools</strong> with <strong>13 core actions</strong> — the agent picks an action, Kuma runs the internal workflow. Everything else was removed: the MCP schema rejects unknown actions.</p>
 
       <h3>🧠 kuma_context — Context &amp; Research</h3>
       <div class="table-wrap"><table>
         <thead><tr><th>Action</th><th>Pipeline</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>init</code></td><td>Project brief</td><td>Load graph, detect stack, show structure. <strong>Call first every session.</strong></td></tr>
-          <tr><td><code>research</code></td><td>5-step pipeline</td><td>Cache → staleness → graph → impact → decisions. <strong>Required before edits.</strong></td></tr>
-          <tr><td><code>impact</code></td><td>Graph traversal</td><td>"Change validateToken → 42 refs, 15 files, 3 tests."</td></tr>
-          <tr><td><code>navigate</code></td><td>Graph BFS</td><td>Trace full call chain from route to database.</td></tr>
-          <tr><td><code>changes</code></td><td>Change log query</td><td>Session changes with selective undo support.</td></tr>
-          <tr><td><code>rollback</code></td><td>File restore</td><td>Rollback a change by ID from the change log.</td></tr>
+          <tr><td><code>init</code></td><td>Project brief</td><td>Lean project brief + session restore. <strong>Call first every session.</strong></td></tr>
+          <tr><td><code>research</code></td><td>5-step pipeline</td><td>Cache → graph → scan → impact → decisions. <strong>Required before editing unfamiliar code.</strong></td></tr>
           <tr><td><code>history</code></td><td>Cross-session trace</td><td>"Why is this file written this way" — gotchas, decisions, change log.</td></tr>
-          <tr><td><code>flow</code></td><td>Derived cache</td><td>Hash-verified domain flow, re-derived when stale (F13).</td></tr>
-          <tr><td><code>digest</code></td><td>Ultra-compact brief</td><td>&lt;500 token project briefing (Issue #18).</td></tr>
-          <tr><td><code>drift</code></td><td>Staleness detection</td><td>Detect memory staleness &amp; code drift (Issue #20).</td></tr>
-          <tr><td><code>resume</code></td><td>Session restore</td><td>Load previous session context (goal, progress, changes).</td></tr>
+          <tr><td><code>flow</code></td><td>Domain flow</td><td>Read a recorded architecture flow (recorded via <code>arch_flow</code>).</td></tr>
         </tbody>
       </table></div>
 
-      <h3>📝 kuma_memory — Decision &amp; Knowledge</h3>
+      <h3>📝 kuma_memory — Knowledge Recording</h3>
       <div class="table-wrap"><table>
         <thead><tr><th>Action</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>decision</code></td><td>ADR-style decision — title + rationale + outcome.</td></tr>
-          <tr><td><code>mine</code></td><td>Mine historical decisions from git log &amp; inline comments.</td></tr>
+          <tr><td><code>gotcha</code></td><td>Record bug/quirk — IMMEDIATELY when found.</td></tr>
+          <tr><td><code>arch_flow</code></td><td>Record architecture flow (domain → hops, max 5 core files).</td></tr>
+          <tr><td><code>decision</code></td><td>Record ADR-style decision — title + rationale + outcome.</td></tr>
           <tr><td><code>research_save</code></td><td>Save research findings to graph + research cache.</td></tr>
-          <tr><td><code>session</code></td><td>Session summary — files, failures, progress.</td></tr>
-          <tr><td><code>search</code></td><td>Search memories + knowledge graph (TF-IDF hybrid).</td></tr>
-          <tr><td><code>changes</code></td><td>View change log for selective undo.</td></tr>
-          <tr><td><code>arch_flow</code></td><td>Architecture flow maps (domain → hops, max 5 files).</td></tr>
-          <tr><td><code>gotcha</code></td><td>Known gotchas &amp; anti-regression shield.</td></tr>
-          <tr><td><code>delete_node</code></td><td>Delete specific nodes/gotchas by ID.</td></tr>
-          <tr><td><code>clear</code></td><td>Wipe all nodes (reset).</td></tr>
-          <tr><td><code>goal_progress</code></td><td>Track goal progress across the session.</td></tr>
+          <tr><td><code>search</code></td><td>Quick lookup of memory + knowledge graph.</td></tr>
         </tbody>
       </table></div>
 
@@ -525,17 +512,10 @@ npx @plumpslabs/kuma init --cursor --claude --aider</code></pre>
       <div class="table-wrap"><table>
         <thead><tr><th>Action</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>guard</code></td><td>Anti-pattern, drift, and tool-loop detection.</td></tr>
-          <tr><td><code>verify</code></td><td>Auto-verification — auto-detect runner, scope tests, 5-layer safety guard.</td></tr>
-          <tr><td><code>check</code></td><td>Pre-exec safety: policy, path, risk.</td></tr>
-          <tr><td><code>audit</code></td><td>Query audit trail with stats.</td></tr>
-          <tr><td><code>security</code></td><td>Leak scanner — credential/token detection.</td></tr>
-          <tr><td><code>gc</code></td><td>Garbage collection — orphan cleanup, VACUUM.</td></tr>
-          <tr><td><code>ast</code> / <code>validate</code></td><td>AST-based code validation.</td></tr>
-          <tr><td><code>checkpoint</code></td><td>Atomic snapshot before refactors.</td></tr>
-          <tr><td><code>rollback_label</code></td><td>Restore files from a checkpoint.</td></tr>
-          <tr><td><code>checkpoint_list</code></td><td>List all checkpoints.</td></tr>
-          <tr><td><code>gotcha_staleness</code></td><td>Verify recorded gotchas still reference real code.</td></tr>
+          <tr><td><code>guard</code></td><td>Anti-pattern detection before risky edits.</td></tr>
+          <tr><td><code>verify</code></td><td>Auto-verification — auto-detect runner, scoped tests.</td></tr>
+          <tr><td><code>checkpoint</code></td><td>Labeled snapshot before risky work — the ONE rollback mechanism.</td></tr>
+          <tr><td><code>rollback_label</code></td><td>Restore files from a checkpoint by label.</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -612,8 +592,8 @@ kuma_memory({
 # 6. Safety guard — verify nothing broke
 kuma_safety({ action: "guard", guardGoal: "add password reset" })
 
-# 7. Check changes for selective undo awareness
-kuma_context({ action: "changes" })</code></pre>
+# 7. Snapshot before risky work (the ONE rollback mechanism)
+kuma_safety({ action: "checkpoint", label: "pre-password-reset" })</code></pre>
       </div>
     </section>
 
@@ -663,22 +643,21 @@ kuma_context({ action: "changes" })</code></pre>
       </table></div>
     </section>
 
-    <!-- ─── Selective Undo ─── -->
+    <!-- ─── Checkpoints & Rollback ─── -->
     <section id="undo">
-      <h2><span class="hash">#</span>Selective Undo</h2>
-      <p>Unlike file-level rollback, Kuma provides <strong>change-aware selective undo</strong> via session tracking in the knowledge graph:</p>
+      <h2><span class="hash">#</span>Checkpoints &amp; Rollback</h2>
+      <p>Kuma provides <strong>one</strong> rollback mechanism — labeled snapshots. Take a checkpoint before risky work, restore by label if something breaks:</p>
       <div class="code-block">
         <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">text</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-        <pre><code># View all changes in current session
-kuma_context({ action: "changes" })
+        <pre><code># Snapshot before a risky refactor
+kuma_safety({ action: "checkpoint", label: "pre-refactor-auth" })
 
-# Filter by file
-kuma_context({ action: "changes", target: "src/auth.ts" })
+# Restore if something breaks
+kuma_safety({ action: "rollback_label", label: "pre-refactor-auth" })
 
-# Filter by time
-kuma_context({ action: "changes", since: 1722000000000 })</code></pre>
+# Label not found? Kuma lists the available labels</code></pre>
       </div>
-      <p>The change log tracks: session ID, file path, symbol name, diff summary, and timestamp per modification. This enables reverting specific changes without affecting other work in the same session.</p>
+      <p>Snapshots capture the SQLite graph + referenced files. If a label isn't found, Kuma lists what's available so you never restore blind.</p>
     </section>
 
     <!-- ─── Auto-Inject (F2) ─── -->
@@ -713,17 +692,16 @@ kuma hook pre-bash    # injects command-triggered gotchas
       <div class="code-block">
         <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span class="lang">text</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>.kuma/
-├── kuma.db                # SQLite knowledge graph (WASM) — nodes, edges, research cache, changes
+├── kuma.db                # SQLite knowledge graph (WASM) — nodes, edges, research cache
 ├── init.md                # Behavioral rules (generated by `kuma init`)
 ├── memory.json            # Session state + metrics (auto)
 ├── auto-gotcha.json       # Self-learning loop state (auto)
 ├── policy.yml             # OPTIONAL safety policy — only read if you create it
-├── memories/              # Memory layer markdown
-│   ├── decisions.md       # ADR-style architecture decisions
-│   ├── arch_flow.md       # Architecture flow maps
-│   └── gotcha.md          # Known gotchas
-├── checkpoints/           # Atomic snapshots (label/ with kuma.db + files/)
-└── scratch/               # Temp debug artifacts (auto, ephemeral)</code></pre>
+├── KNOWN_GOTCHAS.md       # Gotchas (human-readable layer)
+├── ARCHITECTURE_FLOW.md   # Recorded flows (human-readable layer)
+├── memories/              # Decision log markdown
+│   └── decisions.md       # ADR-style architecture decisions
+└── checkpoints/           # Atomic snapshots (label/ with kuma.db + files/)</code></pre>
       </div>
     </section>
 
@@ -736,11 +714,10 @@ kuma hook pre-bash    # injects command-triggered gotchas
       <div class="table-wrap"><table>
         <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>action</code></td><td><code>"init" | "research" | "impact" | "navigate" | "flow" | "history" | "changes" | "rollback" | "digest" | "drift" | "resume"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>action</code></td><td><code>"init" | "research" | "history" | "flow"</code></td><td>Action to perform</td></tr>
           <tr><td><code>scope</code></td><td><code>string?</code></td><td>Research scope (e.g. "auth")</td></tr>
-          <tr><td><code>target</code></td><td><code>string?</code></td><td>Symbol/file for impact/navigate</td></tr>
+          <tr><td><code>target</code></td><td><code>string?</code></td><td>File/domain for history/flow</td></tr>
           <tr><td><code>goal</code></td><td><code>string?</code></td><td>Current goal</td></tr>
-          <tr><td><code>since</code></td><td><code>number?</code></td><td>Unix timestamp filter</td></tr>
         </tbody>
       </table></div>
 
@@ -748,22 +725,18 @@ kuma hook pre-bash    # injects command-triggered gotchas
       <div class="table-wrap"><table>
         <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>action</code></td><td><code>"decision" | "mine" | "research_save" | "session" | "search" | "changes" | "arch_flow" | "gotcha" | "delete_node" | "clear" | "goal_progress"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>action</code></td><td><code>"gotcha" | "arch_flow" | "decision" | "research_save" | "search"</code></td><td>Action to perform</td></tr>
           <tr><td><code>scope</code></td><td><code>string?</code></td><td>Scope for research_save/search</td></tr>
           <tr><td><code>query</code></td><td><code>string?</code></td><td>Search query</td></tr>
           <tr><td><code>content</code></td><td><code>string?</code></td><td>Content for research_save</td></tr>
           <tr><td><code>record</code></td><td><code>string?</code></td><td>JSON record string</td></tr>
           <tr><td><code>confidence</code></td><td><code>number (0-1)?</code></td><td>Confidence score</td></tr>
           <tr><td><code>trigger_command</code></td><td><code>string?</code></td><td>Gotcha trigger shell command</td></tr>
-          <tr><td><code>confirm</code></td><td><code>boolean?</code></td><td>Auto-confirm candidates for mine</td></tr>
           <tr><td><code>title</code></td><td><code>string?</code></td><td>Decision title</td></tr>
           <tr><td><code>context</code></td><td><code>string?</code></td><td>Decision context</td></tr>
           <tr><td><code>rationale</code></td><td><code>string?</code></td><td>Decision rationale</td></tr>
           <tr><td><code>outcome</code></td><td><code>string?</code></td><td>Decision outcome</td></tr>
-          <tr><td><code>topic</code></td><td><code>string?</code></td><td>Session topic</td></tr>
           <tr><td><code>limit</code></td><td><code>number?</code></td><td>Result limit</td></tr>
-          <tr><td><code>target</code></td><td><code>string?</code></td><td>File for changes / node ID for delete_node</td></tr>
-          <tr><td><code>since</code></td><td><code>number?</code></td><td>Timestamp filter</td></tr>
           <tr><td><code>description</code></td><td><code>string?</code></td><td>Gotcha workaround</td></tr>
           <tr><td><code>status</code></td><td><code>string?</code></td><td>Gotcha severity (low|medium|high|critical)</td></tr>
         </tbody>
@@ -773,16 +746,12 @@ kuma hook pre-bash    # injects command-triggered gotchas
       <div class="table-wrap"><table>
         <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>action</code></td><td><code>"guard" | "verify" | "check" | "audit" | "security" | "gc" | "ast" | "validate" | "checkpoint" | "rollback_label" | "checkpoint_list" | "gotcha_staleness"</code></td><td>Action to perform</td></tr>
+          <tr><td><code>action</code></td><td><code>"guard" | "verify" | "checkpoint" | "rollback_label"</code></td><td>Action to perform</td></tr>
           <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
-          <tr><td><code>guardCheck</code></td><td><code>"anti-pattern" | "loop" | "drift" | "context" | "all"?</code></td><td>Guard check type</td></tr>
-          <tr><td><code>filePath</code></td><td><code>string?</code></td><td>File for check/security scan</td></tr>
-          <tr><td><code>toolName</code></td><td><code>string?</code></td><td>Tool name for audit filter</td></tr>
-          <tr><td><code>limit</code></td><td><code>number?</code></td><td>Audit result limit</td></tr>
-          <tr><td><code>command</code></td><td><code>string?</code></td><td>Command for check/ast</td></tr>
+          <tr><td><code>guardGoal</code></td><td><code>string?</code></td><td>Goal for guard check</td></tr>
+          <tr><td><code>scope</code></td><td><code>string?</code></td><td>Scope for verify (tests to run)</td></tr>
+          <tr><td><code>label</code></td><td><code>string?</code></td><td>Checkpoint label / rollback target</td></tr>
           <tr><td><code>force</code></td><td><code>boolean?</code></td><td>Force bypass cache for verify</td></tr>
-          <tr><td><code>riskLevel</code></td><td><code>string?</code></td><td>Filter audit by risk level</td></tr>
-          <tr><td><code>allowed</code></td><td><code>boolean?</code></td><td>Filter audit by allowed/blocked</td></tr>
           <tr><td><code>scope</code></td><td><code>string?</code></td><td>Scope for verify/ast/validate</td></tr>
           <tr><td><code>since</code></td><td><code>number?</code></td><td>Timestamp filter for audit</td></tr>
           <tr><td><code>label</code></td><td><code>string?</code></td><td>Checkpoint label</td></tr>

@@ -1,13 +1,14 @@
 # Kuma MCP — API Reference
 
-**Actions listed here are the impactful core. Removed actions (add_node, feature, heal, harvest, session_mine, todo, context, benchmark, decision_log, domain_rules, layers, noise_policy, progressive, sync, visualize, researches, lock, override, policy, contract, portability, doctor, gitignore, clean, template, suggest, record) are no longer documented — they were gimmick features that duplicated grep/glob or added overhead without measurable impact.**
+Kuma exposes **3 coarse-grained tools** with **13 core actions**. Anything else was removed —
+the MCP schema rejects unknown actions, so the agent never has to choose from 30+ options.
 
 ---
 
-## kuma_context
+## kuma_context — Context & Research
 
 ### `init`
-Lean project brief + session restore (<500 tokens). Auto-injects focus advice, fresh gotchas, injection stats, and path rules.
+Lean project brief + session restore (<500 tokens). Auto-injects focus advice, fresh gotchas, injection stats, and path rules. **MUST be called at session start.**
 
 ```json
 { "action": "init", "goal": "add password reset" }
@@ -16,31 +17,10 @@ Lean project brief + session restore (<500 tokens). Auto-injects focus advice, f
 **Returns:** Session state, proactive memories, fresh gotchas, injection metrics.
 
 ### `research`
-5-step pipeline: cache → staleness → graph/scan → impact → decision lookup.
+5-step pipeline before editing unfamiliar code: cache → graph/scan → impact → decision lookup.
 
 ```json
 { "action": "research", "scope": "auth" }
-```
-
-### `impact`
-Analyze change effects: references, test files, risk level, entry points.
-
-```json
-{ "action": "impact", "target": "src/services/auth.ts" }
-```
-
-### `navigate`
-Trace code flow from entry point.
-
-```json
-{ "action": "navigate", "target": "src/services/auth.ts" }
-```
-
-### `flow`
-Hash-verified derived domain flow cache (F13). Re-derives from imports when stale.
-
-```json
-{ "action": "flow", "target": "WhatsApp Omnichannel" }
 ```
 
 ### `history`
@@ -52,46 +32,47 @@ Cross-session trace — "why is this file written this way". Shows change log, f
 
 Also injected automatically via `kuma hook pre-edit` before edits.
 
-### `changes`
-View session change log.
+### `flow`
+Read a recorded architecture flow (recorded via `kuma_memory arch_flow`).
 
 ```json
-{ "action": "changes" }
-{ "action": "changes", "since": 1722000000000 }
-{ "action": "changes", "target": "src/auth.ts" }
-```
-
-### `rollback`
-Undo a change by change ID.
-
-```json
-{ "action": "rollback", "target": "42" }
-```
-
-### `digest`
-Ultra-compact project briefing (<500 tokens). Fastest way to bootstrap context.
-
-### `drift`
-Detect memory staleness & code drift.
-
-```json
-{ "action": "drift" }
-```
-
-**Returns:** Stale records, code drift warnings, freshness status.
-
-### `resume`
-Load previous session context (goal, progress, changes).
-
-```json
-{ "action": "resume" }
+{ "action": "flow", "target": "WhatsApp Omnichannel" }
 ```
 
 ---
 
-## kuma_memory
+## kuma_memory — Knowledge Recording
 
-Decision recording, knowledge persistence, and gotcha tracking.
+### `gotcha`
+Record bug/quirk (IMMEDIATELY when found).
+
+```json
+{
+  "action": "gotcha",
+  "scope": "path/to/file.ts",
+  "content": "useEffect causes infinite loop when state change triggers re-render",
+  "status": "high",
+  "description": "Use useCallback on the handler",
+  "trigger_command": "npm run build"
+}
+```
+
+**Parameters:**
+- `scope` (required) — file path
+- `content` (required) — bug description
+- `status` — severity: `low`, `medium`, `high`, `critical`
+- `description` — workaround
+- `trigger_command` — command that triggers this gotcha (e.g. "npm run seed")
+
+### `arch_flow`
+Record architecture flow (max 5 core files).
+
+```json
+{
+  "action": "arch_flow",
+  "content": "domain: AuthFlow | hops: auth.ts → middleware.ts → route.ts | gotchas: rate-limit, token-expiry"
+}
+```
 
 ### `decision`
 ADR-style decision recording.
@@ -113,96 +94,22 @@ Save research findings to cache + graph.
 { "action": "research_save", "scope": "auth" }
 ```
 
-To pass pre-built record:
+To pass a pre-built record:
 
 ```json
 { "action": "research_save", "scope": "auth", "record": "{\"scope\":\"auth\",\"confidence\":0.9,\"entryPoints\":[\"AuthController.login\"],\"flow\":[\"POST /login → AuthController.login → AuthService.validate → UserRepository.findByEmail\"]}" }
 ```
 
-### `session`
-Session summary — goal, duration, recordings, modified files, unresolved issues.
-
-```json
-{ "action": "session" }
-```
-
 ### `search`
-Search memory + knowledge graph with impact analysis.
+Quick lookup of memory + knowledge graph.
 
 ```json
 { "action": "search", "query": "auth flow" }
 ```
 
-### `mine`
-Mine decisions from git log & comments.
-
-```json
-{ "action": "mine", "scope": "auth" }
-```
-
-### `gotcha`
-Record bug/quirk (IMMEDIATELY when found).
-
-```json
-{
-  "action": "gotcha",
-  "scope": "path/to/file.ts",
-  "content": "useEffect causes infinite loop when state change triggers re-render",
-  "status": "high",
-  "description": "Use useCallback on the handler",
-  "trigger_command": "npm run build"
-}
-```
-
-**Parameters:**
-- `scope` (required) — file path
-- `content` (required) — bug description
-- `status` — severity: `low`, `medium`, `high`, `critical`
-- `description` — workaround
-- `trigger_command` (I2) — command that triggers this gotcha (e.g. "npm run seed")
-
-### `arch_flow`
-Record architecture flow (max 5 core files).
-
-```json
-{
-  "action": "arch_flow",
-  "content": "domain: AuthFlow | hops: auth.ts → middleware.ts → route.ts | gotchas: rate-limit, token-expiry"
-}
-```
-
-### `delete_node`
-Remove node + graph + table entries.
-
-```json
-{ "action": "delete_node", "target": "gotcha::auth.ts::useEffect infinite loop" }
-{ "action": "delete_node", "scope": "gotcha", "target": "42" }
-```
-
-### `clear`
-Wipe all nodes, edges, and gotchas from disk and memory.
-
-```json
-{ "action": "clear" }
-```
-
-### `goal_progress`
-Update goal completion percentage.
-
-```json
-{ "action": "goal_progress", "confidence": 75, "content": "Done with auth refactor" }
-```
-
-### `changes`
-View change log (alternative to `kuma_context changes`).
-
-```json
-{ "action": "changes" }
-```
-
 ---
 
-## kuma_safety
+## kuma_safety — Safety & Verification
 
 ### `guard`
 Anti-pattern detection before risky edits.
@@ -218,64 +125,23 @@ Auto-run scoped tests after edits. Rate-limited (30s cooldown).
 { "action": "verify", "scope": "auth" }
 ```
 
-### `check`
-Pre-execution safety check.
-
-### `audit`
-Query audit trail.
-
-```json
-{ "action": "audit", "toolName": "kuma_safety", "limit": 10 }
-```
-
-### `security`
-Security leak scanner for credentials/tokens/secrets in code.
-
-```json
-{ "action": "security", "filePath": "src/controllers/user.ts" }
-```
-
-### `gc`
-Garbage collection — deduplicate, remove orphans, vacuum.
-
-```json
-{ "action": "gc" }
-```
-
-### `ast` / `validate`
-AST-based code validation.
-
-```json
-{ "action": "ast", "scope": "src/services/auth.ts" }
-```
-
 ### `checkpoint`
-Create atomic snapshot before risky refactors.
+Create a labeled snapshot before risky work — the ONE rollback mechanism.
 
 ```json
 { "action": "checkpoint", "label": "pre-refactor-auth" }
 ```
 
 ### `rollback_label`
-Restore from a checkpoint by label.
+Restore from a checkpoint by label. If the label is not found, Kuma lists the available labels.
 
 ```json
 { "action": "rollback_label", "label": "pre-refactor-auth" }
 ```
 
-### `checkpoint_list`
-List all available checkpoints.
-
-### `gotcha_staleness`
-Verify recorded gotchas still reference real files/symbols.
-
-```json
-{ "action": "gotcha_staleness" }
-```
-
 ---
 
-## Auto-Inject Hooks (Roadmap F2)
+## Auto-Inject Hooks
 
 Kuma auto-injects gotchas, decisions, and history before edits via:
 

@@ -1,13 +1,24 @@
 # Changelog
 
+## [2.4.3] — 2026-08-10
+
+### 🧹 V3.5 cleanup pass — XML instruction format, dead store pruning, Studio fixes
+
+- **Instruction format → XML delimiters (matcha-style)**: All skill templates, init.md, and AGENTS.md merge now use `<kuma_obedience>`, `<kuma_workflow>`, `<kuma_storage>` XML tags for higher LLM compliance. Verified balanced across all 13 providers. Regression test added (`skillGenerator.test.ts`).
+- **Dead store pruning**: Removed `decision_log` table (0 INSERT callers, decisions actually stored in `decisions.md` + graph nodes), `scratch_entries` table (0 INSERT), and `scratch/` directory creation. Added `DROP TABLE IF EXISTS` migration for existing DBs.
+- **Studio fixes**: Removed dead `safety_score` column from sessions SELECT (0 writers). Panel Features auto-hides tab when 0 items (legacy action `feature` pruned).
+- **Docs overhaul**: api.md + guide.md fully rewritten (13 core actions only). index.html tools tables pruned from ~30 to 13 actions. "Selective Undo" → "Checkpoints & Rollback" (single mechanism). CORE_WORKFLOW.md action count corrected (28 → 13). .kuma/ tree diagram corrected.
+- **README + CORE_WORKFLOW**: .kuma/ tree cleanup — removed scratch/, clarified memories/ → "Decision log (decisions.md)".
+- **Validation**: tsc clean, 152/152 tests (13 suites), build main + studio OK, init.md regenerated, all 13 provider skills verified balanced.
+
 ## [2.4.2] — 2026-08-08
 
 ### 🐛 Gotcha silent-loss fix + GC crash fixes
 
-- **Fix: gotcha write silently no-op'd** — `kuma_memory({ action: "gotcha" })` without `content` fell through to a read-only listing and replied "✅ No gotchas recorded — legacy codebase looks clean", so agents using the older V2 field names (`title`/`description`) lost the gotcha with zero error signal. Now: (1) `description` is accepted as a fallback for `content` (V2 back-compat — the record is saved), and (2) any write-intent without `content` returns a loud error with the exact format (`scope` + `content` + `status`) instead of a misleading listing.
-- **Fix: `kuma_safety({ action: "gc" })` crashed on every run since the first release** — `DELETE FROM edges WHERE ... updated_at ...` referenced a column `edges` does not have (schema has only `created_at`). GC now completes: "🧹 GC complete — cleaned 17 tables. Database vacuumed."
-- **Fix: latent GC crash on `safety_audit`** — retention query used `ORDER BY created_at` but the table stores `timestamp`; would have crashed once 200+ audit records accumulated.
-- **Validation**: 139/139 jest tests, typecheck + build clean, 30/30 MCP tool actions smoke-tested round-trip on a fresh project (incl. gc + gotcha edge cases).
+- **Fix: gotcha write silently no-op'd** — `kuma_memory({ action: "gotcha" })` without `content` fell through to a read-only listing and replied "No gotchas recorded", so agents using V2 field names lost the gotcha silently. Now: `description` accepted as fallback for `content` (V2 back-compat), and write-intent without `content` returns a loud error.
+- **Fix: `kuma_safety({ action: "gc" })` crashed on every run** — `DELETE FROM edges WHERE ... updated_at` referenced a column `edges` does not have. GC now completes successfully.
+- **Fix: latent GC crash on `safety_audit`** — retention query used `ORDER BY created_at` but table stores `timestamp`.
+- **Validation**: 139/139 tests, typecheck + build clean.
 
 ## [2.4.1] — 2026-08-07
 

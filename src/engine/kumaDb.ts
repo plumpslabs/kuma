@@ -358,19 +358,13 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
-  // Part 4 #8: Decision Status (Living Document)
+  // Part 4 #8: (removed — decision_log table was dead: 0 writers.
+  //  Decisions live in .kuma/memories/decisions.md + graph `decision` nodes.
+  //  DROP for existing DBs created before the removal.)
   // ============================================================
-  db.run(`CREATE TABLE IF NOT EXISTS decision_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    context TEXT,
-    rationale TEXT,
-    outcome TEXT,
-    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','deprecated','proposed')),
-    superseded_by INTEGER,
-    file_paths TEXT DEFAULT '[]',
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-  )`);
+  try {
+    db.exec(`DROP TABLE IF EXISTS decision_log`);
+  } catch { /* table never existed — fine */ }
 
   // ============================================================
   // Part 4 #9: File Summaries Cache (AI Agent Cache Layer)
@@ -411,15 +405,6 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
-  // Issue #10: Scratch directory tracking
-  // ============================================================
-  db.run(`CREATE TABLE IF NOT EXISTS scratch_entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_path TEXT NOT NULL,
-    reason TEXT,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-  )`);
-
   // ============================================================
   // Proposal 1: Auto-Verification persistence
   // ============================================================
@@ -435,7 +420,7 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
-  // Issue #17: 3-Layer Memory Engine tables (already file-based)
+  // Memory layer tables (markdown files remain the readable source)
   // ============================================================
 
   // ============================================================
@@ -592,7 +577,6 @@ function createSchema(db: SqlJsDatabase): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_api_path ON api_endpoints(path)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_context_notes_scope ON context_notes(scope)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_benchmarks_label ON benchmarks(label)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_decision_status ON decision_log(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_file_summaries_path ON file_summaries(file_path)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON safety_audit(timestamp)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_audit_tool ON safety_audit(tool_name)`);
@@ -870,46 +854,11 @@ export async function getBenchmarkDiff(labelA: string, labelB?: string): Promise
 // Part 4 #8: Decision Log
 // ============================================================
 
-export async function recordDecisionLog(entry: { title: string; context?: string; rationale?: string; outcome?: string; status?: string }): Promise<string> {
-  try {
-    const db = await getDb();
-    db.run(`INSERT INTO decision_log (title, context, rationale, outcome, status) VALUES (?, ?, ?, ?, ?)`,
-      [entry.title, entry.context || "", entry.rationale || "", entry.outcome || "", entry.status || "active"]);
-    saveDb();
-    return `✅ Decision "${entry.title}" logged as ${entry.status || "active"}.`;
-  } catch (err) { return `❌ Failed: ${err}`; }
-}
-
-export async function listDecisionLog(status?: string): Promise<string> {
-  try {
-    const db = await getDb();
-    let sql = `SELECT * FROM decision_log WHERE 1=1`;
-    const bind: unknown[] = [];
-    if (status) { sql += ` AND status = ?`; bind.push(status); }
-    sql += ` ORDER BY created_at DESC LIMIT 50`;
-    const stmt = db.prepare(sql); stmt.bind(bind);
-    const results: Array<Record<string, unknown>> = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
-    stmt.free();
-    if (results.length === 0) return "📋 No decisions logged.";
-    const lines: string[] = [`📋 Decision Log — ${results.length}\n`];
-    for (const d of results) {
-      const icon = d.status === "active" ? "✅" : d.status === "superseded" ? "🔄" : d.status === "deprecated" ? "❌" : "📝";
-      lines.push(`  ${icon} ${d.title} (${d.status})`);
-      if (d.context) lines.push(`     Context: ${(d.context as string).substring(0, 150)}`);
-    }
-    return lines.join("\n");
-  } catch (err) { return `Error: ${err}`; }
-}
-
-export async function updateDecisionStatus(id: number, status: string): Promise<string> {
-  try {
-    const db = await getDb();
-    db.run(`UPDATE decision_log SET status = ? WHERE id = ?`, [status, id]);
-    saveDb();
-    return `✅ Decision #${id} updated to "${status}"`;
-  } catch (err) { return `❌ Failed: ${err}`; }
-}
+// ============================================================
+// Decision log functions removed — table was dead (0 writers).
+// Decisions live in .kuma/memories/decisions.md + graph `decision`
+// nodes via kuma_memory({ action: "decision" }).
+// ============================================================
 
 // ============================================================
 // Part 4 #9: File Summaries (AI Agent Cache Layer)
@@ -1012,25 +961,16 @@ export async function runGarbageCollection(): Promise<string> {
       db.exec(`DELETE FROM benchmarks WHERE id IN (SELECT id FROM benchmarks ORDER BY created_at ASC LIMIT ${benchCount - 100})`);
     }
 
-    // 13. Decision log — keep only last 200
-    const decCount = getCount("SELECT COUNT(*) FROM decision_log");
-    if (decCount > 200) {
-      db.exec(`DELETE FROM decision_log WHERE id IN (SELECT id FROM decision_log ORDER BY created_at ASC LIMIT ${decCount - 200})`);
-    }
-
-    // 14. Known gotchas — remove stale entries for deleted files
+    // 13. Known gotchas — remove stale entries for deleted files
     db.exec(`DELETE FROM known_gotchas WHERE file_path NOT IN (SELECT DISTINCT file_path FROM nodes WHERE file_path IS NOT NULL) AND file_path NOT LIKE '%::%'`);
 
-    // 15. Scratch entries — remove older than 7 days
-    db.exec(`DELETE FROM scratch_entries WHERE created_at < strftime('%s','now','-7 days')`);
-
-    // 16. Cost tracking — keep only last 500
+    // 14. Cost tracking — keep only last 500
     const costCount = getCount("SELECT COUNT(*) FROM cost_tracking");
     if (costCount > 500) {
       db.exec(`DELETE FROM cost_tracking WHERE id IN (SELECT id FROM cost_tracking ORDER BY created_at ASC LIMIT ${costCount - 500})`);
     }
 
-    // 17. Sessions — keep only last 50
+    // 15. Sessions — keep only last 50
     const sessCount = getCount("SELECT COUNT(*) FROM sessions");
     if (sessCount > 50) {
       db.exec(`DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY started_at ASC LIMIT ${sessCount - 50})`);
@@ -1060,7 +1000,7 @@ export async function runDoctor(): Promise<string> {
     } catch { checks.push("**Database Integrity**: ❌ check failed"); }
 
     // 2. Schema health
-    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "decision_log", "file_summaries", "verifications", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "scratch_entries", "portability_entries", "blackboard_events", "known_gotchas", "trajectories", "distilled_skills"];
+    const allTables = ["nodes", "edges", "sessions", "research_cache", "change_log", "safety_audit", "todos", "security_findings", "context_notes", "benchmarks", "file_summaries", "verifications", "tool_calls", "experiences", "experience_patterns", "patterns", "api_endpoints", "otel_config", "cost_tracking", "portability_entries", "blackboard_events", "known_gotchas", "trajectories", "distilled_skills"];
     let existing = 0;
     for (const t of allTables) {
       try {
@@ -1100,7 +1040,7 @@ export async function runDoctor(): Promise<string> {
         for (const p of processes) {
           checks.push(`  ⚡ ${p.substring(0, 120)}`);
         }
-        checks.push("  💡 Run `kuma_safety({ action: 'gc' })` to clean up stale processes");
+        checks.push("  💡 Stale test processes may slow down test runs.");
       } else {
         checks.push("");
         checks.push("**Running Test Processes**: ✅ None detected");

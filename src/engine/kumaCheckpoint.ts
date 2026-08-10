@@ -96,7 +96,7 @@ export async function createCheckpoint(
       `🗄️  **Database** snapshotted`,
       `📍 ${cpDir}`,
       ``,
-      `💡 To restore: kuma_safety({ action: 'rollback', label: '${label}' })`,
+      `💡 To restore: kuma_safety({ action: 'rollback_label', label: '${label}' })`,
       description ? `📝 ${description}` : "",
     ]
       .filter(Boolean)
@@ -117,7 +117,7 @@ export async function rollbackToCheckpoint(label: string): Promise<string> {
     const manifestPath = path.join(cpDir, "manifest.json");
 
     if (!fs.existsSync(manifestPath)) {
-      return `❌ Checkpoint "${label}" not found. Use kuma_safety({ action: 'checkpoint_list' }) to see available checkpoints.`;
+      return `❌ Checkpoint "${label}" not found. Available checkpoints:\n\n${listCheckpoints()}`;
     }
 
     const manifest: CheckpointManifest = JSON.parse(
