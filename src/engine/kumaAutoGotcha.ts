@@ -117,6 +117,7 @@ export async function trackVerificationResult(
         filePath: scope,
         description: `Verification keeps failing for scope "${scope}"`,
         severity,
+        status: "candidate",
         workaround:
           `Run tests locally before touching this area. ` +
           `Failing scope: "${scope}" — ${failureCount} consecutive failures. ` +

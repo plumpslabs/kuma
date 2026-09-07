@@ -233,25 +233,55 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
       ].join("\n");
     }
 
+    let fullCommand = baseCommand;
     let testFiles: string[] = [];
     const modified = sessionMemory.getModifiedFiles().map(f => f.filePath);
 
-    if (options.scope) {
-      const term = options.scope.toLowerCase();
-      testFiles = modified.filter(f => f.toLowerCase().includes(term));
-      if (testFiles.length === 0) {
-        try {
-          const { default: glob } = await import("fast-glob");
-          testFiles = await glob([`**/*${term}*test*.*`, `**/*test*/*${term}*.*`], { cwd: root, ignore: ["node_modules/**", "dist/**"] });
-        } catch {}
+    // 1. Workspace-aware test scoping: run tests for affected packages in monorepo
+    let workspaceScoped = false;
+    try {
+      const { getWorkspaceInfo, getAffectedPackages } = await import("./workspaceIntelligence.js");
+      const wsInfo = await getWorkspaceInfo(root);
+      if (wsInfo.isWorkspace && modified.length > 0 && !options.scope) {
+        const affected = getAffectedPackages(modified, wsInfo);
+        if (affected.affectedTestCommands.length > 0) {
+          fullCommand = affected.affectedTestCommands[0];
+          workspaceScoped = true;
+        }
       }
-    } else {
-      testFiles = modified.filter(f => f.includes(".test.") || f.includes(".spec.") || f.includes("_test."));
-    }
+    } catch {}
 
-    let fullCommand = baseCommand;
-    if (testFiles.length > 0 && runner === "npm") {
-      fullCommand = `${baseCommand} -- ${testFiles.map(f => `"${f}"`).join(" ")}`;
+    // 2. Targeted test files scoping (if workspace filter not applied)
+    if (!workspaceScoped) {
+      if (options.scope) {
+        const term = options.scope.toLowerCase();
+        testFiles = modified.filter(f => f.toLowerCase().includes(term));
+        if (testFiles.length === 0) {
+          try {
+            const { default: glob } = await import("fast-glob");
+            testFiles = await glob([`**/*${term}*test*.*`, `**/*test*/*${term}*.*`], { cwd: root, ignore: ["node_modules/**", "dist/**"] });
+          } catch {}
+        }
+      } else {
+        const directTests = modified.filter(f => f.includes(".test.") || f.includes(".spec.") || f.includes("_test."));
+        if (directTests.length > 0) {
+          testFiles = directTests;
+        } else if (modified.length > 0) {
+          // Attempt to locate counterpart tests for modified source files
+          try {
+            const { default: glob } = await import("fast-glob");
+            for (const f of modified.slice(0, 5)) {
+              const base = path.basename(f, path.extname(f));
+              const matches = await glob([`**/*${base}*.test.*`, `**/*${base}*.spec.*`], { cwd: root, ignore: ["node_modules/**", "dist/**"] });
+              testFiles.push(...matches);
+            }
+          } catch {}
+        }
+      }
+
+      if (testFiles.length > 0 && (runner === "npm" || runner === "pnpm" || runner === "yarn")) {
+        fullCommand = `${baseCommand} -- ${Array.from(new Set(testFiles)).map(f => `"${f}"`).join(" ")}`;
+      }
     }
 
     return await new Promise<string>((resolve) => {

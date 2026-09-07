@@ -6,18 +6,28 @@ Kuma is a **shadow memory & pre-modification safety engine** for AI coding agent
 
 ### Installation
 
-Kuma runs as an MCP server — no install needed:
-
+**1. Universal 1-Liner (Recommended):**
 ```bash
-npx -y @plumpslabs/kuma
+curl -fsSL https://raw.githubusercontent.com/plumpslabs/kuma/main/install.sh | bash
 ```
 
-To generate config files for your AI agent:
+**2. Native Plugin / Marketplace:**
+```bash
+# Claude Code:
+/plugin marketplace add plumpslabs/kuma
+/plugin install kuma@plumpslabs-kuma
 
+# Antigravity CLI:
+agy plugin add https://github.com/plumpslabs/kuma
+```
+
+**3. Via NPX:**
 ```bash
 npx @plumpslabs/kuma init --all
-npx @plumpslabs/kuma init --cursor --claude --aider
+npx @plumpslabs/kuma init --cursor --claude --antigravity
 ```
+
+📖 Full provider installation matrix available in [INSTALL.md](../INSTALL.md).
 
 ### Add to MCP Client
 
@@ -49,7 +59,17 @@ Returns:
 - Fresh gotchas and injection stats
 - Path rules and focus advice
 
-### Step 2: Research (before unfamiliar code)
+### Step 2: Workspace Mapping & Blast Radius (Monorepos & Complex Edits)
+
+```bash
+# Map monorepo topology & package boundaries
+kuma_context({ action: "map" })
+
+# Check blast radius before modifying high-leverage files
+kuma_context({ action: "impact", target: "packages/core/src/db.ts" })
+```
+
+### Step 3: Research (before unfamiliar code)
 
 ```bash
 kuma_context({ action: "research", scope: "auth" })
@@ -62,11 +82,11 @@ This triggers the 5-step pipeline:
 4. Lookup past decisions and known issues
 5. Safety check (risk level)
 
-### Step 3: Edit (Native Agent Tools)
+### Step 4: Edit (Native Agent Tools)
 
 Use your AI agent's native edit capabilities. Kuma is not an editor — and Claude Code hooks inject relevant gotchas automatically before each edit.
 
-### Step 4: Record What Matters
+### Step 5: Record What Matters
 
 ```bash
 # Record a gotcha — IMMEDIATELY when a bug/quirk is found
@@ -98,13 +118,13 @@ kuma_memory({ action: "research_save", scope: "auth" })
 
 **Recording rules:** record gotchas/decisions IMMEDIATELY, arch_flow AFTER tracing a complete flow, and SKIP low-value nodes (functions/classes/components — grep is faster).
 
-### Step 5: Verify After Edits
+### Step 6: Verify After Edits
 
 ```bash
 kuma_safety({ action: "verify", scope: "auth" })
 ```
 
-### Step 6: Snapshot Before Risky Work
+### Step 7: Snapshot Before Risky Work
 
 ```bash
 # Before a risky refactor — the ONE rollback mechanism
@@ -183,12 +203,13 @@ kuma studio
 npx -y @plumpslabs/kuma studio
 ```
 
-Studio runs at `http://localhost:3322` and provides:
+Studio runs at `http://localhost:3322` and provides a clean, modular view:
 
-- **Knowledge Graph** — Interactive node-edge visualization with physics simulation
-- **Gotchas** — Known bugs and quirks with severity levels
-- **Shadow Memory** — Injection count, estimated time saved, hook status
-- **Efficiency / Staleness / Activity** — Token-savings estimates, drift detection, session activity
+- **Gotcha Shield** — Known bugs with status filters (`active`, `verified`, `resolved`), severity indicators, and 1-click workaround copy
+- **Domain Flows** — Sequence flows tracing execution across key files
+- **Workspace & Blast Radius** — Package topology matrix and interactive blast radius simulator
+- **Health & Efficiency** — Session activity, hours saved, verification pass rate, and shadow memory stats
+- **Knowledge Graph** — Node-edge graph with physics toggle and depth controls
 
 ---
 

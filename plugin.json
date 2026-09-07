@@ -1,0 +1,18 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "kuma",
+  "version": "2.4.4",
+  "description": "Safety-first context & orchestration engine for AI coding agents. Shadow memory, gotcha lifecycle, blast radius impact analysis, and test verification.",
+  "author": {
+    "name": "plumpslabs",
+    "url": "https://github.com/plumpslabs"
+  },
+  "license": "MIT",
+  "skills": [
+    {
+      "name": "kuma-mcp",
+      "description": "Kuma MCP \u2014 safety toolkit for AI coding agents",
+      "file": ".agents/skills/kuma/SKILL.md"
+    }
+  ]
+}

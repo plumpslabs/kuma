@@ -1,6 +1,6 @@
 # Kuma MCP — API Reference
 
-Kuma exposes **3 coarse-grained tools** with **13 core actions**. Anything else was removed —
+Kuma exposes **3 coarse-grained tools** with **15 core actions**. Anything else was removed —
 the MCP schema rejects unknown actions, so the agent never has to choose from 30+ options.
 
 ---
@@ -23,6 +23,28 @@ Lean project brief + session restore (<500 tokens). Auto-injects focus advice, f
 { "action": "research", "scope": "auth" }
 ```
 
+### `map`
+Analyze workspace topology, detect package boundaries, and map package dependencies in monorepos (pnpm, npm, yarn, lerna).
+
+```json
+{ "action": "map" }
+```
+
+**Returns:** Workspace root, package manager type, package list with dependencies, cross-package dependencies, and boundary isolation rules.
+
+### `impact`
+Calculate blast radius and safety risk before modifying a file or package. Traces direct and transitive consumers, affected test suites, and evaluates risk score.
+
+```json
+{ "action": "impact", "target": "packages/core/src/index.ts" }
+```
+
+**Parameters:**
+- `target` (required) — relative path to file or package name
+- `depth` (optional) — traversal depth limit (default: 3)
+
+**Returns:** Direct consumers, transitive consumers, affected tests, risk level (`low`, `medium`, `high`, `critical`), and safety recommendations.
+
 ### `history`
 Cross-session trace — "why is this file written this way". Shows change log, fresh gotchas, resolved gotchas, relevant decisions.
 
@@ -44,24 +66,39 @@ Read a recorded architecture flow (recorded via `kuma_memory arch_flow`).
 ## kuma_memory — Knowledge Recording
 
 ### `gotcha`
-Record bug/quirk (IMMEDIATELY when found).
+Record, resolve, or deprecate a codebase bug/quirk with full lifecycle management (`candidate` → `active` → `verified` → `resolved` → `deprecated`).
 
 ```json
 {
   "action": "gotcha",
   "scope": "path/to/file.ts",
   "content": "useEffect causes infinite loop when state change triggers re-render",
-  "status": "high",
+  "status": "active",
+  "severity": "high",
   "description": "Use useCallback on the handler",
   "trigger_command": "npm run build"
 }
 ```
 
+**Resolving or Deprecating:**
+```json
+{
+  "action": "gotcha",
+  "scope": "path/to/file.ts",
+  "status": "resolved",
+  "resolution": "Fixed by memoizing handler in PR #42"
+}
+```
+*(Also accepts alias actions `resolve_gotcha` and `deprecate_gotcha`)*
+
 **Parameters:**
-- `scope` (required) — file path
-- `content` (required) — bug description
-- `status` — severity: `low`, `medium`, `high`, `critical`
-- `description` — workaround
+- `scope` (required) — file path or gotcha ID
+- `content` (required when creating) — bug description
+- `severity` — severity level: `low`, `medium`, `high`, `critical`
+- `status` — lifecycle status: `active`, `verified`, `resolved`, `deprecated`
+- `description` — workaround or remediation instructions
+- `resolution` — explanation when marking as resolved
+- `reason` — explanation when marking as deprecated
 - `trigger_command` — command that triggers this gotcha (e.g. "npm run seed")
 
 ### `arch_flow`

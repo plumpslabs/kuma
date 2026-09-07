@@ -34,8 +34,10 @@ async function ensureGotchasSchema(): Promise<void> {
       content_hash TEXT,
       trigger_command TEXT,
       status TEXT NOT NULL DEFAULT 'active'
-        CHECK(status IN ('active','resolved')),
-      last_verified_at INTEGER
+        CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
+      last_verified_at INTEGER,
+      scope_package TEXT,
+      verified_by TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_gotchas_file ON known_gotchas(file_path);
     CREATE INDEX IF NOT EXISTS idx_gotchas_severity ON known_gotchas(severity);
@@ -57,6 +59,39 @@ async function ensureGotchasSchema(): Promise<void> {
     if (!cols.includes("last_verified_at")) {
       db.run(`ALTER TABLE known_gotchas ADD COLUMN last_verified_at INTEGER`);
     }
+    if (!cols.includes("scope_package")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN scope_package TEXT`);
+    }
+    if (!cols.includes("verified_by")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN verified_by TEXT`);
+    }
+
+    // Check if status constraint needs expansion
+    const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='known_gotchas'`);
+    const gotchaSql = schema[0]?.values?.[0]?.[0] as string || '';
+    if (gotchaSql && !gotchaSql.includes('candidate')) {
+      db.run(`ALTER TABLE known_gotchas RENAME TO known_gotchas_old`);
+      db.run(`CREATE TABLE IF NOT EXISTS known_gotchas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        description TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'medium'
+          CHECK(severity IN ('low','medium','high','critical')),
+        workaround TEXT,
+        added_by TEXT DEFAULT 'agent',
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        content_hash TEXT,
+        trigger_command TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
+        last_verified_at INTEGER,
+        scope_package TEXT,
+        verified_by TEXT
+      )`);
+      db.run(`INSERT OR IGNORE INTO known_gotchas (id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at) SELECT id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at FROM known_gotchas_old`);
+      db.run(`DROP TABLE known_gotchas_old`);
+    }
   } catch { /* non-critical */ }
 
   saveDb();
@@ -73,6 +108,9 @@ export interface GotchaEntry {
   workaround?: string;
   /** I2: optional command that triggers this gotcha (e.g. "npm run seed"). */
   triggerCommand?: string;
+  status?: "candidate" | "active" | "verified" | "resolved" | "deprecated";
+  scopePackage?: string;
+  verifiedBy?: string;
 }
 
 /**
@@ -86,6 +124,7 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     const db = await getDb();
 
     const severity: "low" | "medium" | "high" | "critical" = entry.severity || "medium";
+    const status = entry.status || "active";
 
     // F3: hash the file content when the gotcha is recorded, so freshness can be verified later
     const contentHash = hashFileContent(entry.filePath);
@@ -96,6 +135,8 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
       `- **Severity**: ${severity}`,
       entry.workaround ? `- **Workaround**: ${entry.workaround}` : "",
       entry.triggerCommand ? `- **Trigger**: when running \`${entry.triggerCommand}\`` : "",
+      entry.status ? `- **Status**: ${entry.status}` : "",
+      entry.scopePackage ? `- **Scope Package**: ${entry.scopePackage}` : "",
       `- **Added**: ${new Date().toISOString().split("T")[0]}`,
     ].filter(Boolean).join("\n");
 
@@ -115,14 +156,14 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     if (existingId !== null) {
       // Update existing gotcha — also refresh the hash (the file may have changed/fixed)
       db.run(
-        `UPDATE known_gotchas SET severity = ?, workaround = ?, content_hash = ?, trigger_command = ?, status = 'active', updated_at = strftime('%s','now') WHERE id = ?`,
-        [severity, entry.workaround || null, contentHash, entry.triggerCommand || null, existingId]
+        `UPDATE known_gotchas SET severity = ?, workaround = ?, content_hash = ?, trigger_command = ?, status = ?, scope_package = coalesce(?, scope_package), verified_by = coalesce(?, verified_by), updated_at = strftime('%s','now') WHERE id = ?`,
+        [severity, entry.workaround || null, contentHash, entry.triggerCommand || null, status, entry.scopePackage || null, entry.verifiedBy || null, existingId]
       );
     } else {
       // Insert new gotcha
       db.run(
-        `INSERT INTO known_gotchas (file_path, description, severity, workaround, content_hash, trigger_command) VALUES (?, ?, ?, ?, ?, ?)`,
-        [entry.filePath, entry.description, severity, entry.workaround || null, contentHash, entry.triggerCommand || null]
+        `INSERT INTO known_gotchas (file_path, description, severity, workaround, content_hash, trigger_command, status, scope_package, verified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [entry.filePath, entry.description, severity, entry.workaround || null, contentHash, entry.triggerCommand || null, status, entry.scopePackage || null, entry.verifiedBy || null]
       );
     }
 
@@ -169,6 +210,7 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
 export async function listGotchas(params: {
   filePath?: string;
   severity?: string;
+  status?: string;
 }): Promise<string> {
   try {
     await ensureGotchasSchema();
@@ -185,7 +227,12 @@ export async function listGotchas(params: {
       sql += " AND severity = ?";
       bind.push(params.severity);
     }
-    sql += " AND status = 'active'";
+    if (params.status && params.status !== "all") {
+      sql += " AND status = ?";
+      bind.push(params.status);
+    } else if (!params.status) {
+      sql += " AND status IN ('active', 'verified')";
+    }
 
     sql += " ORDER BY severity DESC, created_at DESC LIMIT 50";
 
@@ -305,7 +352,7 @@ export async function syncGotchasGraph(): Promise<{ created: number }> {
     let created = 0;
 
     const stmt = db.prepare(
-      `SELECT file_path, description, severity, workaround FROM known_gotchas`
+      `SELECT file_path, description, severity, workaround FROM known_gotchas WHERE status IN ('active', 'verified')`
     );
     const rows: Array<{ file_path: string; description: string; severity: string; workaround: string | null }> = [];
     while (stmt.step()) rows.push(stmt.getAsObject() as any);
@@ -397,7 +444,7 @@ export async function getActiveGotchasForCommand(command: string): Promise<Array
     const stmt = db.prepare(
       `SELECT file_path, description, severity, workaround, trigger_command
        FROM known_gotchas
-       WHERE status = 'active' AND trigger_command IS NOT NULL AND length(trigger_command) > 0
+       WHERE status IN ('active', 'verified') AND trigger_command IS NOT NULL AND length(trigger_command) > 0
        ORDER BY
          CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
        LIMIT 30`
@@ -477,3 +524,136 @@ export function getInjectionStats(hours = 24): { count: number; savedMs: number 
     return { count: 0, savedMs: 0 };
   }
 }
+
+/**
+ * Update gotcha lifecycle status (candidate -> active -> verified -> resolved -> deprecated)
+ */
+export async function setGotchaStatus(
+  id: number,
+  status: "candidate" | "active" | "verified" | "resolved" | "deprecated",
+  verifiedBy?: string
+): Promise<boolean> {
+  try {
+    const db = await getDb();
+    db.run(
+      `UPDATE known_gotchas SET status = ?, verified_by = coalesce(?, verified_by), last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ?`,
+      [status, verifiedBy || null, id]
+    );
+    saveDb();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Retrieve gotchas filtered by status
+ */
+export async function getGotchasByStatus(
+  status: "candidate" | "active" | "verified" | "resolved" | "deprecated",
+  limit = 20
+): Promise<Array<Record<string, unknown>>> {
+  try {
+    const db = await getDb();
+    const stmt = db.prepare(
+      `SELECT id, file_path, description, severity, workaround, status, scope_package, verified_by, updated_at FROM known_gotchas WHERE status = ? ORDER BY updated_at DESC LIMIT ?`
+    );
+    stmt.bind([status, limit]);
+    const rows: Array<Record<string, unknown>> = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Mark gotchas as resolved by ID or file path/scope.
+ */
+export async function resolveGotcha(
+  idOrScope: string | number,
+  resolutionReason?: string,
+  verifiedBy = "agent"
+): Promise<{ resolved: number; message: string }> {
+  try {
+    await ensureGotchasSchema();
+    const db = await getDb();
+    let resolved = 0;
+    const isId = typeof idOrScope === "number" || (/^\d+$/.test(String(idOrScope).trim()));
+
+    if (isId) {
+      const id = Number(idOrScope);
+      db.run(
+        `UPDATE known_gotchas SET status = 'resolved', verified_by = ?, last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ? AND status != 'resolved'`,
+        [verifiedBy, id]
+      );
+      resolved = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
+    } else {
+      const scope = String(idOrScope).trim();
+      db.run(
+        `UPDATE known_gotchas SET status = 'resolved', verified_by = ?, last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE (file_path = ? OR file_path LIKE ?) AND status != 'resolved'`,
+        [verifiedBy, scope, `%${scope}%`]
+      );
+      resolved = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
+    }
+
+    if (resolved > 0) {
+      saveDb();
+      rebuildFtsIndex();
+      return {
+        resolved,
+        message: `✅ Resolved ${resolved} gotcha(s) for "${idOrScope}"${resolutionReason ? `: ${resolutionReason}` : ""}.`,
+      };
+    }
+    return { resolved: 0, message: `⚠️ No active gotchas found matching "${idOrScope}".` };
+  } catch (err) {
+    return { resolved: 0, message: `❌ Failed to resolve gotcha: ${err}` };
+  }
+}
+
+/**
+ * Mark gotchas as deprecated (obsolete/removed) by ID or file path/scope.
+ */
+export async function deprecateGotcha(
+  idOrScope: string | number,
+  reason?: string
+): Promise<{ deprecated: number; message: string }> {
+  try {
+    await ensureGotchasSchema();
+    const db = await getDb();
+    let deprecated = 0;
+    const isId = typeof idOrScope === "number" || (/^\d+$/.test(String(idOrScope).trim()));
+
+    if (isId) {
+      const id = Number(idOrScope);
+      db.run(
+        `UPDATE known_gotchas SET status = 'deprecated', verified_by = 'deprecation', last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ? AND status != 'deprecated'`,
+        [id]
+      );
+      deprecated = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
+    } else {
+      const scope = String(idOrScope).trim();
+      db.run(
+        `UPDATE known_gotchas SET status = 'deprecated', verified_by = 'deprecation', last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE (file_path = ? OR file_path LIKE ?) AND status != 'deprecated'`,
+        [scope, `%${scope}%`]
+      );
+      deprecated = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
+    }
+
+    if (deprecated > 0) {
+      saveDb();
+      rebuildFtsIndex();
+      return {
+        deprecated,
+        message: `🧹 Deprecated ${deprecated} gotcha(s) for "${idOrScope}"${reason ? `: ${reason}` : ""}.`,
+      };
+    }
+    return { deprecated: 0, message: `⚠️ No active gotchas found matching "${idOrScope}".` };
+  } catch (err) {
+    return { deprecated: 0, message: `❌ Failed to deprecate gotcha: ${err}` };
+  }
+}
+

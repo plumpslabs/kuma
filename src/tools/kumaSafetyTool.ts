@@ -33,7 +33,7 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
 async function handleGuard(params: SafetyParams): Promise<string> {
   return await handleKumaGuard({
     goal: params.guardGoal,
-    check: (params.guardCheck as "all" | "anti-pattern" | "loop" | "drift" | "context") || "all",
+    check: (params.guardCheck as "all" | "anti-pattern" | "loop" | "drift" | "context" | "architecture") || "all",
   });
 }
 

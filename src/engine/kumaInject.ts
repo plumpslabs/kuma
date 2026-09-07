@@ -89,7 +89,7 @@ export async function getFreshGotchasForFile(
       const stmt = db.prepare(`
         SELECT id, file_path, description, severity, workaround, content_hash
         FROM known_gotchas
-        WHERE status = 'active'
+        WHERE status IN ('active', 'verified')
           AND (file_path = ? OR ? LIKE ('%' || file_path || '%'))
         ORDER BY
           CASE WHEN file_path = ? THEN 0 ELSE 1 END, -- exact match first

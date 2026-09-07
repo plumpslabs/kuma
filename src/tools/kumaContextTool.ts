@@ -7,13 +7,15 @@ import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import crypto from "node:crypto";
 
-type ContextAction = "init" | "research" | "history" | "flow";
+type ContextAction = "init" | "research" | "history" | "flow" | "map" | "impact";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "research": "research", "search": "research", "explore": "research", "inspect": "research",
   "flow": "flow", "domain-flow": "flow", "domain_flow": "flow", "flow-cache": "flow",
   "init": "init", "start": "init", "load": "init", "brief": "init", "project": "init",
   "history": "history", "why": "history", "touched": "history", "provenance": "history",
+  "map": "map", "repo-map": "map", "repo_map": "map", "workspace": "map", "topology": "map",
+  "impact": "impact", "blast-radius": "impact", "blast_radius": "impact", "blast": "impact",
 };
 
 interface ContextParams {
@@ -33,7 +35,9 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "research": return handleResearch(params);
     case "history": return handleHistory(params);
     case "flow": return handleFlow(params);
-    default: return `Unknown action "${action}". Use: init, research, history, flow`;
+    case "map": return handleMap(params);
+    case "impact": return handleImpact(params);
+    default: return `Unknown action "${action}". Use: init, research, history, flow, map, impact`;
   }
 }
 
@@ -45,13 +49,31 @@ async function handleInit(_params: ContextParams): Promise<string> {
   sessionMemory.setGoal(_params.goal || "Exploring project");
   sessionMemory.recordToolCall("kuma_context_init", {});
 
+  const branch = sessionMemory.getCurrentBranch();
+  const branchTag = branch ? ` [git: \`${branch}\`]` : "";
   const lines: string[] = [
     "🧠 **Kuma — Project Brief (lean)**",
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     "",
-    `📁 Project: ${getProjectRoot().split("/").pop() || "unknown"}`,
+    `📁 Project: ${getProjectRoot().split("/").pop() || "unknown"}${branchTag}`,
     "",
   ];
+
+  const branchTransition = sessionMemory.getBranchTransition();
+  if (branchTransition?.switched) {
+    lines.push(`🔀 **Branch switched**: from \`${branchTransition.from}\` to \`${branchTransition.to}\`. Session context updated.`);
+    lines.push("");
+  }
+
+  try {
+    const { getWorkspaceInfo } = await import("../engine/workspaceIntelligence.js");
+    const wsInfo = await getWorkspaceInfo();
+    if (wsInfo.isWorkspace) {
+      lines.push(`📦 **Workspace**: ${wsInfo.packages.length} package(s) detected (${wsInfo.type.toUpperCase()})`);
+      lines.push(`   ${wsInfo.packages.slice(0, 5).map(p => `\`${p.name}\``).join(", ")}${wsInfo.packages.length > 5 ? ` +${wsInfo.packages.length - 5} more` : ""}`);
+      lines.push("");
+    }
+  } catch {}
 
   const goal = _params.goal || (sessionMemory.getSummary().currentGoal as string) || "";
 
@@ -77,21 +99,80 @@ async function handleInit(_params: ContextParams): Promise<string> {
 
   try {
     const { getFreshGotchasForFile } = await import("../engine/kumaInject.js");
+    const { getDb } = await import("../engine/kumaDb.js");
     const modified = (summary.modifiedFiles as Array<{ filePath: string }> | undefined) || [];
     const seen = new Set<string>();
-    let gotchasPushed = 0;
+    const collectedGotchas: Array<{ filePath: string; description: string; severity: string }> = [];
+
+    // 1. Fresh gotchas for recently touched files
     for (const f of modified.slice(0, 4)) {
       if (!f.filePath || seen.has(f.filePath)) continue;
       seen.add(f.filePath);
       const gotchas = await getFreshGotchasForFile(f.filePath, 3);
       for (const g of gotchas) {
-        if (gotchasPushed === 0) lines.push("**Active Gotchas (fresh)**");
-        gotchasPushed++;
-        const icon = g.severity === "critical" ? "🔴" : g.severity === "high" ? "🟠" : g.severity === "medium" ? "🟡" : "🟢";
-        lines.push(`  ${icon} ${g.filePath} — ${g.description.substring(0, 90)}`);
+        const key = `${g.filePath}::${g.description.substring(0, 30)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          collectedGotchas.push({
+            filePath: g.filePath,
+            description: g.description,
+            severity: g.severity,
+          });
+        }
       }
     }
-    if (gotchasPushed > 0) lines.push("");
+
+    // 2. Supplement with top critical/high active gotchas across project
+    let totalActiveCount = 0;
+    try {
+      const db = await getDb();
+      const countStmt = db.prepare(`SELECT COUNT(*) as cnt FROM known_gotchas WHERE status IN ('active', 'verified')`);
+      if (countStmt.step()) totalActiveCount = (countStmt.getAsObject() as { cnt: number }).cnt || 0;
+      countStmt.free();
+
+      if (collectedGotchas.length < 5) {
+        const stmt = db.prepare(`
+          SELECT file_path, description, severity
+          FROM known_gotchas
+          WHERE status IN ('active', 'verified')
+          ORDER BY
+            CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+            updated_at DESC
+          LIMIT 10
+        `);
+        while (stmt.step()) {
+          const row = stmt.getAsObject() as { file_path: string; description: string; severity: string };
+          const key = `${row.file_path}::${row.description.substring(0, 30)}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            collectedGotchas.push({
+              filePath: row.file_path,
+              description: row.description,
+              severity: row.severity,
+            });
+          }
+          if (collectedGotchas.length >= 5) break;
+        }
+        stmt.free();
+      }
+    } catch {}
+
+    // Sort by severity: critical > high > medium > low
+    const severityRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    collectedGotchas.sort((a, b) => (severityRank[a.severity] ?? 2) - (severityRank[b.severity] ?? 2));
+
+    const budgetedGotchas = collectedGotchas.slice(0, 5);
+    if (budgetedGotchas.length > 0) {
+      lines.push("**Active Gotchas (fresh & budgeted)**");
+      for (const g of budgetedGotchas) {
+        const icon = g.severity === "critical" ? "🔴" : g.severity === "high" ? "🟠" : g.severity === "medium" ? "🟡" : "🟢";
+        lines.push(`  ${icon} [${g.severity}] ${g.filePath} — ${g.description.substring(0, 90)}`);
+      }
+      if (totalActiveCount > budgetedGotchas.length) {
+        lines.push(`  ℹ️ +${totalActiveCount - budgetedGotchas.length} more active gotchas in DB (query: kuma_memory({ action: 'gotcha' }))`);
+      }
+      lines.push("");
+    }
   } catch {}
 
   try {
@@ -107,7 +188,7 @@ async function handleInit(_params: ContextParams): Promise<string> {
     if (rulesBlock) { lines.push(rulesBlock); lines.push(""); }
   } catch {}
 
-  lines.push("💡 Deeper: kuma_context({ action: 'history', target: '<file>' }) · Flow: kuma_context({ action: 'flow', target: '<domain>' }) · Research: kuma_context({ action: 'research', scope: '<area>' })");
+  lines.push("💡 Deeper: kuma_context({ action: 'history', target: '<file>' }) · Flow: kuma_context({ action: 'flow', target: '<domain>' }) · Map: kuma_context({ action: 'map' }) · Impact: kuma_context({ action: 'impact', target: '<file>' })");
   return lines.join("\n");
 }
 
@@ -189,13 +270,20 @@ async function handleResearch(params: ContextParams): Promise<string> {
   } catch {}
   lines.push("");
 
-  lines.push("**Step 4/5: Impact Analysis**");
+  lines.push("**Step 4/5: Impact Analysis (Blast Radius)**");
   try {
     const impact = await analyzeImpact(scope);
     lines.push(`  📊 ${impact.references} reference(s) across ${impact.files} file(s)`);
+    if (impact.packageName) lines.push(`  📦 Package: \`${impact.packageName}\``);
+    if (impact.downstreamPackages && impact.downstreamPackages.length > 0) {
+      lines.push(`  🌐 Downstream consumers (${impact.downstreamPackages.length}): ${impact.downstreamPackages.slice(0, 4).join(", ")}`);
+    }
     lines.push(`  🧪 ${impact.testFiles} test file(s) related`);
     lines.push(`  ⚠️ Risk: ${impact.risk.toUpperCase()}`);
-    if (impact.entryPoints.length > 0) lines.push(`  🎯 Entry: ${impact.entryPoints.slice(0, 3).join(", ")}`);
+    if (impact.riskFlags && impact.riskFlags.length > 0) {
+      for (const rf of impact.riskFlags) lines.push(`     • ${rf}`);
+    }
+    if (impact.entryPoints && impact.entryPoints.length > 0) lines.push(`  🎯 Entry: ${impact.entryPoints.slice(0, 3).join(", ")}`);
   } catch { lines.push("  ⚠️ Impact analysis unavailable"); }
   lines.push("");
 
@@ -271,6 +359,29 @@ async function handleFlow(params: ContextParams): Promise<string> {
   if (!domain) return "ℹ️ **kuma_context({ action: 'flow' })** — requires a `target` (domain name).\n\n  kuma_context({ action: 'flow', target: 'WhatsApp Omnichannel' })\n\nServes the domain flow from cache, re-deriving it from imports when stale (F13).";
   const { getFreshDomainFlow } = await import("../engine/kumaFlowCache.js");
   return await getFreshDomainFlow(domain);
+}
+
+// ============================================================
+// MAP — Workspace / Repository topology map
+// ============================================================
+
+async function handleMap(_params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_map", {});
+  const { getWorkspaceInfo, formatWorkspaceMap } = await import("../engine/workspaceIntelligence.js");
+  const wsInfo = await getWorkspaceInfo();
+  return formatWorkspaceMap(wsInfo);
+}
+
+// ============================================================
+// IMPACT — Blast radius & downstream impact analysis
+// ============================================================
+
+async function handleImpact(params: ContextParams): Promise<string> {
+  const target = params.target || params.scope || "project";
+  sessionMemory.recordToolCall("kuma_context_impact", { target });
+  const { analyzeImpact, formatImpact } = await import("../engine/kumaGraph.js");
+  const impact = await analyzeImpact(target);
+  return formatImpact(impact);
 }
 
 function computeProjectHash(scope: string): string {

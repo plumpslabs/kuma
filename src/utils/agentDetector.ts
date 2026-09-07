@@ -63,24 +63,24 @@ const AGENT_DETECTORS: AgentDetector[] = [
   },
   {
     type: "antigravity",
-    checkFiles: [],
+    checkFiles: ["GEMINI.md", ".agents/rules/kuma.md"],
     checkDirs: [".agents"],
     priority: 75,
     label: "Antigravity CLI (.agents/)",
   },
   {
+    type: "opencode",
+    checkFiles: ["opencode.json", ".opencode/opencode.json", ".opencode/plugins/kuma.js"],
+    checkDirs: [".opencode"],
+    priority: 78,
+    label: "OpenCode (.opencode/)",
+  },
+  {
     type: "windsurf",
-    checkFiles: [],
+    checkFiles: [".windsurfrules"],
     checkDirs: [".windsurf"],
     priority: 70,
     label: "Windsurf (.windsurf/)",
-  },
-  {
-    type: "opencode",
-    checkFiles: [".agents/skills/kuma/SKILL.md"],
-    checkDirs: [".agents"],
-    priority: 65,
-    label: "OpenCode (.agents/skills/kuma/SKILL.md)",
   },
   {
     type: "kiro",

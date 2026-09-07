@@ -17,12 +17,13 @@ const CORE_ACTIONS = [
   "- MUST call `kuma_context({ action: \"init\" })` at session start.",
   "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
   "- MUST call `kuma_safety({ action: \"verify\" })` after edits.",
-  "- MUST NOT call actions outside the 13 core actions.",
+  "- MUST NOT call actions outside the core actions.",
   "</kuma_obedience>",
   "",
   "<kuma_workflow>",
   "🧠 **Before coding:** `kuma_context({ action: \"init\" })`",
-  "🔬 **Unfamiliar code:** `kuma_context({ action: \"research\", scope: \"<area>\" })`",
+  "🗺️ **Monorepo map:** `kuma_context({ action: \"map\" })`",
+  "🔬 **Unfamiliar code / blast radius:** `kuma_context({ action: \"research\", scope: \"<area>\" })` or `kuma_context({ action: \"impact\", target: \"<file>\" })`",
   "🐛 **Found a bug/quirk:** `kuma_memory({ action: \"gotcha\" })` (IMMEDIATELY)",
   "🧭 **Chose between options:** `kuma_memory({ action: \"decision\" })`",
   "🔀 **Traced a flow:** `kuma_memory({ action: \"arch_flow\" })` (max 5 files)",
@@ -93,7 +94,30 @@ export function generateSkill(type: AgentType): string {
 export function getSecondaryFiles(type: AgentType): Array<{ path: string; content: string }> {
   switch (type) {
     case "antigravity":
-      return [{ path: ".agents/mcp_config.json", content: generateAntigravityMcpConfig() }];
+      return [
+        { path: ".agents/mcp_config.json", content: generateAntigravityMcpConfig() },
+        { path: ".agents/rules/kuma.md", content: generateAntigravityRule() },
+        { path: "GEMINI.md", content: generateGeminiMd() },
+      ];
+    case "opencode":
+      return [
+        { path: ".opencode/plugins/kuma.js", content: generateOpencodePlugin() },
+        { path: ".opencode/skills/kuma/SKILL.md", content: generateOpencodeSkill() },
+        { path: ".agents/skills/kuma/SKILL.md", content: generateOpencodeSkill() },
+      ];
+    case "claude":
+      return [
+        { path: ".claude/skills/kuma/SKILL.md", content: generateClaudeSkill() },
+      ];
+    case "windsurf":
+      return [
+        { path: ".windsurfrules", content: generateWindsurfrules() },
+      ];
+    case "cline":
+      return [
+        { path: ".roo/rules/kuma.md", content: generateRooRule() },
+        { path: ".trae/rules/kuma.md", content: generateTraeRule() },
+      ];
     case "codex":
       return [{ path: ".codex/config.toml", content: generateCodexConfigToml() }];
     case "qwen":
@@ -105,6 +129,147 @@ export function getSecondaryFiles(type: AgentType): Array<{ path: string; conten
     default:
       return [];
   }
+}
+
+/**
+ * Antigravity rules: `.agents/rules/kuma.md`
+ */
+function generateAntigravityRule(): string {
+  return [
+    "# 🐻 Kuma MCP — Antigravity Rules",
+    "",
+    "This project uses **Kuma MCP** for runtime safety, blast radius analysis, and codebase memory.",
+    "",
+    BOOTSTRAP,
+    "",
+    "### 🍵 Companion: Matcha & Kuma Harmony",
+    "If Matcha is active in this workspace:",
+    "- **Matcha** governs engineering philosophy, intent discovery, reuse checks, and review gates.",
+    "- **Kuma** governs blast radius calculation, monorepo workspace dependencies, known gotchas memory, architecture boundary guards, and scoped test verification.",
+    "- Workflow: Use Matcha to plan (Intent Discovery) → Use Kuma to inspect dependencies & blast radius (`kuma_context({ action: 'impact' })`) → Use Kuma to verify after edits (`kuma_safety({ action: 'verify' })`).",
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
+  ].join("\n");
+}
+
+/**
+ * Gemini / Antigravity workspace instruction: `GEMINI.md`
+ */
+function generateGeminiMd(): string {
+  return [
+    "# 🐻 Kuma MCP — Workspace Instructions",
+    "",
+    "This workspace uses **Kuma MCP** for runtime safety, monorepo intelligence, blast radius calculation, and memory.",
+    "",
+    BOOTSTRAP,
+    "",
+    "### 🍵 Matcha & Kuma Harmony",
+    "If Matcha is active: Matcha provides Intent Discovery & review; Kuma provides blast radius, gotchas memory, architecture guards, and test verification.",
+    "",
+    "📖 Full rules: `.kuma/init.md`",
+  ].join("\n");
+}
+
+/**
+ * OpenCode native plugin: `.opencode/plugins/kuma.js`
+ */
+function generateOpencodePlugin(): string {
+  return [
+    "/**",
+    " * 🐻 Kuma MCP — OpenCode Plugin",
+    " * Auto-injects gotcha warnings and safety checks before file edits and commands in OpenCode.",
+    " */",
+    'import fs from "node:fs";',
+    'import path from "node:path";',
+    "",
+    "function getProjectRoot() {",
+    "  let curr = process.cwd();",
+    "  while (curr !== path.dirname(curr)) {",
+    '    if (fs.existsSync(path.join(curr, ".kuma")) || fs.existsSync(path.join(curr, ".git"))) {',
+    "      return curr;",
+    "    }",
+    "    curr = path.dirname(curr);",
+    "  }",
+    "  return process.cwd();",
+    "}",
+    "",
+    "function getActiveGotchasForFile(filePath) {",
+    "  try {",
+    "    const root = getProjectRoot();",
+    '    const gotchasPath = path.join(root, ".kuma", "KNOWN_GOTCHAS.md");',
+    "    if (!fs.existsSync(gotchasPath)) return [];",
+    '    const content = fs.readFileSync(gotchasPath, "utf-8");',
+    "    const gotchas = [];",
+    '    const normalizedTarget = filePath.replace(/^[./]+/, "");',
+    '    const sections = content.split(/###\\s+/);',
+    "    for (const section of sections) {",
+    "      if (!section.trim()) continue;",
+    '      const lines = section.split("\\n");',
+    '      const title = lines[0] || "";',
+    "      if (title.includes(normalizedTarget) || section.includes(normalizedTarget)) {",
+    "        gotchas.push(title.trim());",
+    "      }",
+    "    }",
+    "    return gotchas;",
+    "  } catch {",
+    "    return [];",
+    "  }",
+    "}",
+    "",
+    "export const KumaPlugin = async () => {",
+    "  return {",
+    '    "tool.execute.before": async (input, output) => {',
+    '      const tool = (input.tool || "").toLowerCase();',
+    "      const args = output.args || {};",
+    '      const targetPath = args.filePath || args.targetFile || args.path || args.file || "";',
+    '      if (targetPath && (tool.includes("edit") || tool.includes("write") || tool.includes("patch"))) {',
+    "        const gotchas = getActiveGotchasForFile(String(targetPath));",
+    "        if (gotchas.length > 0) {",
+    "          console.warn(",
+    "            `\\n🐻 [Kuma Alert] Active gotchas found for ${targetPath}:\\n` +",
+    '            gotchas.map((g) => `  ⚠️ ${g}`).join("\\n") +',
+    '            `\\n👉 Remember to record any new gotchas via kuma_memory({ action: "gotcha" })\\n`',
+    "          );",
+    "        }",
+    "      }",
+    "    },",
+    "  };",
+    "};",
+    "",
+  ].join("\n");
+}
+
+function generateWindsurfrules(): string {
+  return [
+    "# Kuma MCP — Windsurf Rules",
+    "",
+    BOOTSTRAP,
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
+  ].join("\n");
+}
+
+function generateRooRule(): string {
+  return [
+    "---",
+    "description: Kuma MCP — .kuma/ is the single source of truth",
+    "alwaysApply: true",
+    "---",
+    "",
+    BOOTSTRAP,
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
+  ].join("\n");
+}
+
+function generateTraeRule(): string {
+  return [
+    "# Kuma MCP — Trae Rules",
+    "",
+    BOOTSTRAP,
+    "",
+    "📖 Read `.kuma/init.md` for detailed rules.",
+  ].join("\n");
 }
 
 /**

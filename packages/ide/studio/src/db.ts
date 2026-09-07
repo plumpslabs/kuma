@@ -228,11 +228,34 @@ export async function getDashboardData() {
       `SELECT json_group_array(json_object('source',source_id,'target',target_id,'relation',type,'weight',weight)) FROM edges`
     );
     const gotchas = jsonRows(
-      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'created_at',created_at)) FROM (SELECT * FROM known_gotchas ORDER BY created_at DESC)`
+      `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'status',COALESCE(status,'active'),'scope_package',COALESCE(scope_package,''),'verified_by',COALESCE(verified_by,''),'created_at',created_at,'updated_at',COALESCE(updated_at,created_at))) FROM (SELECT * FROM known_gotchas ORDER BY created_at DESC)`
+    );
+    const flows = jsonRows(
+      `SELECT json_group_array(json_object('id',id,'name',name,'file_path',COALESCE(file_path,''),'metadata',COALESCE(metadata,'{}'),'updated_at',updated_at)) FROM (SELECT * FROM nodes WHERE type = 'arch_flow' ORDER BY updated_at DESC)`
+    );
+    const decisions = jsonRows(
+      `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'),'created_at',created_at)) FROM (SELECT * FROM nodes WHERE type = 'decision' ORDER BY created_at DESC)`
     );
     const features = jsonRows(
       `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'))) FROM (SELECT * FROM nodes WHERE type = 'feature' ORDER BY updated_at DESC)`
     );
+
+    let workspace: any = { isWorkspace: false, packages: [] };
+    try {
+      const root = projectRootFromDb(dbPath);
+      const rootPkgPath = path.join(root, "package.json");
+      if (fs.existsSync(rootPkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
+        const pnpmWs = path.join(root, "pnpm-workspace.yaml");
+        const isWs = Boolean(pkg.workspaces || fs.existsSync(pnpmWs));
+        workspace = {
+          isWorkspace: isWs,
+          name: pkg.name || path.basename(root),
+          version: pkg.version || "1.0.0",
+          type: isWs ? (fs.existsSync(pnpmWs) ? "pnpm" : "npm/yarn") : "single-package",
+        };
+      }
+    } catch {}
     // ── Injection metrics (I4 Roadmap): shadow memory time saved ──
     let injectionCount = 0;
     let injectionSavedMs = 0;
@@ -289,7 +312,7 @@ export async function getDashboardData() {
     // ── Staleness (GAP 4): surface stale assets before they become liabilities ──
     const staleness = detectStaleNodes(db, dbPath);
 
-    return { stats, nodes, edges, gotchas, efficiency, staleness, injections: { count: injectionCount, savedMs: injectionSavedMs, savedFormatted: Math.round(injectionSavedMs / 60000) + ' min' } };
+    return { stats, nodes, edges, gotchas, flows, decisions, workspace, efficiency, staleness, injections: { count: injectionCount, savedMs: injectionSavedMs, savedFormatted: Math.round(injectionSavedMs / 60000) + ' min' } };
   } finally {
     db.close();
   }

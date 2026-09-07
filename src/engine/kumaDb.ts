@@ -93,7 +93,17 @@ export function flushDb(db?: SqlJsDatabase): void {
     }
     const data = d.export();
     const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
+    const tmpPath = path.join(
+      kumaDir,
+      `${DB_FILENAME}.tmp.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString("hex")}`
+    );
+    fs.writeFileSync(tmpPath, buffer);
+    try {
+      fs.renameSync(tmpPath, dbPath);
+    } catch {
+      fs.writeFileSync(dbPath, buffer);
+      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
+    }
   } catch (err) {
     console.error(`[KumaDB] Failed to flush database: ${err}`);
   }
@@ -151,7 +161,7 @@ function createSchema(db: SqlJsDatabase): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL REFERENCES nodes(id),
     target_id TEXT NOT NULL REFERENCES nodes(id),
-    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects')),
+    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects','explains')),
     weight REAL DEFAULT 1.0,
     metadata TEXT DEFAULT '{}',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -162,14 +172,14 @@ function createSchema(db: SqlJsDatabase): void {
   try {
     const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='edges'`);
     const edgeSql = schema[0]?.values?.[0]?.[0] as string || '';
-    if (edgeSql.includes('flows_through') === false) {
+    if (edgeSql.includes('explains') === false) {
       // Need migration — recreate edges table with new types
       db.run(`ALTER TABLE edges RENAME TO edges_old`);
       db.run(`CREATE TABLE IF NOT EXISTS edges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_id TEXT NOT NULL REFERENCES nodes(id),
         target_id TEXT NOT NULL REFERENCES nodes(id),
-        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects')),
+        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects','explains')),
         weight REAL DEFAULT 1.0,
         metadata TEXT DEFAULT '{}',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -461,8 +471,10 @@ function createSchema(db: SqlJsDatabase): void {
       content_hash TEXT,
       trigger_command TEXT,
       status TEXT NOT NULL DEFAULT 'active'
-        CHECK(status IN ('active','resolved')),
-      last_verified_at INTEGER
+        CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
+      last_verified_at INTEGER,
+      scope_package TEXT,
+      verified_by TEXT
     );
   `);
 
@@ -481,6 +493,39 @@ function createSchema(db: SqlJsDatabase): void {
     }
     if (!cols.includes("last_verified_at")) {
       db.run(`ALTER TABLE known_gotchas ADD COLUMN last_verified_at INTEGER`);
+    }
+    if (!cols.includes("scope_package")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN scope_package TEXT`);
+    }
+    if (!cols.includes("verified_by")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN verified_by TEXT`);
+    }
+
+    // Check if status constraint needs expansion
+    const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='known_gotchas'`);
+    const gotchaSql = schema[0]?.values?.[0]?.[0] as string || '';
+    if (gotchaSql && !gotchaSql.includes('candidate')) {
+      db.run(`ALTER TABLE known_gotchas RENAME TO known_gotchas_old`);
+      db.run(`CREATE TABLE IF NOT EXISTS known_gotchas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        description TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'medium'
+          CHECK(severity IN ('low','medium','high','critical')),
+        workaround TEXT,
+        added_by TEXT DEFAULT 'agent',
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        content_hash TEXT,
+        trigger_command TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
+        last_verified_at INTEGER,
+        scope_package TEXT,
+        verified_by TEXT
+      )`);
+      db.run(`INSERT OR IGNORE INTO known_gotchas (id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at) SELECT id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at FROM known_gotchas_old`);
+      db.run(`DROP TABLE known_gotchas_old`);
     }
   } catch { /* non-critical */ }
 
@@ -961,8 +1006,8 @@ export async function runGarbageCollection(): Promise<string> {
       db.exec(`DELETE FROM benchmarks WHERE id IN (SELECT id FROM benchmarks ORDER BY created_at ASC LIMIT ${benchCount - 100})`);
     }
 
-    // 13. Known gotchas — remove stale entries for deleted files
-    db.exec(`DELETE FROM known_gotchas WHERE file_path NOT IN (SELECT DISTINCT file_path FROM nodes WHERE file_path IS NOT NULL) AND file_path NOT LIKE '%::%'`);
+    // 13. Known gotchas — purge deprecated gotchas older than 30 days
+    db.exec(`DELETE FROM known_gotchas WHERE status = 'deprecated' AND updated_at < strftime('%s','now', '-30 days')`);
 
     // 14. Cost tracking — keep only last 500
     const costCount = getCount("SELECT COUNT(*) FROM cost_tracking");

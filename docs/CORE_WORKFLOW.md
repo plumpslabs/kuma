@@ -48,10 +48,10 @@ Kuma stores all context locally in `.kuma/`:
 
 ---
 
-## 3. Tools & Actions (13 core actions, 0 gimmicks)
+## 3. Tools & Actions (15 core actions, 0 gimmicks)
 
 ### `kuma_context` — understand before you change
-`init` · `research` · `history`
+`init` · `research` · `history` · `flow` · `map` · `impact`
 
 ### `kuma_memory` — record what pays back
 `gotcha` · `decision` · `arch_flow` · `research_save`

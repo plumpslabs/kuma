@@ -191,3 +191,69 @@ export function formatGotchaStalenessReport(stale: Awaited<ReturnType<typeof ver
 
   return lines.join("\n");
 }
+
+/**
+ * Auto-deprecate or migrate stale gotchas when referenced files are deleted or renamed.
+ */
+export async function autoDeprecateStaleGotchas(): Promise<{
+  deprecated: number;
+  resolved: number;
+  details: string[];
+}> {
+  const root = getProjectRoot();
+  const details: string[] = [];
+  let deprecated = 0;
+  let resolved = 0;
+
+  try {
+    const db = await getDb();
+    const stmt = db.prepare(`
+      SELECT id, file_path, description, status, content_hash
+      FROM known_gotchas
+      WHERE status IN ('candidate', 'active', 'verified')
+    `);
+    const rows: Array<{
+      id: number;
+      file_path: string;
+      description: string;
+      status: string;
+      content_hash: string | null;
+    }> = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject() as any);
+    }
+    stmt.free();
+
+    for (const g of rows) {
+      if (!g.file_path || g.file_path.startsWith("search::") || g.file_path.startsWith("api_route::")) continue;
+      const fullPath = path.join(root, g.file_path);
+      if (!fs.existsSync(fullPath)) {
+        // Try git rename first
+        const renamed = findRenamedPath(g.file_path);
+        if (renamed) {
+          db.run(
+            `UPDATE known_gotchas SET file_path = ?, updated_at = strftime('%s','now') WHERE id = ?`,
+            [renamed, g.id]
+          );
+          details.push(`🔄 Migrated gotcha #${g.id} to renamed file: ${renamed}`);
+        } else {
+          // File was deleted -> deprecate gotcha
+          db.run(
+            `UPDATE known_gotchas SET status = 'deprecated', verified_by = 'self_heal:file_deleted', updated_at = strftime('%s','now') WHERE id = ?`,
+            [g.id]
+          );
+          deprecated++;
+          details.push(`🗑️ Deprecated gotcha #${g.id} (${g.file_path}) — file deleted`);
+        }
+      }
+    }
+
+    if (deprecated > 0 || details.length > 0) {
+      saveDb();
+    }
+  } catch (err) {
+    details.push(`⚠️ Self-heal gotcha check encountered an issue: ${err}`);
+  }
+
+  return { deprecated, resolved, details };
+}

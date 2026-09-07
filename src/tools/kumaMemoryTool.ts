@@ -14,6 +14,8 @@ const MEMORY_ALIASES: Record<string, string> = {
   "search": "search", "find": "search", "query": "search", "lookup": "search",
   "arch_flow": "arch_flow", "arch-flow": "arch_flow", "architecture": "arch_flow",
   "gotcha": "gotcha", "gotchas": "gotcha", "quirk": "gotcha",
+  "resolve_gotcha": "gotcha", "resolve-gotcha": "gotcha", "resolve": "gotcha",
+  "deprecate_gotcha": "gotcha", "deprecate-gotcha": "gotcha", "deprecate": "gotcha",
 };
 
 interface MemoryParams {
@@ -30,7 +32,11 @@ interface MemoryParams {
   limit?: number;
   description?: string;
   status?: string;
+  severity?: string;
   trigger_command?: string;
+  target?: string;
+  id?: number | string;
+  scopePackage?: string;
 }
 
 export async function handleMemory(params: MemoryParams): Promise<string> {
@@ -228,11 +234,54 @@ async function handleArchFlow(params: MemoryParams): Promise<string> {
 // ============================================================
 
 async function handleGotchaAction(params: MemoryParams): Promise<string> {
+  const rawStatus = (params.status || "").toLowerCase().trim();
+  const rawAction = (params.action || "").toLowerCase().trim();
+  const isResolution = rawStatus === "resolved" || rawStatus === "resolve" || rawAction === "resolve_gotcha" || rawAction === "resolve";
+  const isDeprecation = rawStatus === "deprecated" || rawStatus === "deprecate" || rawAction === "deprecate_gotcha" || rawAction === "deprecate";
+
+  const target = params.target || params.id || params.scope;
+
+  if (isResolution && target) {
+    const { resolveGotcha } = await import("../engine/kumaGotchas.js");
+    const res = await resolveGotcha(
+      target,
+      params.content || params.rationale || params.description,
+      "agent"
+    );
+    sessionMemory.recordMemoryAction("gotcha");
+    return res.message;
+  }
+
+  if (isDeprecation && target) {
+    const { deprecateGotcha } = await import("../engine/kumaGotchas.js");
+    const res = await deprecateGotcha(
+      target,
+      params.content || params.rationale || params.description
+    );
+    sessionMemory.recordMemoryAction("gotcha");
+    return res.message;
+  }
+
   // Back-compat: V2-era calls used `description` (or a `title`) for the bug text
   // while V3 writes use `content`. Accept either so a correct write never
   // silently falls through to a read-only listing (the gotcha would be lost).
   const content = (params.content ?? params.description ?? "").trim();
   const scope = (params.scope ?? "").trim();
+
+  const validSeverities = ["low", "medium", "high", "critical"];
+  const validStatuses = ["candidate", "active", "verified", "resolved", "deprecated"];
+
+  let severity: "low" | "medium" | "high" | "critical" = "medium";
+  if (params.severity && validSeverities.includes(params.severity.toLowerCase())) {
+    severity = params.severity.toLowerCase() as any;
+  } else if (rawStatus && validSeverities.includes(rawStatus)) {
+    severity = rawStatus as any;
+  }
+
+  let status: "candidate" | "active" | "verified" | "resolved" | "deprecated" = "active";
+  if (rawStatus && validStatuses.includes(rawStatus)) {
+    status = rawStatus as any;
+  }
 
   if (content && scope) {
     const normalizedScope = normalizeScope(scope) || scope;
@@ -240,10 +289,12 @@ async function handleGotchaAction(params: MemoryParams): Promise<string> {
     const result = await addGotcha({
       filePath: normalizedScope,
       description: content,
-      severity: (params.status as "low" | "medium" | "high" | "critical") || "medium",
+      severity,
+      status,
       // `description` doubles as workaround only when the canonical `content` field was used.
       workaround: params.content ? params.description : undefined,
       triggerCommand: params.trigger_command,
+      scopePackage: params.scopePackage,
     });
     sessionMemory.recordMemoryAction("gotcha");
     return result;
@@ -257,12 +308,16 @@ async function handleGotchaAction(params: MemoryParams): Promise<string> {
       "✅ Use: kuma_memory({ action: \"gotcha\", scope: \"<file_path>\", content: \"<what went wrong>\", status: \"high\" })\n" +
       "- `scope` — file path where the bug was found\n" +
       "- `content` — bug description (required to save)\n" +
-      "- `status` — low | medium | high | critical"
+      "- `status` — low | medium | high | critical (or 'resolved' to mark fixed)"
     );
   }
 
   // No write intent at all -> read-only listing.
   const { listGotchas, syncGotchasToDb } = await import("../engine/kumaGotchas.js");
   await syncGotchasToDb();
-  return await listGotchas({ filePath: params.scope, severity: params.status });
+  return await listGotchas({
+    filePath: params.scope,
+    severity: validSeverities.includes(rawStatus) ? rawStatus : undefined,
+    status: validStatuses.includes(rawStatus) ? rawStatus : undefined,
+  });
 }

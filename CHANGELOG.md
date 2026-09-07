@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.4.4] — 2026-09-07
+
+### 🚀 Major Architecture Release — Workspace Intelligence, Blast Radius, Gotcha Lifecycle & Studio Revamp
+
+- **Workspace Intelligence (`kuma_context({ action: "map" })`)**:
+  - Automatic detection of Monorepo workspaces (`pnpm-workspace.yaml`, `lerna.json`, `package.json` workspaces, npm, yarn).
+  - Maps package dependencies, inter-package relations, and boundary isolation rules.
+- **Blast Radius Impact Analysis (`kuma_context({ action: "impact", target: "..." })`)**:
+  - Computes transitive dependency graph, affected consumer packages/files, test coverage mappings, and risk scoring (`low`, `medium`, `high`, `critical`).
+  - Protects agents from breaking shared downstream packages.
+- **Gotcha Lifecycle & Self-Healing**:
+  - Full lifecycle tracking: `candidate` → `active` → `verified` → `resolved` → `deprecated`.
+  - Resolution and deprecation reasons recorded with caller attribution.
+  - Safe garbage collection: unlinked gotchas are never purged; only explicitly deprecated gotchas older than 30 days are removed during GC.
+  - Automatic deprecation during daily maintenance sweeps when files are moved or deleted.
+- **Resilient Atomic Persistence & Git Branch Tracking**:
+  - Atomic file writing (`tmp.<pid>.<time>` + atomic rename) prevents corruption during sudden agent interrupts.
+  - Git branch tracking (`currentBranch`, `previousBranch`, `branchSwitched`) alerts agents when switching context between branches.
+- **Kuma Studio Complete Revamp (`kuma studio`)**:
+  - Eliminated chaotic node-line spiderweb graph as default view.
+  - Introduced clean, modular card-based views: Gotcha Shield with status filters and 1-click workaround copy, Domain Sequence Flows, Workspace & Blast Radius checker, Health & Efficiency metrics, and calm Knowledge Graph with physics toggle.
+- **Multi-Provider Rule & Skill Injection**:
+  - XML-delimited instructions (`<kuma_obedience>`, `<kuma_workflow>`) ensuring high adherence across 13+ agent environments (Claude, Cursor, Windsurf, Copilot, Antigravity, OpenCode, Codex, Qwen, Kiro, Cline, Aider).
+- **Documentation & Landing Page Overhaul**:
+  - Pruned stale comparison section from `docs/index.html` to focus 100% on Kuma.
+  - Integrated Lucide CDN icons for a clean, modern aesthetic.
+  - Synchronized `README.md`, `docs/api.md`, `docs/guide.md`, `docs/CORE_WORKFLOW.md`, and skill definitions to the 15 core actions.
+
 ## [2.4.3] — 2026-08-10
 
 ### 🧹 V3.5 cleanup pass — XML instruction format, dead store pruning, Studio fixes
@@ -31,6 +59,34 @@
 - All other actions (incl. security/gc/ast) preserved — only the cosmetic score went away.
 
 # Changelog
+
+## [2.5.0] — 2026-09-07
+
+### 🚀 Major Architecture Release — Workspace Intelligence, Blast Radius, Gotcha Lifecycle & Studio Revamp
+
+- **Workspace Intelligence (`kuma_context({ action: "map" })`)**:
+  - Automatic detection of Monorepo workspaces (`pnpm-workspace.yaml`, `lerna.json`, `package.json` workspaces, npm, yarn).
+  - Maps package dependencies, inter-package relations, and boundary isolation rules.
+- **Blast Radius Impact Analysis (`kuma_context({ action: "impact", target: "..." })`)**:
+  - Computes transitive dependency graph, affected consumer packages/files, test coverage mappings, and risk scoring (`low`, `medium`, `high`, `critical`).
+  - Protects agents from breaking shared downstream packages.
+- **Gotcha Lifecycle & Self-Healing**:
+  - Full lifecycle tracking: `candidate` → `active` → `verified` → `resolved` → `deprecated`.
+  - Resolution and deprecation reasons recorded with caller attribution.
+  - Safe garbage collection: unlinked gotchas are never purged; only explicitly deprecated gotchas older than 30 days are removed during GC.
+  - Automatic deprecation during daily maintenance sweeps when files are moved or deleted.
+- **Resilient Atomic Persistence & Git Branch Tracking**:
+  - Atomic file writing (`tmp.<pid>.<time>` + atomic rename) prevents corruption during sudden agent interrupts.
+  - Git branch tracking (`currentBranch`, `previousBranch`, `branchSwitched`) alerts agents when switching context between branches.
+- **Kuma Studio Complete Revamp (`kuma studio`)**:
+  - Eliminated chaotic node-line spiderweb graph as default view.
+  - Introduced clean, modular card-based views: Gotcha Shield with status filters and 1-click workaround copy, Domain Sequence Flows, Workspace & Blast Radius checker, Health & Efficiency metrics, and calm Knowledge Graph with physics toggle.
+- **Multi-Provider Rule & Skill Injection**:
+  - XML-delimited instructions (`<kuma_obedience>`, `<kuma_workflow>`) ensuring high adherence across 13+ agent environments (Claude, Cursor, Windsurf, Copilot, Antigravity, OpenCode, Codex, Qwen, Kiro, Cline, Aider).
+- **Documentation & Landing Page Overhaul**:
+  - Pruned stale comparison section from `docs/index.html` to focus 100% on Kuma.
+  - Integrated Lucide CDN icons for a clean, modern aesthetic.
+  - Synchronized `README.md`, `docs/api.md`, `docs/guide.md`, `docs/CORE_WORKFLOW.md`, and skill definitions to the 15 core actions.
 
 ## [2.4.0] — 2026-08-07
 

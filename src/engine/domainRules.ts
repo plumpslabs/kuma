@@ -178,24 +178,28 @@ export function getActiveGotchas(): Array<{
     let currentFilePath = "";
     let currentDesc = "";
     let currentSeverity = "";
+    let currentStatus = "active";
 
     for (const line of lines) {
       const fileMatch = line.match(/^###\s+(.+?)\s*[—–-]+\s*(.+)/);
       if (fileMatch) {
-        if (currentFilePath) {
+        if (currentFilePath && currentStatus !== "resolved" && currentStatus !== "deprecated") {
           results.push({ filePath: currentFilePath, description: currentDesc, severity: currentSeverity, content: currentSection });
         }
         currentFilePath = fileMatch[1].trim();
         currentDesc = fileMatch[2].trim();
         currentSeverity = "medium";
+        currentStatus = "active";
         currentSection = line + "\n";
         continue;
       }
       const sevMatch = line.match(/- \*\*Severity\*\*:\s*(\w+)/);
       if (sevMatch) currentSeverity = sevMatch[1].toLowerCase();
+      const statusMatch = line.match(/- \*\*Status\*\*:\s*(\w+)/);
+      if (statusMatch) currentStatus = statusMatch[1].toLowerCase();
       currentSection += line + "\n";
     }
-    if (currentFilePath) {
+    if (currentFilePath && currentStatus !== "resolved" && currentStatus !== "deprecated") {
       results.push({ filePath: currentFilePath, description: currentDesc, severity: currentSeverity, content: currentSection });
     }
   } catch { /* file doesn't exist yet */ }

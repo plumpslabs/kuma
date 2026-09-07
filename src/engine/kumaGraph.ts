@@ -1381,96 +1381,60 @@ export interface ImpactResult {
   files: number;
   testFiles: number;
   entryPoints: string[];
-  risk: "low" | "medium" | "high";
+  risk: "low" | "medium" | "high" | "critical";
+  packageName?: string;
+  downstreamPackages?: string[];
+  affectedTests?: string[];
+  riskFlags?: string[];
+  summary?: string;
 }
 
 /**
  * Analyze the impact of changing a symbol or file.
- * Traverses the graph to find all dependents, tests, and entry points.
- * Falls back to codebase grep when graph is empty.
+ * Computes blast radius, package ownership, downstream consumers, and affected tests.
  */
 export async function analyzeImpact(target: string): Promise<ImpactResult> {
   try {
-    const db = await getDb();
+    const { calculateBlastRadius } = await import("./impactAnalysis.js");
+    const blast = await calculateBlastRadius(target);
 
-    // Check if graph is populated at all
-    const nodeCount = (db.exec("SELECT COUNT(*) as c FROM nodes")[0]?.values[0][0] as number) ?? 0;
-
-    // CODEBASE FALLBACK: When graph is empty, use grep to find references
-    if (nodeCount === 0) {
-      return await codebaseImpactFallback(target);
-    }
-
-    // Find node by name or file_path
-    const nodeStmt = db.prepare(`
-      SELECT id, name, type, file_path FROM nodes
-      WHERE name LIKE ? OR file_path = ? OR id = ?
-      LIMIT 1
-    `);
-    nodeStmt.bind([`%${target}%`, target, target]);
-    let nodeId = "";
-    let nodeName = "";
-    if (nodeStmt.step()) {
-      const row = nodeStmt.getAsObject() as Record<string, unknown>;
-      nodeId = row.id as string;
-      nodeName = row.name as string;
-    }
-    nodeStmt.free();
-
-    if (!nodeId) {
-      // Graph exists but node not found — try codebase fallback
-      return await codebaseImpactFallback(target);
-    }
-
-    // Count all edges connected to this node
-    const refStmt = db.prepare(`
-      SELECT COUNT(*) as cnt, COUNT(DISTINCT CASE WHEN e.source_id != ? THEN e.source_id ELSE e.target_id END) as file_count
-      FROM edges e WHERE e.source_id = ? OR e.target_id = ?
-    `);
-    refStmt.bind([nodeId, nodeId, nodeId]);
-    let references = 0;
-    let files = 0;
-    if (refStmt.step()) {
-      const row = refStmt.getAsObject() as Record<string, unknown>;
-      references = (row.cnt as number) || 0;
-      files = (row.file_count as number) || 0;
-    }
-    refStmt.free();
-
-    // Find test files
-    let testFiles = 0;
+    // Also check graph if populated to augment entrypoints
+    let graphEntryPoints: string[] = [];
     try {
-      const testStmt = db.prepare(
-        `SELECT COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.source_id WHERE (e.source_id = ? OR e.target_id = ?) AND n.type = 'test'`
-      );
-      testStmt.bind([nodeId, nodeId]);
-      if (testStmt.step()) {
-        testFiles = (testStmt.getAsObject() as Record<string, unknown>).cnt as number || 0;
+      const db = await getDb();
+      const nodeStmt = db.prepare(`SELECT id FROM nodes WHERE name LIKE ? OR file_path = ? OR id = ? LIMIT 1`);
+      nodeStmt.bind([`%${target}%`, target, target]);
+      if (nodeStmt.step()) {
+        const row = nodeStmt.getAsObject() as { id: string };
+        const entryStmt = db.prepare(`SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.target_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`);
+        entryStmt.bind([row.id]);
+        while (entryStmt.step()) {
+          const erow = entryStmt.getAsObject() as { name: string; cnt: number };
+          graphEntryPoints.push(`${erow.name} (${erow.cnt} refs)`);
+        }
+        entryStmt.free();
       }
-      testStmt.free();
+      nodeStmt.free();
     } catch {}
 
-    // Find entry points (nodes with many incoming edges)
-    const entryStmt = db.prepare(
-      `SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.target_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`
-    );
-    entryStmt.bind([nodeId]);
-    const entryRows: Array<Record<string, unknown>> = [];
-    while (entryStmt.step()) {
-      entryRows.push(entryStmt.getAsObject());
-    }
-    entryStmt.free();
-    const entryPoints: string[] = [];
-    for (const row of entryRows) {
-      entryPoints.push(`${row.name} (${row.cnt} refs)`);
-    }
+    const allEntryPoints = graphEntryPoints.length > 0 ? graphEntryPoints : blast.directDependents.slice(0, 5);
 
-    const risk: ImpactResult["risk"] = references > 20 ? "high" : references > 5 ? "medium" : "low";
-
-    return { symbol: nodeName, references, files, testFiles, entryPoints, risk };
+    return {
+      symbol: target,
+      references: blast.directDependents.length,
+      files: blast.directDependents.length + (blast.downstreamPackages.length > 0 ? blast.downstreamPackages.length : 1),
+      testFiles: blast.affectedTests.length,
+      entryPoints: allEntryPoints,
+      risk: blast.risk,
+      packageName: blast.owningPackage?.name,
+      downstreamPackages: blast.downstreamPackages,
+      affectedTests: blast.affectedTests,
+      riskFlags: blast.riskFlags,
+      summary: blast.summary,
+    };
   } catch (err) {
     console.error(`[KumaGraph] Impact analysis failed: ${err}`);
-    return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };
+    return await codebaseImpactFallback(target);
   }
 }
 
@@ -1515,23 +1479,26 @@ async function codebaseImpactFallback(target: string): Promise<ImpactResult> {
   }
 }
 
-
-
 /**
  * Format impact analysis result.
  */
 export function formatImpact(result: ImpactResult): string {
-  const icon = result.risk === "high" ? "🔴" : result.risk === "medium" ? "🟡" : "🟢";
+  if (result.summary) return result.summary;
+  const icon = result.risk === "critical" ? "🚨" : result.risk === "high" ? "🔴" : result.risk === "medium" ? "🟡" : "🟢";
   const lines: string[] = [
     `${icon} **Impact Analysis** — ${result.symbol}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     "",
     `📊 ${result.references} reference(s) across ${result.files} file(s)`,
     `🧪 ${result.testFiles} test file(s)`,
+    result.packageName ? `📦 Package: \`${result.packageName}\`` : "",
+    result.downstreamPackages && result.downstreamPackages.length > 0
+      ? `🌐 Downstream: ${result.downstreamPackages.join(", ")}`
+      : "",
     result.entryPoints.length > 0 ? `\n🎯 Entry Points:\n  ${result.entryPoints.join("\n  ")}` : "",
     "",
     `⚠️ Risk Level: **${result.risk.toUpperCase()}**`,
-    result.risk === "high" ? "💡 High impact — review thoroughly before changing." : "",
+    result.risk === "high" || result.risk === "critical" ? "💡 High impact — review thoroughly before changing." : "",
   ].filter(Boolean);
   return lines.join("\n");
 }

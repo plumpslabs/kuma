@@ -35,6 +35,9 @@ interface SessionState {
   projectRoot: string;
   startTime: number;
   currentGoal: string;
+  currentBranch?: string;
+  previousBranch?: string;
+  branchSwitched?: boolean;
   goalProgress?: {
     percentage: number; // 0-100
     milestone?: string; // current milestone description
@@ -72,6 +75,7 @@ class SessionMemory {
   init(config: { projectRoot: string; startTime: number }): void {
     const kumaDir = path.join(config.projectRoot, ".kuma");
     const sessionFile = path.join(kumaDir, "memory.json");
+    const currentGitBranch = this.detectCurrentBranch(config.projectRoot);
 
     // Migration: .kuma-memory.json → memory.json (v1.4.0)
     const oldFile = path.join(kumaDir, ".kuma-memory.json");
@@ -95,10 +99,15 @@ class SessionMemory {
       try {
         const raw = fs.readFileSync(sessionFile, "utf-8");
         const parsed = JSON.parse(raw);
+        const storedBranch = parsed.currentBranch;
+        const branchSwitched = Boolean(storedBranch && currentGitBranch && storedBranch !== currentGitBranch);
         this.state = {
           projectRoot: parsed.projectRoot || config.projectRoot,
           startTime: parsed.startTime || config.startTime,
           currentGoal: parsed.currentGoal || "",
+          currentBranch: currentGitBranch || storedBranch || undefined,
+          previousBranch: branchSwitched ? storedBranch : parsed.previousBranch,
+          branchSwitched,
           completedSteps: parsed.completedSteps || [],
           modifiedFiles: new Map(parsed.modifiedFiles || []),
           failedFiles: new Map(parsed.failedFiles || []),
@@ -121,6 +130,9 @@ class SessionMemory {
       projectRoot: config.projectRoot,
       startTime: config.startTime,
       currentGoal: "",
+      currentBranch: currentGitBranch || undefined,
+      previousBranch: undefined,
+      branchSwitched: false,
       completedSteps: [],
       modifiedFiles: new Map(),
       failedFiles: new Map(),
@@ -274,6 +286,9 @@ class SessionMemory {
         projectRoot: this.state.projectRoot,
         startTime: this.state.startTime,
         currentGoal: this.state.currentGoal,
+        currentBranch: this.state.currentBranch,
+        previousBranch: this.state.previousBranch,
+        branchSwitched: this.state.branchSwitched,
         completedSteps: this.state.completedSteps,
         modifiedFiles: Array.from(this.state.modifiedFiles.entries()),
         failedFiles: Array.from(this.state.failedFiles.entries()),
@@ -284,7 +299,15 @@ class SessionMemory {
         recordings: this.state.recordings,
         metrics: this.state.metrics,
       };
-      fs.writeFileSync(path.join(kumaDir, "memory.json"), JSON.stringify(serialized, null, 2), "utf-8");
+      const finalPath = path.join(kumaDir, "memory.json");
+      const tmpPath = path.join(kumaDir, `memory.json.tmp.${process.pid}.${Date.now()}`);
+      fs.writeFileSync(tmpPath, JSON.stringify(serialized, null, 2), "utf-8");
+      try {
+        fs.renameSync(tmpPath, finalPath);
+      } catch {
+        fs.writeFileSync(finalPath, JSON.stringify(serialized, null, 2), "utf-8");
+        try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
+      }
     } catch (err) {
       console.error(`[SessionMemory] Failed to save session: ${err}`);
     }
@@ -946,6 +969,45 @@ class SessionMemory {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Detect current git branch.
+   */
+  private detectCurrentBranch(cwd = process.cwd()): string | null {
+    try {
+      return execSync("git rev-parse --abbrev-ref HEAD", {
+        cwd,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get the active git branch for the current session.
+   */
+  getCurrentBranch(): string | null {
+    this.ensureInit();
+    return this.state.currentBranch || this.detectCurrentBranch(this.state.projectRoot);
+  }
+
+  /**
+   * Check if git branch transitioned since previous session.
+   */
+  getBranchTransition(): { switched: boolean; from?: string; to?: string } | null {
+    this.ensureInit();
+    if (this.state.branchSwitched && this.state.previousBranch && this.state.currentBranch) {
+      return {
+        switched: true,
+        from: this.state.previousBranch,
+        to: this.state.currentBranch,
+      };
+    }
+    return null;
   }
 
   /**

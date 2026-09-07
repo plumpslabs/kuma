@@ -31,32 +31,44 @@ Kuma is an MCP (Model Context Protocol) server that acts as a **pre-modification
 
 ## Quick Start
 
-```bash
-# Run with npx (zero setup)
-npx -y @plumpslabs/kuma
+### ⚡ Universal 1-Liner (Auto-detects your IDE/Agent)
 
-# Or install globally
-npm install -g @plumpslabs/kuma
-kuma
+```bash
+curl -fsSL https://raw.githubusercontent.com/plumpslabs/kuma/main/install.sh | bash
 ```
 
-Kuma auto-generates:
-- `.kuma/init.md` — Project-specific behavioral rules
-- `.kuma/kuma.db` — SQLite knowledge graph (WASM, zero native build)
-- `.skills/` — Skill files for common patterns
+### 🧩 Or Install as a Native Plugin
+
+* **Claude Code Marketplace:**
+  ```bash
+  /plugin marketplace add plumpslabs/kuma
+  /plugin install kuma@plumpslabs-kuma
+  ```
+* **Antigravity CLI (AGY):**
+  ```bash
+  agy plugin add https://github.com/plumpslabs/kuma
+  ```
+* **Via NPX (Zero Install):**
+  ```bash
+  npx @plumpslabs/kuma init --all
+  ```
+
+📖 See [INSTALL.md](INSTALL.md) for the complete provider matrix (Cursor, Windsurf, OpenCode, Copilot, Zed, Cline, Aider, etc.).
 
 ---
 
 ## Core Architecture: 3 Pipeline-Driven Tools
 
-Kuma exposes **3 coarse-grained tools** with **13 core actions** — the full agent surface. Anything else (impact, navigate, changes, digest, drift, resume, mine, session, delete_node, clear, goal_progress, check, audit, security, gc, ast, validate, gotcha_staleness) was **removed** — not hidden, gone — so the agent never has to choose from 30+ options and there is no dead surface to maintain.
+Kuma exposes **3 coarse-grained tools** with **15 core actions** — the full agent surface. Anything else (impact, navigate, changes, digest, drift, resume, mine, session, delete_node, clear, goal_progress, check, audit, security, gc, ast, validate, gotcha_staleness) was **removed** — not hidden, gone — so the agent never has to choose from 30+ options and there is no dead surface to maintain.
 
 ### 🧠 `kuma_context` — Context & Research
 
 | Action | Purpose | Impact |
 |--------|---------|--------|
-| `init` | Lean project brief + restore session | 🔴 Required first |
+| `init` | Lean project brief + restore session + branch tracking | 🔴 Required first |
 | `research` | 5-step pipeline: cache → graph → scan → impact → decision | 🔴 Required before edits |
+| `map` | Monorepo package topology & workspace boundary mapping | 🔴 High |
+| `impact` | Blast radius analysis: affected consumers & risk scoring | 🔴 High |
 | `history` | Why is this file written this way (cross-session trace) | 🔴 High |
 | `flow` | Read a recorded architecture flow | 🔴 High |
 
@@ -64,7 +76,7 @@ Kuma exposes **3 coarse-grained tools** with **13 core actions** — the full ag
 
 | Action | Purpose | Impact |
 |--------|---------|--------|
-| `gotcha` | Record bugs/quirks IMMEDIATELY | 🔴 Exponential |
+| `gotcha` | Record bugs/quirks + lifecycle (`active` → `resolved` → `deprecated`) | 🔴 Exponential |
 | `arch_flow` | Record architecture flow (max 5 core files) | 🔴 Exponential |
 | `decision` | Record ADR-style decision with rationale | 🔴 Exponential |
 | `research_save` | Save research findings to cache | 🟡 Linear |
@@ -87,7 +99,7 @@ Kuma exposes exactly **3 coarse-grained tools** — the agent picks an *action*,
 
 | Tool | Core Actions | Purpose |
 |------|--------------|---------|
-| `kuma_context` | `init`, `research`, `history`, `flow` | Load project context, understand unfamiliar code |
+| `kuma_context` | `init`, `research`, `history`, `flow`, `map`, `impact` | Load project context, understand unfamiliar code |
 | `kuma_memory` | `gotcha`, `decision`, `arch_flow`, `research_save`, `search` | Persistent knowledge that saves future sessions |
 | `kuma_safety` | `guard`, `verify`, `checkpoint`, `rollback_label` | Pre-risk check, post-edit verification, snapshot/restore |
 
@@ -106,15 +118,15 @@ Everything else is an internal action — not exposed to the agent. The agent us
 
 ## Kuma Studio
 
-Kuma Studio is a **web-based dashboard** for visualizing and managing your knowledge graph.
+Kuma Studio is a **streamlined, modular web dashboard** for visualizing your codebase intelligence, gotchas shield, and workspace topology without visual clutter.
 
 ### Features
 
-- **📊 Knowledge Graph** — Interactive node-edge visualization with physics simulation
-- **⚠️ Gotchas** — Known bugs and quirks with severity levels
-- **⚡ Efficiency** — Session metrics, time saved, verification pass rates
-- **🪄 Injections** — Shadow-memory metrics: injection count + time saved (24h)
-- **📈 Staleness** — Detection of stale nodes with missing file references
+- **🛡️ Gotcha Shield** — Filter gotchas by status (`active`, `verified`, `resolved`), severity, and copy workarounds in 1 click
+- **🔀 Domain Sequence Flows** — Linear architecture hops and execution sequences
+- **📦 Workspace & Blast Radius** — Monorepo package dependency matrix and real-time blast radius impact simulator
+- **⚡ Health & Efficiency** — Session metrics, estimated hours saved, verification pass rates, and injection statistics
+- **🕸️ Calm Knowledge Graph** — Clean node-link visualization with optional physics simulation and depth controls
 
 ### Usage
 

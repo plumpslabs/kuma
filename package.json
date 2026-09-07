@@ -1,7 +1,7 @@
 {
   "name": "@plumpslabs/kuma",
-  "version": "2.4.3",
-  "description": "Safety-first context & orchestration engine for AI coding agents. MCP server with mandatory research pipeline, knowledge graph, impact analysis, decision memory, and safety guard — works with any MCP client.",
+  "version": "2.4.4",
+  "description": "Safety-first context & orchestration engine for AI coding agents. MCP server with mandatory research pipeline, knowledge graph, impact analysis, decision memory, and safety guard \u2014 works with any MCP client.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,12 +11,17 @@
   "files": [
     "dist/",
     "packages/ide/studio/dist/",
-    "packages/ide/studio/public/"
+    "packages/ide/studio/public/",
+    "plugin.json",
+    "mcp_config.json",
+    "install.sh",
+    "INSTALL.md",
+    ".claude-plugin/"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --no-splitting --clean --out-dir dist",
     "build:studio": "cd packages/ide/studio && tsup src/index.ts --format esm --clean --out-dir dist",
-    "build:all": "pnpm run build && pnpm run build:studio",
+    "build:all": "npm run build && npm run build:studio",
     "dev": "tsup src/index.ts --format esm --watch --out-dir dist",
     "start": "node dist/index.js",
     "studio": "node dist/index.js studio",

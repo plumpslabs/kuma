@@ -42,8 +42,13 @@ export async function maybeRunAutoCleanup(): Promise<string> {
     await syncGotchasToDb();
     const { runGarbageCollection } = await import("./kumaDb.js");
     const gcResult = await runGarbageCollection();
+    const { autoDeprecateStaleGotchas } = await import("./kumaSelfHeal.js");
+    const deprecateRes = await autoDeprecateStaleGotchas();
 
-    const summary = gcResult.replace(/\n/g, " ").substring(0, 80);
+    let summary = gcResult.replace(/\n/g, " ").substring(0, 80);
+    if (deprecateRes.deprecated > 0) {
+      summary += ` (${deprecateRes.deprecated} gotcha(s) auto-deprecated)`;
+    }
     return `🧹 ${summary}`;
   } catch {
     return "";

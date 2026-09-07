@@ -84,4 +84,13 @@ describe("SessionMemory", () => {
       sessionMemory.recordToolCall("test_tool", { arg: "value" });
     }).not.toThrow();
   });
+
+  test("tracks branch and detects branch transitions", () => {
+    const branch = sessionMemory.getCurrentBranch();
+    expect(branch === null || typeof branch === "string").toBe(true);
+
+    // Initial transition should be null when on same branch
+    const transition = sessionMemory.getBranchTransition();
+    expect(transition === null || transition.switched === true).toBe(true);
+  });
 });

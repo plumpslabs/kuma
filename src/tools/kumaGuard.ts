@@ -14,7 +14,7 @@ import {
 } from "../utils/kumaShared.js";
 
 interface GuardParams {
-  check?: "all" | "anti-pattern" | "loop" | "drift" | "context";
+  check?: "all" | "anti-pattern" | "loop" | "drift" | "context" | "architecture";
   goal?: string;
 }
 
@@ -44,6 +44,23 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
   const warnings: GuardWarning[] = [];
   if (check === "all" || check === "anti-pattern") {
     warnings.push(...detectAllAntiPatterns());
+  }
+
+  // 1b. Architecture boundary check
+  if (check === "all" || check === "architecture") {
+    try {
+      const { checkArchitectureBoundaries } = await import("../guards/architectureGuard.js");
+      const modifiedPaths = stats.modifiedFiles.map((f: any) => f.filePath);
+      const violations = await checkArchitectureBoundaries(modifiedPaths.length > 0 ? modifiedPaths : undefined);
+      for (const v of violations) {
+        warnings.push({
+          severity: v.severity,
+          pattern: `arch-boundary:${v.rule}`,
+          message: `Architecture violation in ${v.sourceFile}: ${v.targetImport}`,
+          suggestion: v.suggestion,
+        });
+      }
+    } catch {}
   }
 
   // 2. Loop detection

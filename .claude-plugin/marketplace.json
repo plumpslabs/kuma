@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "plumpslabs-kuma",
+  "description": "Safety-first context & orchestration engine for AI coding agents.",
+  "owner": {
+    "name": "plumpslabs",
+    "url": "https://github.com/plumpslabs"
+  },
+  "plugins": [
+    {
+      "name": "kuma",
+      "description": "Safety-first context & orchestration engine for AI coding agents. Shadow memory, gotcha lifecycle, blast radius impact analysis, and test verification.",
+      "source": "./",
+      "category": "safety"
+    }
+  ]
+}
