@@ -12,7 +12,49 @@
     {
       "name": "kuma-mcp",
       "description": "Kuma MCP \u2014 safety toolkit for AI coding agents",
-      "file": ".agents/skills/kuma/SKILL.md"
+      "file": "skills/kuma/SKILL.md"
+    }
+  ],
+  "commands": [
+    {
+      "name": "kuma:init",
+      "description": "Initialize Kuma session context, lean brief (<500 tokens), and branch tracking",
+      "file": "commands/kuma:init.md"
+    },
+    {
+      "name": "kuma:research",
+      "description": "Run 5-step research pipeline before editing unfamiliar code",
+      "file": "commands/kuma:research.md"
+    },
+    {
+      "name": "kuma:impact",
+      "description": "Calculate blast radius, affected consumers, and safety risk score",
+      "file": "commands/kuma:impact.md"
+    },
+    {
+      "name": "kuma:guard",
+      "description": "Pre-flight safety check against anti-patterns, drift, and circular deps",
+      "file": "commands/kuma:guard.md"
+    },
+    {
+      "name": "kuma:verify",
+      "description": "Post-edit scoped test verification and validation",
+      "file": "commands/kuma:verify.md"
+    },
+    {
+      "name": "kuma:checkpoint",
+      "description": "Create an atomic named snapshot before risky work",
+      "file": "commands/kuma:checkpoint.md"
+    },
+    {
+      "name": "kuma:rollback",
+      "description": "Restore codebase from a labeled checkpoint snapshot",
+      "file": "commands/kuma:rollback.md"
+    },
+    {
+      "name": "kuma:studio",
+      "description": "Launch or view Kuma Studio web dashboard",
+      "file": "commands/kuma:studio.md"
     }
   ]
 }

@@ -16,6 +16,11 @@
     "mcp_config.json",
     "install.sh",
     "INSTALL.md",
+    "hooks.json",
+    "hooks/",
+    "skills/",
+    "commands/",
+    "agents/",
     ".claude-plugin/"
   ],
   "scripts": {

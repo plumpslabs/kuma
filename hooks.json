@@ -1,0 +1,17 @@
+{
+  "kuma-safety": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "replace_file_content|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"import('fs').then(fs=>{const p=['hooks/kuma-agy-hooks.js','.agents/hooks/kuma-agy-hooks.js','../hooks/kuma-agy-hooks.js'].find(x=>fs.existsSync(x));if(p)import('./'+p);else process.stdout.write(JSON.stringify({decision:'allow'})+'\\n');}).catch(()=>process.stdout.write(JSON.stringify({decision:'allow'})+'\\n'))\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
