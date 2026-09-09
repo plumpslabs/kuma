@@ -166,7 +166,10 @@ async function handleInit(_params: ContextParams): Promise<string> {
       lines.push("**Active Gotchas (fresh & budgeted)**");
       for (const g of budgetedGotchas) {
         const icon = g.severity === "critical" ? "🔴" : g.severity === "high" ? "🟠" : g.severity === "medium" ? "🟡" : "🟢";
-        lines.push(`  ${icon} [${g.severity}] ${g.filePath} — ${g.description.substring(0, 90)}`);
+        const desc = g.description.length <= 180
+          ? g.description
+          : g.description.substring(0, 177).replace(/\s+\S*$/, "") + "...";
+        lines.push(`  ${icon} [${g.severity}] ${g.filePath} — ${desc}`);
       }
       if (totalActiveCount > budgetedGotchas.length) {
         lines.push(`  ℹ️ +${totalActiveCount - budgetedGotchas.length} more active gotchas in DB (query: kuma_memory({ action: 'gotcha' }))`);
@@ -328,7 +331,12 @@ async function handleHistory(params: ContextParams): Promise<string> {
         const icon = g.severity === "critical" ? "🔴" : g.severity === "high" ? "🟠" : g.severity === "medium" ? "🟡" : "🟢";
         lines.push(`  ${icon} [${g.severity}] ${g.description}`);
         if ((g as { triggerCommand?: string }).triggerCommand) lines.push(`     ⌨️ when running: \`${(g as { triggerCommand?: string }).triggerCommand}\``);
-        if (g.workaround) lines.push(`     💡 ${g.workaround.substring(0, 140)}`);
+        if (g.workaround) {
+          const work = g.workaround.length <= 180
+            ? g.workaround
+            : g.workaround.substring(0, 177).replace(/\s+\S*$/, "") + "...";
+          lines.push(`     💡 ${work}`);
+        }
       }
       lines.push("");
     }
@@ -340,7 +348,16 @@ async function handleHistory(params: ContextParams): Promise<string> {
       const resolved: Array<{ description: string; last_verified_at: number | null }> = [];
       while (stmt.step()) resolved.push(stmt.getAsObject() as any);
       stmt.free();
-      if (resolved.length > 0) { lines.push("✅ **Resolved gotchas** (fixed):"); for (const r of resolved) lines.push(`  ✅ ${r.description.substring(0, 100)}`); lines.push(""); }
+      if (resolved.length > 0) {
+        lines.push("✅ **Resolved gotchas** (fixed):");
+        for (const r of resolved) {
+          const rdesc = r.description.length <= 140
+            ? r.description
+            : r.description.substring(0, 137).replace(/\s+\S*$/, "") + "...";
+          lines.push(`  ✅ ${rdesc}`);
+        }
+        lines.push("");
+      }
     } catch {}
     const decisions = await getDecisionsForFile(target, 3);
     if (decisions.length > 0) { lines.push("📌 **Relevant decisions**"); for (const d of decisions) lines.push(`  ${d}`); lines.push(""); }

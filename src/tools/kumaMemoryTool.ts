@@ -60,13 +60,17 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
 // ============================================================
 
 async function handleDecision(params: MemoryParams): Promise<string> {
-  if (!params.title) return "⚠️ `title` is required. Use: kuma_memory({ action: 'decision', title: '...', rationale: '...' })";
-  if (!params.rationale) return "⚠️ `rationale` is required. Why did you choose this option?";
+  const title = params.title || params.content || (params.target ? `Decision regarding ${params.target}` : (params.scope ? `Decision for ${params.scope}` : ""));
+  const rationale = params.rationale || params.description || (params.content && params.content !== title ? params.content : "");
+
+  if (!title) return "⚠️ `title` is required (or provide `content`/`target`). Use: kuma_memory({ action: 'decision', title: '...', rationale: '...' })";
+  if (!rationale) return "⚠️ `rationale` is required (or provide `content`/`description`). Why did you choose this option?";
+
   const result = await recordDecision({
-    title: params.title,
-    context: params.context || "",
+    title,
+    context: params.context || (params.target ? `Target: ${params.target}` : (params.scope ? `Scope: ${params.scope}` : "")),
     options: [],
-    rationale: params.rationale,
+    rationale,
     outcome: params.outcome || "implemented",
     timestamp: new Date().toISOString(),
   });

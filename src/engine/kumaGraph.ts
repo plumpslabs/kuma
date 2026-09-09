@@ -8,6 +8,7 @@
 import { getDb, saveDb, flushDb, generateNodeId } from "./kumaDb.js";
 import { healOnQuery } from "./kumaSelfHeal.js";
 import { grepIncludeFlags, isTestFile } from "./languageSupport.js";
+import { normalizeScope } from "../utils/pathValidator.js";
 
 export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" | "class" | "interface" | "type" | "module" | "variable" | "component"
   | "feature_domain" | "workflow" | "cross_service_link"
@@ -45,7 +46,8 @@ interface GraphQuery {
 export function nodeId(type: NodeType, name: string): string {
   // File nodes use deterministic ID (same file = same node, no duplicates)
   if (type === "file") {
-    return `file::${name}`;
+    const normalized = normalizeScope(name) || name;
+    return `file::${normalized}`;
   }
   // All other types use UUID (no mutable-ID duplicates)
   return generateNodeId(type, name);
@@ -131,12 +133,14 @@ async function pruneGraphIfNeeded(): Promise<{ pruned: boolean; removedNodes: nu
 }
 
 /**
- * Add or update a node in the graph.
+ * Upsert a node into SQLite.
  */
 export async function upsertNode(node: GraphNode): Promise<void> {
   try {
     const db = await getDb();
-    const id = node.id || nodeId(node.type, node.name);
+    const normName = node.type === "file" ? (normalizeScope(node.name) || node.name) : node.name;
+    const normFilePath = node.filePath ? (normalizeScope(node.filePath) || node.filePath) : (node.type === "file" ? normName : undefined);
+    const id = node.id || nodeId(node.type, normName);
     const metadata = JSON.stringify(node.metadata ?? {});
     const severity = (node.metadata as any)?.severity || "medium";
     const confidence = (node.metadata as any)?.confidence || 0.8;
@@ -152,31 +156,33 @@ export async function upsertNode(node: GraphNode): Promise<void> {
         severity = excluded.severity,
         confidence = excluded.confidence,
         updated_at = strftime('%s','now')
-    `, [id, node.type, node.name, node.filePath || null, metadata, severity, confidence]);
+    `, [id, node.type, normName, normFilePath || null, metadata, severity, confidence]);
 
     // Update FTS index
     try {
-      db.run(`INSERT INTO nodes_fts (rowid, name, metadata) VALUES (last_insert_rowid(), ?, ?)`, [node.name, metadata]);
+      db.run(`INSERT INTO nodes_fts (rowid, name, metadata) VALUES (last_insert_rowid(), ?, ?)`, [normName, metadata]);
     } catch {
       // FTS5 might not be enabled, fallback to LIKE queries
     }
 
     // Auto-link to file node if filePath is specified to prevent orphan nodes
-    if (node.filePath && node.type !== "file") {
-      const fileNodeId = nodeId("file", node.filePath);
+    if (normFilePath && node.type !== "file") {
+      const fileNodeId = nodeId("file", normFilePath);
       try {
         db.run(`
           INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
           VALUES (?, 'file', ?, ?, '{}', strftime('%s','now'))
           ON CONFLICT(id) DO NOTHING
-        `, [fileNodeId, node.filePath, node.filePath]);
+        `, [fileNodeId, normFilePath, normFilePath]);
 
         db.run(`
           INSERT INTO edges (source_id, target_id, type, weight, metadata, created_at)
           VALUES (?, ?, 'contains', 1.0, '{}', strftime('%s','now'))
           ON CONFLICT DO NOTHING
         `, [fileNodeId, id]);
-      } catch {}
+      } catch {
+        // Non-critical
+      }
     }
 
     saveDb(db);

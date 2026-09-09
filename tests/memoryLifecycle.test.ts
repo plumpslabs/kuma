@@ -123,4 +123,28 @@ describe("Memory Lifecycle & Curation (DISCUSS.md)", () => {
     expect(found).toBeDefined();
     expect(found?.status).toBe("deprecated");
   });
+
+  it("handles decision with fallback parameters when title is omitted", async () => {
+    const { handleMemory } = await import("../src/tools/kumaMemoryTool.js");
+
+    // Case 1: target + rationale without title
+    const res1 = await handleMemory({
+      action: "decision",
+      target: "auth-service",
+      rationale: "Use JWT over sessions for stateless scalability",
+    });
+    expect(res1).toContain("Decision");
+    expect(res1).toContain("recorded");
+    expect(res1).toContain("Decision regarding auth-service");
+
+    // Case 2: content only without title or rationale
+    const res2 = await handleMemory({
+      action: "decision",
+      content: "Adopt PostgreSQL as primary relational store",
+      description: "Better JSONB support and concurrency control",
+    });
+    expect(res2).toContain("Decision");
+    expect(res2).toContain("recorded");
+    expect(res2).toContain("Adopt PostgreSQL as primary relational store");
+  });
 });

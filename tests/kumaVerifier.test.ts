@@ -13,9 +13,23 @@ describe("kumaVerifier (Proposal 1: Integrated Auto-Verification)", () => {
     const result = await handleSafety({
       action: "verify",
       scope: "kumaLock",
+      force: true,
     });
 
     expect(result).toContain("Verification");
     expect(result).toContain("Runner");
+  }, 40000);
+
+  test("handleSafety with action 'verify' resolves targeted test file via target parameter", async () => {
+    const result = await handleSafety({
+      action: "verify",
+      target: "tests/kumaVerifier.test.ts",
+      force: true,
+      timeoutMs: 60000,
+    });
+
+    expect(result).toContain("Verification");
+    expect(result).toContain("tests/kumaVerifier.test.ts");
+    expect(result).toContain("1 file(s) matched");
   }, 40000);
 });

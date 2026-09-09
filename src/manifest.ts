@@ -51,13 +51,13 @@ export function registerAllTools(server: McpServer): void {
     "kuma_context",
     "Context & memory recall. Call FIRST each session. Lean — each call returns only what you need." +
       CORE_NOTE +
-      "`init` (start of session: project brief + session state), `research` (before editing unfamiliar code), `history` (why is this file written this way), `flow` (read a recorded architecture flow).",
+      "`init` (start of session: project brief + session state), `research` (before editing unfamiliar code), `history` (why is this file written this way), `flow` (read a recorded architecture flow), `map` (repository topology), `impact` (blast radius analysis).",
     {
-      action: z.enum(["init", "research", "history", "flow"]).describe(
-        "init=project brief + session restore, research=research pipeline, history=file rationale + fresh gotchas, flow=read recorded domain flow"
+      action: z.enum(["init", "research", "history", "flow", "map", "impact"]).describe(
+        "init=project brief + session restore, research=research pipeline, history=file rationale + fresh gotchas, flow=read recorded domain flow, map=repo topology, impact=blast radius"
       ),
-      scope: z.string().optional().describe("Research scope for research action"),
-      target: z.string().optional().describe("Target symbol/file for history/flow"),
+      scope: z.string().optional().describe("Research scope or target for impact"),
+      target: z.string().optional().describe("Target symbol/file for history/flow/impact"),
       goal: z.string().optional().describe("Current goal (for init)"),
     },
     async (params) => {
@@ -91,17 +91,20 @@ export function registerAllTools(server: McpServer): void {
         "gotcha=record bug/quirk, decision=ADR, arch_flow=record architecture flow, research_save=save findings, search=quick memory+graph lookup"
       ),
       scope: z.string().optional().describe("File path for gotcha — or scope for research_save/search"),
+      target: z.string().optional().describe("Target file, gotcha ID, or component"),
       trigger_command: z.string().optional().describe("Gotcha trigger: shell command that hits this gotcha"),
       query: z.string().optional().describe("Search query for search action"),
       content: z.string().optional().describe("Content/notes for research_save / gotcha description / arch_flow record"),
       record: z.string().optional().describe("JSON record string for research_save"),
       confidence: z.number().min(0).max(1).optional().describe("Confidence for research_save (0-1)"),
-      title: z.string().optional().describe("Decision title (required for decision)"),
+      title: z.string().optional().describe("Decision title (optional if content/target provided)"),
       context: z.string().optional().describe("Decision context"),
-      rationale: z.string().optional().describe("Decision rationale (required for decision)"),
+      rationale: z.string().optional().describe("Decision rationale (optional if content provided)"),
       outcome: z.string().optional().describe("Decision outcome (default: implemented)"),
-      status: z.string().optional().describe("Gotcha severity (low|medium|high|critical)"),
-      description: z.string().optional().describe("Gotcha workaround"),
+      status: z.string().optional().describe("Gotcha severity (low|medium|high|critical) or status (resolved|deprecated)"),
+      severity: z.string().optional().describe("Gotcha severity (low|medium|high|critical)"),
+      description: z.string().optional().describe("Gotcha workaround / rationale"),
+      id: z.union([z.number(), z.string()]).optional().describe("Gotcha ID for resolution or deprecation"),
       limit: z.number().min(1).max(100).optional().describe("Result limit for search"),
     },
     async (params) => {
@@ -112,6 +115,7 @@ export function registerAllTools(server: McpServer): void {
         const text = await handleMemory({
           action: params.action,
           scope: params.scope,
+          target: params.target,
           query: params.query,
           content: params.content,
           record: params.record,
@@ -122,8 +126,10 @@ export function registerAllTools(server: McpServer): void {
           outcome: params.outcome,
           limit: params.limit,
           status: params.status,
+          severity: params.severity,
           description: params.description,
           trigger_command: params.trigger_command,
+          id: params.id,
         });
         return { content: [{ type: "text", text }] };
       } catch (err) {
@@ -145,7 +151,11 @@ export function registerAllTools(server: McpServer): void {
         "guard=anti-patterns/drift/loops before risky work, verify=scoped tests after edits, checkpoint=labeled snapshot before risky work, rollback_label=restore a labeled snapshot"
       ),
       scope: z.string().optional().describe("Scope for verify (e.g. 'auth', file path)"),
-      force: z.boolean().optional().describe("Force re-run even if cache is fresh (verify)"),
+      target: z.string().optional().describe("Target test file or scope for verify"),
+      command: z.string().optional().describe("Custom test command to run during verify"),
+      timeoutMs: z.number().optional().describe("Custom timeout in milliseconds for verify (default: 60000)"),
+      timeout: z.number().optional().describe("Custom timeout in seconds for verify"),
+      force: z.boolean().optional().describe("Force re-run even if cache is fresh or rate limited (verify)"),
       guardGoal: z.string().optional().describe("Goal for guard check"),
       guardCheck: z.enum(["all", "anti-pattern", "loop", "drift", "context"]).optional().describe("Guard check type"),
       label: z.string().optional().describe("Checkpoint label for checkpoint/rollback_label"),
@@ -161,6 +171,10 @@ export function registerAllTools(server: McpServer): void {
           guardGoal: params.guardGoal,
           guardCheck: params.guardCheck,
           scope: params.scope,
+          target: params.target,
+          command: params.command,
+          timeoutMs: params.timeoutMs,
+          timeout: params.timeout,
           force: params.force,
           label: params.label,
           description: params.description,

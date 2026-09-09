@@ -8,9 +8,13 @@ interface SafetyParams {
   guardGoal?: string;
   guardCheck?: string;
   scope?: string;
+  target?: string;
+  command?: string;
   force?: boolean;
   label?: string;
   description?: string;
+  timeoutMs?: number;
+  timeout?: number;
 }
 
 export async function handleSafety(params: SafetyParams): Promise<string> {
@@ -48,6 +52,10 @@ async function handleCheckpoint(params: SafetyParams): Promise<string> {
   return await createCheckpoint(params.label, params.description);
 }
 
+// ============================================================
+// ROLLBACK_LABEL — Restore from labeled snapshot
+// ============================================================
+
 async function handleRollbackLabel(params: SafetyParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_safety_rollback_label", { label: params.label });
   if (!params.label) return "⚠️ label parameter required. Example: kuma_safety({ action: 'rollback_label', label: 'pre-feature-x' })";
@@ -56,17 +64,17 @@ async function handleRollbackLabel(params: SafetyParams): Promise<string> {
 }
 
 // ============================================================
-// VERIFY — On-Demand Test Verification
+// VERIFY — Scoped test verification
 // ============================================================
 
-let _lastVerifyCall = 0;
 const VERIFY_COOLDOWN_MS = 30_000;
+let _lastVerifyCall = 0;
 
 async function handleVerify(params: SafetyParams): Promise<string> {
   const now = Date.now();
-  if (_lastVerifyCall > 0 && (now - _lastVerifyCall) < VERIFY_COOLDOWN_MS) {
+  if (now - _lastVerifyCall < VERIFY_COOLDOWN_MS && !params.force) {
     const remaining = Math.ceil((VERIFY_COOLDOWN_MS - (now - _lastVerifyCall)) / 1000);
-    return `⏳ **Handler rate limit** — verify was just called ${Math.floor((now - _lastVerifyCall) / 1000)}s ago. Please wait ${remaining}s before calling verify again.`;
+    return `⏳ Verification cooldown active. Please wait ${remaining}s before calling verify again, or use force: true.`;
   }
   _lastVerifyCall = now;
 
@@ -80,12 +88,21 @@ async function handleVerify(params: SafetyParams): Promise<string> {
     recordingWarning = `\n\n✅ **Recordings:** ${recordingSummary.total} total (${recordingSummary.archFlows} arch_flow, ${recordingSummary.gotchas} gotcha, ${recordingSummary.decisions} decision, ${recordingSummary.researchSaves} research_save)`;
   }
 
-  sessionMemory.recordToolCall("kuma_safety_verify", { scope: params.scope });
+  const effectiveScope = params.scope || params.target;
+  const timeoutMs = typeof params.timeoutMs === "number" && params.timeoutMs > 0
+    ? params.timeoutMs
+    : (typeof params.timeout === "number" && params.timeout > 0
+        ? params.timeout * 1000
+        : (process.env.KUMA_VERIFY_TIMEOUT_MS ? parseInt(process.env.KUMA_VERIFY_TIMEOUT_MS, 10) : 60000));
+
+  sessionMemory.recordToolCall("kuma_safety_verify", { scope: effectiveScope, timeoutMs });
   const { runAutoVerification } = await import("../engine/kumaVerifier.js");
   const verifyResult = await runAutoVerification({
-    scope: params.scope,
+    scope: effectiveScope,
+    target: params.target,
+    command: params.command,
     force: params.force,
-    timeoutMs: 30000,
+    timeoutMs,
   });
   return verifyResult + recordingWarning;
 }

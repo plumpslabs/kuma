@@ -19,9 +19,19 @@ p.version = '$NEW_VER';
 require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2) + '\n');
 "
 
+# plugin.json
+if [ -f "./plugin.json" ]; then
+  node -e "
+  const p = require('./plugin.json');
+  p.version = '$NEW_VER';
+  require('fs').writeFileSync('./plugin.json', JSON.stringify(p, null, 2) + '\n');
+  "
+fi
+
 # docs/index.html
-sed -i '' "s|<small>v$CURRENT_VER</small>|<small>v$NEW_VER</small>|g" docs/index.html
+sed -i '' "s|v$CURRENT_VER|v$NEW_VER|g" docs/index.html
 
 echo "✅ Version bumped to v$NEW_VER in:"
 echo "   - package.json"
+echo "   - plugin.json"
 echo "   - docs/index.html"

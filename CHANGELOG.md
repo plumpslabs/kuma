@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.4.5] — 2026-09-09
+
+### 🛡️ Runtime Safety & Verification Reliability
+
+- **Scoped Test Verification & Timeout Flexibility (`kuma_safety verify`)**:
+  - Direct file path resolution: When `scope` or `target` points directly to an existing test file (e.g. `tests/auth.test.ts`), Kuma executes only that targeted test file instead of falling back to running the full test suite.
+  - Multi-pattern test matching via `fast-glob` (`**/*${baseName}*.test.*`, `**/*${baseName}*.spec.*`, etc.).
+  - Default execution timeout increased from 30s to 60s (`60_000ms`).
+  - Added configurable timeout support: `timeoutMs`, `timeout` (seconds), or `KUMA_VERIFY_TIMEOUT_MS` environment variable.
+  - Added custom test `command` override parameter for non-standard test runners.
+  - Added actionable diagnostic hints when test execution times out (`scope: '...'`, `command: '...'`, `timeoutMs: 120000`).
+- **Graceful Decision Parameter Derivation (`kuma_memory decision`)**:
+  - `title` is now automatically derived from `target`, `content`, or `scope` if omitted by calling agents.
+  - `rationale` gracefully falls back to `description` or `content`.
+  - Rejection only occurs if neither title nor rationale can be inferred, eliminating agent friction.
+- **Hook Syntax Error Fix (`hooks/kuma-agy-hooks.js`)**:
+  - Corrected multiline unescaped newline literal in stdout response JSON string that caused syntax error during file edit pre-tool lifecycle checks.
+- **MCP Schema & Manifest Alignment (`src/manifest.ts`)**:
+  - Added `map` and `impact` actions to `kuma_context` schema.
+  - Added `target`, `severity`, `id` to `kuma_memory` schema.
+  - Added `target`, `command`, `timeoutMs`, `timeout` to `kuma_safety` schema.
+
 ## [2.4.4] — 2026-09-07
 
 ### 🚀 Major Architecture Release — Workspace Intelligence, Blast Radius, Gotcha Lifecycle & Studio Revamp

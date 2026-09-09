@@ -19,6 +19,8 @@ import { sessionMemory } from "./sessionMemory.js";
 
 export interface VerificationOptions {
   scope?: string;
+  target?: string;
+  command?: string;
   force?: boolean;
   timeoutMs?: number;
 }
@@ -82,7 +84,7 @@ let _localRunning = false;
 let _currentProcess: ChildProcess | null = null;
 
 const STALE_RESULT_MS = 300_000;
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 // 🔴 RUNAWAY DETECTION: Sliding window — max 3 calls per 5 minutes
 const RUNAWAY_WINDOW_MS = 300_000;  // 5 minutes
@@ -110,15 +112,33 @@ export function getRunningVerificationPid(): number | null {
   return _currentProcess?.pid ?? null;
 }
 
-export function detectTestRunner(root = process.cwd()): { runner: string; baseCommand: string } {
+export function detectTestRunner(root = process.cwd()): { runner: string; baseCommand: string; isJest?: boolean; isVitest?: boolean } {
   const pkgPath = path.join(root, "package.json");
   if (fs.existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+      const isJest = Boolean(
+        pkg.devDependencies?.jest ||
+        pkg.dependencies?.jest ||
+        (pkg.scripts?.test && pkg.scripts.test.includes("jest")) ||
+        fs.existsSync(path.join(root, "jest.config.js")) ||
+        fs.existsSync(path.join(root, "jest.config.ts")) ||
+        fs.existsSync(path.join(root, "jest.config.mjs")) ||
+        fs.existsSync(path.join(root, "jest.config.json"))
+      );
+      const isVitest = Boolean(
+        pkg.devDependencies?.vitest ||
+        pkg.dependencies?.vitest ||
+        (pkg.scripts?.test && pkg.scripts.test.includes("vitest")) ||
+        fs.existsSync(path.join(root, "vitest.config.ts")) ||
+        fs.existsSync(path.join(root, "vitest.config.js")) ||
+        fs.existsSync(path.join(root, "vitest.config.mjs"))
+      );
+
       if (pkg.scripts && pkg.scripts.test) {
-        if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return { runner: "pnpm", baseCommand: "pnpm test" };
-        if (fs.existsSync(path.join(root, "yarn.lock"))) return { runner: "yarn", baseCommand: "yarn test" };
-        return { runner: "npm", baseCommand: "npm test" };
+        if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return { runner: "pnpm", baseCommand: "pnpm test", isJest, isVitest };
+        if (fs.existsSync(path.join(root, "yarn.lock"))) return { runner: "yarn", baseCommand: "yarn test", isJest, isVitest };
+        return { runner: "npm", baseCommand: "npm test", isJest, isVitest };
       }
     } catch {}
   }
@@ -210,7 +230,7 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
 
     // 🏁 Proceed
     _localRunning = true;
-    const { runner, baseCommand } = detectTestRunner(root);
+    const { runner, baseCommand, isJest, isVitest } = detectTestRunner(root);
 
     // 📭 NO TESTS — Honest reporting instead of fake pass
     if (runner === "unknown" || !baseCommand) {
@@ -235,52 +255,98 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
 
     let fullCommand = baseCommand;
     let testFiles: string[] = [];
-    const modified = sessionMemory.getModifiedFiles().map(f => f.filePath);
+    let modified = sessionMemory.getModifiedFiles().map(f => f.filePath);
 
-    // 1. Workspace-aware test scoping: run tests for affected packages in monorepo
-    let workspaceScoped = false;
-    try {
-      const { getWorkspaceInfo, getAffectedPackages } = await import("./workspaceIntelligence.js");
-      const wsInfo = await getWorkspaceInfo(root);
-      if (wsInfo.isWorkspace && modified.length > 0 && !options.scope) {
-        const affected = getAffectedPackages(modified, wsInfo);
-        if (affected.affectedTestCommands.length > 0) {
-          fullCommand = affected.affectedTestCommands[0];
-          workspaceScoped = true;
+    // If sessionMemory has no modified files recorded, check git status/diff
+    if (modified.length === 0) {
+      try {
+        const { execSync } = await import("node:child_process");
+        const gitDiff = execSync("git diff --name-only HEAD", { encoding: "utf-8", timeout: 3000, cwd: root }).trim();
+        if (gitDiff) {
+          modified = gitDiff.split("\n").map(f => f.trim()).filter(Boolean);
         }
+      } catch {}
+    }
+
+    // 1. Custom command override if specified
+    const targetScope = (options.scope || options.target || "").trim();
+    if (options.command) {
+      const cmd = options.command.trim();
+      const isTestCmd = /^(npm|pnpm|yarn|bun|npx|pytest|cargo|go|make|jest|vitest)\s+/i.test(cmd);
+      if (isTestCmd) {
+        fullCommand = cmd;
       }
-    } catch {}
-
-    // 2. Targeted test files scoping (if workspace filter not applied)
-    if (!workspaceScoped) {
-      if (options.scope) {
-        const term = options.scope.toLowerCase();
-        testFiles = modified.filter(f => f.toLowerCase().includes(term));
-        if (testFiles.length === 0) {
-          try {
-            const { default: glob } = await import("fast-glob");
-            testFiles = await glob([`**/*${term}*test*.*`, `**/*test*/*${term}*.*`], { cwd: root, ignore: ["node_modules/**", "dist/**"] });
-          } catch {}
+    } else {
+      // 2. Workspace-aware test scoping: run tests for affected packages in monorepo
+      let workspaceScoped = false;
+      try {
+        const { getWorkspaceInfo, getAffectedPackages } = await import("./workspaceIntelligence.js");
+        const wsInfo = await getWorkspaceInfo(root);
+        if (wsInfo.isWorkspace && modified.length > 0 && !targetScope) {
+          const affected = getAffectedPackages(modified, wsInfo);
+          if (affected.affectedTestCommands.length > 0) {
+            fullCommand = affected.affectedTestCommands[0];
+            workspaceScoped = true;
+          }
         }
-      } else {
-        const directTests = modified.filter(f => f.includes(".test.") || f.includes(".spec.") || f.includes("_test."));
-        if (directTests.length > 0) {
-          testFiles = directTests;
-        } else if (modified.length > 0) {
-          // Attempt to locate counterpart tests for modified source files
-          try {
-            const { default: glob } = await import("fast-glob");
-            for (const f of modified.slice(0, 5)) {
-              const base = path.basename(f, path.extname(f));
-              const matches = await glob([`**/*${base}*.test.*`, `**/*${base}*.spec.*`], { cwd: root, ignore: ["node_modules/**", "dist/**"] });
-              testFiles.push(...matches);
+      } catch {}
+
+      // 3. Targeted test files scoping (if workspace filter not applied)
+      if (!workspaceScoped) {
+        if (targetScope && targetScope !== "session-impact") {
+          const resolved = path.resolve(root, targetScope);
+          // Case A: targetScope is directly a test file that exists on disk
+          if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+            testFiles = [path.relative(root, resolved)];
+          } else {
+            // Case B: Filter in session/git modified files
+            const term = targetScope.toLowerCase();
+            testFiles = modified.filter(f => f.toLowerCase().includes(term));
+            // Case C: Search via fast-glob
+            if (testFiles.length === 0) {
+              try {
+                const { default: glob } = await import("fast-glob");
+                const baseName = path.basename(targetScope, path.extname(targetScope));
+                testFiles = await glob([
+                  `**/*${baseName}*.test.*`,
+                  `**/*${baseName}*.spec.*`,
+                  `**/*${term}*test*.*`,
+                  `**/*test*/*${term}*.*`,
+                  `**/${targetScope}`,
+                ], { cwd: root, ignore: ["node_modules/**", "dist/**", ".git/**"] });
+              } catch {}
             }
-          } catch {}
+          }
+        } else {
+          const directTests = modified.filter(f => f.includes(".test.") || f.includes(".spec.") || f.includes("_test."));
+          if (directTests.length > 0) {
+            testFiles = directTests;
+          } else if (modified.length > 0) {
+            // Attempt to locate counterpart tests for modified source files
+            try {
+              const { default: glob } = await import("fast-glob");
+              for (const f of modified.slice(0, 5)) {
+                const base = path.basename(f, path.extname(f));
+                const matches = await glob([`**/*${base}*.test.*`, `**/*${base}*.spec.*`], { cwd: root, ignore: ["node_modules/**", "dist/**"] });
+                testFiles.push(...matches);
+              }
+            } catch {}
+          }
         }
-      }
 
-      if (testFiles.length > 0 && (runner === "npm" || runner === "pnpm" || runner === "yarn")) {
-        fullCommand = `${baseCommand} -- ${Array.from(new Set(testFiles)).map(f => `"${f}"`).join(" ")}`;
+        if (testFiles.length > 0 && (runner === "npm" || runner === "pnpm" || runner === "yarn" || runner === "bun")) {
+          fullCommand = `${baseCommand} -- ${Array.from(new Set(testFiles)).map(f => `"${f}"`).join(" ")}`;
+        } else if (testFiles.length === 0 && modified.length > 0 && isJest && (runner === "npm" || runner === "pnpm" || runner === "yarn" || runner === "bun")) {
+          // Smart Scoping: Jest supports --findRelatedTests to execute only tests covering modified files
+          const relFiles = Array.from(new Set(modified.slice(0, 15))).map(f => `"${f}"`).join(" ");
+          fullCommand = `${baseCommand} -- --findRelatedTests ${relFiles}`;
+        } else if (testFiles.length === 0 && modified.length > 0 && isVitest && (runner === "npm" || runner === "pnpm" || runner === "yarn" || runner === "bun")) {
+          // Smart Scoping: Vitest supports related filter
+          const relFiles = Array.from(new Set(modified.slice(0, 15))).map(f => `"${f}"`).join(" ");
+          fullCommand = `${baseCommand} -- related ${relFiles} --run`;
+        } else if (testFiles.length > 0 && runner === "pytest") {
+          fullCommand = `pytest ${Array.from(new Set(testFiles)).map(f => `"${f}"`).join(" ")}`;
+        }
       }
     }
 
@@ -359,9 +425,11 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
         releaseFileLock(root);
         clearInterval(heartbeatTimer);
 
-        const statusSymbol = passed ? "✅" : "🔴";
+        const isTimedOut = Boolean(error && (error as any).killed);
+        const statusSymbol = passed ? "✅" : (isTimedOut ? "⏱️" : "🔴");
+        const statusTitle = passed ? "PASSED" : (isTimedOut ? "TIMED_OUT" : "FAILED");
         const lines = [
-          `${statusSymbol} **Verification ${passed ? "PASSED" : "FAILED"}**`,
+          `${statusSymbol} **Verification ${statusTitle}**`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           "",
           `🛠️ **Runner**: \`${runner}\``,
@@ -375,12 +443,14 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
           if (isNoTests) {
             lines[0] = `⚪ **Verification: NO TESTS**`;
             lines.push("ℹ️ No tests ran. Install Jest, Vitest, pytest, or similar to enable verification.");
+          } else if (isTimedOut) {
+            lines.push(`⏰ **Process was killed after ${timeoutMs}ms timeout (TIMED_OUT)**`);
+            lines.push("ℹ️ Tests did not fail; the test execution exceeded the allotted timeout threshold.");
+            lines.push(`💡 *Tip*: Run a specific test file via \`scope: 'tests/my-test.test.ts'\`, specify a custom command via \`command: '...' \`, or increase timeout via \`timeoutMs: ${Math.max(timeoutMs * 2, 120000)}\`.`);
+            if (rawOutput) lines.push("```text", rawOutput.substring(0, 1500), "```");
           } else {
             lines.push("⚠️ **Verification failed!** Please fix test failures before shipping.");
-            if (error && (error as any).killed) {
-              lines.push(`⏰ **Process was killed after ${timeoutMs}ms timeout**`);
-            }
-            lines.push("```text", rawOutput.substring(0, 1500), "```");
+            if (rawOutput) lines.push("```text", rawOutput.substring(0, 1500), "```");
           }
         } else {
           lines.push("🎉 All scoped tests passed!");
