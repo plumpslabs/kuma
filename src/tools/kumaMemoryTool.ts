@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "arch_flow" | "gotcha" | "search";
+type MemoryAction = "decision" | "research_save" | "arch_flow" | "gotcha" | "search" | "gotcha_resolve";
 
 const MEMORY_ALIASES: Record<string, string> = {
   "decision": "decision", "adr": "decision",
@@ -15,6 +15,7 @@ const MEMORY_ALIASES: Record<string, string> = {
   "arch_flow": "arch_flow", "arch-flow": "arch_flow", "architecture": "arch_flow",
   "gotcha": "gotcha", "gotchas": "gotcha", "quirk": "gotcha",
   "resolve_gotcha": "gotcha", "resolve-gotcha": "gotcha", "resolve": "gotcha",
+  "gotcha_resolve": "gotcha", "gotcha-resolve": "gotcha",
   "deprecate_gotcha": "gotcha", "deprecate-gotcha": "gotcha", "deprecate": "gotcha",
 };
 
@@ -240,7 +241,7 @@ async function handleArchFlow(params: MemoryParams): Promise<string> {
 async function handleGotchaAction(params: MemoryParams): Promise<string> {
   const rawStatus = (params.status || "").toLowerCase().trim();
   const rawAction = (params.action || "").toLowerCase().trim();
-  const isResolution = rawStatus === "resolved" || rawStatus === "resolve" || rawAction === "resolve_gotcha" || rawAction === "resolve";
+  const isResolution = rawStatus === "resolved" || rawStatus === "resolve" || rawAction === "resolve_gotcha" || rawAction === "gotcha_resolve" || rawAction === "gotcha-resolve" || rawAction === "resolve";
   const isDeprecation = rawStatus === "deprecated" || rawStatus === "deprecate" || rawAction === "deprecate_gotcha" || rawAction === "deprecate";
 
   const target = params.target || params.id || params.scope;

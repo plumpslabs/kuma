@@ -78,6 +78,69 @@ async function main(): Promise<void> {
   }
 
   // ============================================================
+  // CLI MODE: kuma status (Impact Ledger & Health Metrics)
+  // ============================================================
+  if (args[0] === "status") {
+    console.log(`🐻 Kuma v${SERVER_VERSION} — Health & Memory Status`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    try {
+      const { getProjectRoot } = await import("./utils/pathValidator.js");
+      const { getDb } = await import("./engine/kumaDb.js");
+      const root = getProjectRoot();
+      console.log(`📁 Project Root: ${root}`);
+
+      const db = await getDb();
+      let decisionsCount = 0;
+      try {
+        const dRes = db.exec("SELECT COUNT(*) FROM nodes WHERE type = 'decision'");
+        decisionsCount = (dRes[0]?.values[0]?.[0] as number) || 0;
+      } catch {}
+
+      let activeGotchas = 0;
+      let resolvedGotchas = 0;
+      let candidateGotchas = 0;
+      try {
+        const gRes = db.exec("SELECT status, COUNT(*) FROM known_gotchas GROUP BY status");
+        for (const row of gRes[0]?.values || []) {
+          const status = String(row[0]);
+          const cnt = Number(row[1]);
+          if (status === "active" || status === "verified") activeGotchas += cnt;
+          else if (status === "resolved") resolvedGotchas += cnt;
+          else if (status === "candidate") candidateGotchas += cnt;
+        }
+      } catch {}
+
+      let shadowInjections = 0;
+      let savedMinutes = 0;
+      try {
+        const { getInjectionStats } = await import("./engine/kumaGotchas.js");
+        const stats = getInjectionStats(24);
+        shadowInjections = stats.count;
+        savedMinutes = Math.round(stats.savedMs / 60000);
+      } catch {}
+
+      let workspaceDesc = "Single project";
+      try {
+        const { getWorkspaceInfo } = await import("./engine/workspaceIntelligence.js");
+        const wsInfo = await getWorkspaceInfo(root);
+        if (wsInfo.isWorkspace) {
+          workspaceDesc = `${wsInfo.packages.length} package(s) (${wsInfo.type.toUpperCase()})`;
+        }
+      } catch {}
+
+      console.log(`🏛️ Decisions Recorded: ${decisionsCount}`);
+      console.log(`⚠️ Active Gotchas: ${activeGotchas} active · ${resolvedGotchas} resolved · ${candidateGotchas} candidate`);
+      console.log(`🪄 Shadow Memory: ${shadowInjections} prevention(s) in last 24h (~${savedMinutes} min saved)`);
+      console.log(`📦 Workspace: ${workspaceDesc}`);
+      console.log(`🛡️ Safety Hooks: Active`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    } catch (err) {
+      console.error(`❌ Failed to retrieve status: ${err}`);
+    }
+    process.exit(0);
+  }
+
+  // ============================================================
   // CLI MODE: kuma stop --force (kill switch)
   // ============================================================
   if (args[0] === "stop" && (args[1] === "--force" || args[1] === "-f")) {

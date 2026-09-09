@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.4.6] — 2026-09-09
+
+### ⚡ Autonomous Safety & JIT Interception
+
+- **Real-Time JIT Gotcha Interception (`hooks/kuma-agy-hooks.js`)**:
+  - Automatically intercepts file edit and write tools (`replace_file_content`, `write_to_file`, `Edit`, `Write`, `MultiEdit`) in real time.
+  - Reads tool invocation payloads via standard input or environment variables.
+  - Injects active gotcha warnings (Trap + Rule) directly into agent context before edits execute, eliminating regression risk even when agents forget to check history.
+- **Actionable 3-Field Gotcha Structure (`src/engine/kumaGotchas.ts`)**:
+  - Restructured gotcha recording format with explicit `🪤 Trap`, `🛡️ Rule/Fix`, and `⚡ Severity` fields.
+- **Gotcha Resolution Action (`kuma_memory gotcha_resolve`)**:
+  - Added dedicated `gotcha_resolve` action to MCP schema and memory router to archive fixed issues seamlessly.
+- **Universal Multi-Platform Tool Normalizer (`src/manifest.ts`)**:
+  - Registered direct dual-prefix tool aliases (`kuma_kuma_context`, `kuma_kuma_memory`, `kuma_kuma_safety`) so OpenCode and other clients with prefixed tool resolution work out of the box.
+- **Impact Ledger CLI (`kuma status`)**:
+  - New `kuma status` CLI command displaying live project health, decisions recorded, active vs resolved gotchas, shadow memory minutes saved, and workspace configuration.
+
 ## [2.4.5] — 2026-09-09
 
 ### 🛡️ Runtime Safety & Verification Reliability

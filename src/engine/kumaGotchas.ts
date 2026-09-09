@@ -129,15 +129,17 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     // F3: hash the file content when the gotcha is recorded, so freshness can be verified later
     const contentHash = hashFileContent(entry.filePath);
 
+    const trap = entry.description;
+    const ruleFix = entry.workaround || "Review implementation carefully before modifying.";
     const formatted = [
-      `### ${entry.filePath} — ${entry.description}`,
-      `- **Issue**: ${entry.description}`,
-      `- **Severity**: ${severity}`,
-      entry.workaround ? `- **Workaround**: ${entry.workaround}` : "",
-      entry.triggerCommand ? `- **Trigger**: when running \`${entry.triggerCommand}\`` : "",
-      entry.status ? `- **Status**: ${entry.status}` : "",
-      entry.scopePackage ? `- **Scope Package**: ${entry.scopePackage}` : "",
-      `- **Added**: ${new Date().toISOString().split("T")[0]}`,
+      `### ${entry.filePath} — ${trap}`,
+      `- 🪤 **Trap**: ${trap}`,
+      `- 🛡️ **Rule/Fix**: ${ruleFix}`,
+      `- ⚡ **Severity**: ${severity}`,
+      entry.triggerCommand ? `- ⌨️ **Trigger**: when running \`${entry.triggerCommand}\`` : "",
+      entry.status ? `- 🏷️ **Status**: ${status}` : "",
+      entry.scopePackage ? `- 📦 **Scope Package**: ${entry.scopePackage}` : "",
+      `- 📅 **Added**: ${new Date().toISOString().split("T")[0]}`,
     ].filter(Boolean).join("\n");
 
     // Upsert: update if same file_path + description exists, otherwise insert
