@@ -1,6 +1,26 @@
 # Changelog
 
-## [2.4.6] — 2026-09-09
+## [2.4.10] — 2026-09-09
+
+### 🖥️ Kuma Studio Dashboard Resilience & UX Polish
+
+- **Architecture & Sequence Flows Rendering**:
+  - Safely handles numeric or missing `hops` metadata (`Array.isArray(meta.hops)`), preventing `hops.map is not a function` TypeError that previously crashed dashboard rendering.
+  - Displays hops count indicator when sequence details are not an array.
+- **Isolated Panel Rendering**:
+  - Wrapped individual panel renderers (`renderGotchas`, `renderFlows`, `renderWorkspace`, `renderHealth`) in separate `try...catch` blocks so an issue in one panel never blocks others.
+  - Resolves panels stuck on "Loading workspace information..." or "Checking staleness...".
+- **Workaround Copy Button & Toast Notification**:
+  - Replaced inline string interpolation in `onclick` attributes with DOM-based extraction (`copyWorkaround(this)`), fixing copy failure when workaround text contains unescaped double quotes, backticks, or newlines.
+  - Added visual button transition (`Copied! ✓`) and animated floating toast notification (`#kuma-toast`).
+  - Added fallback clipboard copy mechanism via `document.execCommand('copy')` for environments without `navigator.clipboard`.
+- **Monorepo Workspace Topology**:
+  - Enhanced Studio DB layer (`db.ts`) to discover packages across `packages/*`, `apps/*`, `libs/*`, `services/*`, and `crates/*`.
+  - Added visual package chips to the Repository Topology panel.
+- **Session Timestamp Handling**:
+  - Added robust epoch second / millisecond parsing to session history table in Efficiency & Health Metrics.
+
+
 
 ### ⚡ Autonomous Safety & JIT Interception
 

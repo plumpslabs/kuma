@@ -248,11 +248,31 @@ export async function getDashboardData() {
         const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
         const pnpmWs = path.join(root, "pnpm-workspace.yaml");
         const isWs = Boolean(pkg.workspaces || fs.existsSync(pnpmWs));
+        const packages: any[] = [];
+        if (isWs) {
+          for (const dirName of ["packages", "apps", "libs", "services", "crates"]) {
+            const dirPath = path.join(root, dirName);
+            if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+              for (const sub of fs.readdirSync(dirPath)) {
+                const subPkg = path.join(dirPath, sub, "package.json");
+                if (fs.existsSync(subPkg)) {
+                  try {
+                    const sp = JSON.parse(fs.readFileSync(subPkg, "utf-8"));
+                    packages.push({ name: sp.name || sub, path: `${dirName}/${sub}` });
+                  } catch {
+                    packages.push({ name: sub, path: `${dirName}/${sub}` });
+                  }
+                }
+              }
+            }
+          }
+        }
         workspace = {
           isWorkspace: isWs,
           name: pkg.name || path.basename(root),
           version: pkg.version || "1.0.0",
           type: isWs ? (fs.existsSync(pnpmWs) ? "pnpm" : "npm/yarn") : "single-package",
+          packages,
         };
       }
     } catch {}

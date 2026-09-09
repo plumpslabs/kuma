@@ -62,10 +62,13 @@ try {
 }
 
 app.get("/", (c) => {
-  if (!htmlCache) {
+  try {
+    const html = readFileSync(htmlPath, "utf-8");
+    return c.html(html);
+  } catch {
+    if (htmlCache) return c.html(htmlCache);
     return c.text("index.html not found. Run from packages/ide/studio/", 500);
   }
-  return c.html(htmlCache);
 });
 
 // Start server

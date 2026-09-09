@@ -322,10 +322,47 @@ header {
   color: var(--muted);
   border-radius: 4px;
   font-size: 10px;
-  padding: 2px 6px;
+  padding: 3px 8px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
 }
 .btn-copy-workaround:hover { color: #fff; border-color: var(--amber); }
+.btn-copy-workaround.copied {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: var(--emerald);
+  color: #34d399;
+}
+
+#kuma-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-left: 4px solid var(--emerald);
+  padding: 10px 16px;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+#kuma-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
 
 .gotcha-footer {
   font-size: 11px;
@@ -699,11 +736,14 @@ async function fetchDashboard() {
 }
 
 function renderAll(data) {
-  renderGotchas(data.gotchas || []);
-  renderFlows(data.flows || []);
-  renderWorkspace(data.workspace, data.nodes || []);
-  renderHealth(data);
-  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  if (!data) return;
+  try { renderGotchas(data.gotchas || []); } catch (e) { console.error("renderGotchas error:", e); }
+  try { renderFlows(data.flows || []); } catch (e) { console.error("renderFlows error:", e); }
+  try { renderWorkspace(data.workspace, data.nodes || []); } catch (e) { console.error("renderWorkspace error:", e); }
+  try { renderHealth(data); } catch (e) { console.error("renderHealth error:", e); }
+  if (window.lucide && window.lucide.createIcons) {
+    try { window.lucide.createIcons(); } catch {}
+  }
 }
 
 function setStatusFilter(status) {
@@ -756,8 +796,10 @@ function renderGotchaCards(list) {
         ${g.workaround ? `
           <div class="gotcha-workaround">
             <strong>Workaround:</strong>
-            ${escapeHtml(g.workaround)}
-            <button class="btn-copy-workaround" onclick="copyText('${escapeAttr(g.workaround)}')">Copy</button>
+            <div class="workaround-text" style="margin-top:4px">${escapeHtml(g.workaround)}</div>
+            <button class="btn-copy-workaround" onclick="copyWorkaround(this)" title="Copy workaround to clipboard">
+              <i data-lucide="copy" style="width:11px;height:11px"></i> Copy
+            </button>
           </div>
         ` : ''}
         <div class="gotcha-footer">
@@ -771,23 +813,25 @@ function renderGotchaCards(list) {
 }
 
 function renderFlows(flows) {
-  document.getElementById("badge-flow-count").textContent = flows.length;
+  var countBadge = document.getElementById("badge-flow-count");
+  if (countBadge) countBadge.textContent = flows ? flows.length : 0;
   var container = document.getElementById("flow-cards-container");
-  if (!flows.length) {
+  if (!container) return;
+  if (!flows || !flows.length) {
     container.innerHTML = '<div class="empty-placeholder"><i data-lucide="git-branch"></i><div>No domain sequence flows recorded yet.</div></div>';
     if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
     return;
   }
   container.innerHTML = flows.map(function(f) {
     var meta = {};
-    try { meta = typeof f.metadata === "string" ? JSON.parse(f.metadata) : f.metadata; } catch {}
-    var hops = meta.hops || [];
-    return `
-      <div class="flow-card">
-        <div class="flow-card-header">
-          <div class="flow-anchor"><i data-lucide="anchor" style="width:16px;height:16px"></i> ${escapeHtml(f.name || "Flow")}</div>
-          <span style="font-size:11px;color:var(--muted)">${hops.length} hop(s)</span>
-        </div>
+    try { meta = typeof f.metadata === "string" ? JSON.parse(f.metadata) : (f.metadata || {}); } catch {}
+    var hops = Array.isArray(meta.hops) ? meta.hops : [];
+    var hopsCount = hops.length || (typeof meta.hops === "number" ? meta.hops : (meta.hopsCount || 0));
+    var gotchas = Array.isArray(meta.gotchas) ? meta.gotchas : [];
+
+    var hopsChainHtml = '';
+    if (hops.length > 0) {
+      hopsChainHtml = `
         <div class="flow-hops-chain">
           ${hops.map(function(h, idx) {
             var toLabel = typeof h === "object" ? (h.to || "") : String(h);
@@ -799,7 +843,21 @@ function renderFlows(flows) {
             return `${firstHopPrefix}<span class="hop-node">${escapeHtml(toLabel)}${rel}</span>${idx < hops.length - 1 ? '<span class="hop-arrow">→</span>' : ''}`;
           }).join("")}
         </div>
-        ${meta.gotchas && meta.gotchas.length ? `<div style="font-size:11px;color:var(--amber)">⚠️ Linked Gotchas: ${meta.gotchas.map(escapeHtml).join(", ")}</div>` : ''}
+      `;
+    } else if (hopsCount > 0) {
+      hopsChainHtml = `<div style="font-size:12px;color:var(--muted);padding:4px 0">${hopsCount} sequence hop(s) recorded.</div>`;
+    } else {
+      hopsChainHtml = `<div style="font-size:12px;color:var(--muted);padding:4px 0">No hops recorded for this flow.</div>`;
+    }
+
+    return `
+      <div class="flow-card">
+        <div class="flow-card-header">
+          <div class="flow-anchor"><i data-lucide="anchor" style="width:16px;height:16px"></i> ${escapeHtml(f.name || "Flow")}</div>
+          <span style="font-size:11px;color:var(--muted)">${hopsCount} hop(s)</span>
+        </div>
+        ${hopsChainHtml}
+        ${gotchas.length ? `<div style="font-size:11px;color:var(--amber);margin-top:6px">⚠️ Linked Gotchas: ${gotchas.map(escapeHtml).join(", ")}</div>` : ''}
       </div>
     `;
   }).join("");
@@ -808,14 +866,29 @@ function renderFlows(flows) {
 
 function renderWorkspace(ws, nodes) {
   var container = document.getElementById("ws-topology-info");
+  if (!container) return;
   if (!ws) {
     container.innerHTML = "<div>Single package workspace.</div>";
     return;
   }
+  var nodesLen = (nodes && nodes.length) ? nodes.length : 0;
+  var pkgHtml = '';
+  if (ws.packages && Array.isArray(ws.packages) && ws.packages.length > 0) {
+    pkgHtml = `
+      <div style="margin-top:10px"><strong>Monorepo Packages (${ws.packages.length}):</strong></div>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+        ${ws.packages.map(function(p) {
+          var name = typeof p === 'string' ? p : (p.name || p.path || '');
+          return `<span class="badge-pkg" style="background:#1e293b;border:1px solid #334155;padding:2px 8px;border-radius:4px;font-size:11px">📦 ${escapeHtml(name)}</span>`;
+        }).join("")}
+      </div>
+    `;
+  }
   container.innerHTML = `
     <div style="margin-bottom:8px"><strong>Workspace Type:</strong> <span class="badge-project">${escapeHtml(ws.type || "standard")}</span></div>
     <div style="margin-bottom:8px"><strong>Project Root:</strong> <code>${escapeHtml(ws.name || "root")}</code> (v${escapeHtml(ws.version || "1.0.0")})</div>
-    <div style="margin-top:12px;color:var(--muted)">Total indexed knowledge entities: <strong>${nodes.length}</strong></div>
+    ${pkgHtml}
+    <div style="margin-top:12px;color:var(--muted)">Total indexed knowledge entities: <strong>${nodesLen}</strong></div>
   `;
 }
 
@@ -865,13 +938,16 @@ function renderHealth(data) {
 
   var tbody = document.querySelector("#sessions-table tbody");
   var sessions = eff.recentSessions || [];
+  if (!tbody) return;
   if (!sessions.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">No session records logged yet.</td></tr>';
   } else {
     tbody.innerHTML = sessions.map(function(s) {
+      var dateObj = s.startedAt ? new Date(s.startedAt < 1e11 ? s.startedAt * 1000 : s.startedAt) : null;
+      var timeStr = dateObj && !isNaN(dateObj.getTime()) ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Recent";
       return `
         <tr>
-          <td>${s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : "Recent"}</td>
+          <td>${timeStr}</td>
           <td>${escapeHtml(s.goal || "General development")}</td>
           <td>${s.toolCalls}</td>
           <td>${s.edits}</td>
@@ -883,6 +959,7 @@ function renderHealth(data) {
   }
 
   var staleBox = document.getElementById("staleness-container");
+  if (!staleBox) return;
   if (data.staleness && data.staleness.missing && data.staleness.missing.length) {
     staleBox.innerHTML = `
       <div style="color:var(--rose);margin-bottom:8px">⚠️ Detected ${data.staleness.missing.length} reference(s) to deleted files:</div>
@@ -961,10 +1038,76 @@ async function resetDb() {
   }
 }
 
-function copyText(str) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(str);
+function showToast(msg) {
+  var toast = document.getElementById("kuma-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "kuma-toast";
+    document.body.appendChild(toast);
   }
+  toast.innerHTML = `<span style="color:var(--emerald);font-size:14px">✓</span> <span>${escapeHtml(msg || "Copied to clipboard!")}</span>`;
+  toast.classList.add("show");
+  clearTimeout(window.__kumaToastTimer);
+  window.__kumaToastTimer = setTimeout(function() {
+    toast.classList.remove("show");
+  }, 2500);
+}
+
+function fallbackCopy(text) {
+  var textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    document.execCommand("copy");
+  } catch (err) {
+    console.error("execCommand copy error:", err);
+  }
+  document.body.removeChild(textarea);
+}
+
+async function copyText(str, btn, toastMsg) {
+  if (!str) return;
+  var success = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(str);
+      success = true;
+    } catch {
+      fallbackCopy(str);
+      success = true;
+    }
+  } else {
+    fallbackCopy(str);
+    success = true;
+  }
+
+  if (success) {
+    showToast(toastMsg || "Copied to clipboard!");
+    if (btn) {
+      var origHtml = btn.innerHTML;
+      btn.classList.add("copied");
+      btn.innerHTML = '<span>Copied! ✓</span>';
+      setTimeout(function() {
+        btn.classList.remove("copied");
+        btn.innerHTML = origHtml;
+      }, 2000);
+    }
+  }
+}
+
+function copyWorkaround(btn) {
+  if (!btn) return;
+  var parent = btn.closest(".gotcha-workaround");
+  if (!parent) return;
+  var textEl = parent.querySelector(".workaround-text");
+  var text = textEl ? textEl.innerText.trim() : "";
+  if (!text) return;
+  copyText(text, btn, "Workaround copied to clipboard!");
 }
 
 function escapeHtml(str) {
