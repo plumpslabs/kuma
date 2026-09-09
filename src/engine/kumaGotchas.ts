@@ -398,14 +398,15 @@ export async function resolveGotchasForScope(scope: string): Promise<{ resolved:
     const db = await getDb();
     const stmt = db.prepare(
       `SELECT id, file_path, content_hash FROM known_gotchas
-       WHERE status = 'active' AND file_path LIKE ? AND content_hash IS NOT NULL`
+       WHERE status = 'active' AND (file_path LIKE ? OR file_path = ?) AND content_hash IS NOT NULL`
     );
-    stmt.bind([`%${scope}%`]);
+    stmt.bind([`%${scope}%`, scope]);
     const rows: Array<{ id: number; file_path: string; content_hash: string | null }> = [];
     while (stmt.step()) rows.push(stmt.getAsObject() as any);
     stmt.free();
 
     let resolved = 0;
+    const resolvedPaths: string[] = [];
     for (const r of rows) {
       const current = hashFileContent(r.file_path);
       // File changed since recording AND still exists → fix likely landed
@@ -415,9 +416,13 @@ export async function resolveGotchasForScope(scope: string): Promise<{ resolved:
           [r.id]
         );
         resolved++;
+        resolvedPaths.push(r.file_path);
       }
     }
-    if (resolved > 0) saveDb();
+    if (resolved > 0) {
+      saveDb();
+      syncGotchaStatusToMarkdown([scope, ...resolvedPaths], "resolved", "auto-verified");
+    }
     return { resolved };
   } catch {
     return { resolved: 0 };
@@ -573,6 +578,80 @@ export async function getGotchasByStatus(
 }
 
 /**
+ * Synchronize gotcha status change (resolved/deprecated) to .kuma/KNOWN_GOTCHAS.md
+ * Updates `- **Status**: active` or `- 🏷️ **Status**: active` to new status.
+ */
+export function syncGotchaStatusToMarkdown(
+  targetPaths: string[],
+  newStatus: "resolved" | "deprecated",
+  reason?: string
+): boolean {
+  try {
+    const mdPath = path.join(getProjectRoot(), ".kuma", "KNOWN_GOTCHAS.md");
+    if (!fs.existsSync(mdPath)) return false;
+
+    const content = fs.readFileSync(mdPath, "utf-8");
+    const lines = content.split("\n");
+    const normalizedTargets = targetPaths.map((p) => p.trim().toLowerCase()).filter(Boolean);
+    if (normalizedTargets.length === 0) return false;
+
+    let modified = false;
+    const outputLines: string[] = [];
+    let inMatchingSection = false;
+    let sectionHasStatus = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const headingMatch = line.match(/^###\s+\[?(.+?)\]?\s*(?:[—–-]+\s*(.+))?$/);
+
+      if (headingMatch) {
+        if (inMatchingSection && !sectionHasStatus) {
+          outputLines.push(`- 🏷️ **Status**: ${newStatus}${reason ? ` (${reason})` : ""}`);
+          modified = true;
+        }
+
+        const headingFile = headingMatch[1].trim().toLowerCase();
+        const headingBase = path.basename(headingFile);
+        inMatchingSection = normalizedTargets.some(
+          (t) =>
+            headingFile.includes(t) ||
+            t.includes(headingFile) ||
+            headingBase === t ||
+            headingBase === path.basename(t)
+        );
+        sectionHasStatus = false;
+        outputLines.push(line);
+        continue;
+      }
+
+      if (inMatchingSection) {
+        const statusMatch = line.match(/^(\s*[-*]\s*(?:🏷️\s*)?\*\*Status\*\*:\s*)(.*)$/i);
+        if (statusMatch) {
+          outputLines.push(`- 🏷️ **Status**: ${newStatus}${reason ? ` (${reason})` : ""}`);
+          sectionHasStatus = true;
+          modified = true;
+          continue;
+        }
+      }
+
+      outputLines.push(line);
+    }
+
+    if (inMatchingSection && !sectionHasStatus) {
+      outputLines.push(`- 🏷️ **Status**: ${newStatus}${reason ? ` (${reason})` : ""}`);
+      modified = true;
+    }
+
+    if (modified) {
+      fs.writeFileSync(mdPath, outputLines.join("\n"), "utf-8");
+    }
+    return modified;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Mark gotchas as resolved by ID or file path/scope.
  */
 export async function resolveGotcha(
@@ -585,9 +664,17 @@ export async function resolveGotcha(
     const db = await getDb();
     let resolved = 0;
     const isId = typeof idOrScope === "number" || (/^\d+$/.test(String(idOrScope).trim()));
+    const targetPaths: string[] = [];
 
     if (isId) {
       const id = Number(idOrScope);
+      const findStmt = db.prepare(`SELECT file_path FROM known_gotchas WHERE id = ?`);
+      findStmt.bind([id]);
+      if (findStmt.step()) {
+        targetPaths.push(findStmt.getAsObject().file_path as string);
+      }
+      findStmt.free();
+
       db.run(
         `UPDATE known_gotchas SET status = 'resolved', verified_by = ?, last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ? AND status != 'resolved'`,
         [verifiedBy, id]
@@ -595,11 +682,23 @@ export async function resolveGotcha(
       resolved = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
     } else {
       const scope = String(idOrScope).trim();
+      targetPaths.push(scope);
+      const findStmt = db.prepare(`SELECT DISTINCT file_path FROM known_gotchas WHERE (file_path = ? OR file_path LIKE ?)`);
+      findStmt.bind([scope, `%${scope}%`]);
+      while (findStmt.step()) {
+        targetPaths.push(findStmt.getAsObject().file_path as string);
+      }
+      findStmt.free();
+
       db.run(
         `UPDATE known_gotchas SET status = 'resolved', verified_by = ?, last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE (file_path = ? OR file_path LIKE ?) AND status != 'resolved'`,
         [verifiedBy, scope, `%${scope}%`]
       );
       resolved = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
+    }
+
+    if (targetPaths.length > 0) {
+      syncGotchaStatusToMarkdown(targetPaths, "resolved", resolutionReason);
     }
 
     if (resolved > 0) {
@@ -610,6 +709,15 @@ export async function resolveGotcha(
         message: `✅ Resolved ${resolved} gotcha(s) for "${idOrScope}"${resolutionReason ? `: ${resolutionReason}` : ""}.`,
       };
     }
+
+    const mdUpdated = syncGotchaStatusToMarkdown(targetPaths.length > 0 ? targetPaths : [String(idOrScope)], "resolved", resolutionReason);
+    if (mdUpdated) {
+      return {
+        resolved: 1,
+        message: `✅ Resolved gotcha in KNOWN_GOTCHAS.md for "${idOrScope}"${resolutionReason ? `: ${resolutionReason}` : ""}.`,
+      };
+    }
+
     return { resolved: 0, message: `⚠️ No active gotchas found matching "${idOrScope}".` };
   } catch (err) {
     return { resolved: 0, message: `❌ Failed to resolve gotcha: ${err}` };
@@ -628,9 +736,17 @@ export async function deprecateGotcha(
     const db = await getDb();
     let deprecated = 0;
     const isId = typeof idOrScope === "number" || (/^\d+$/.test(String(idOrScope).trim()));
+    const targetPaths: string[] = [];
 
     if (isId) {
       const id = Number(idOrScope);
+      const findStmt = db.prepare(`SELECT file_path FROM known_gotchas WHERE id = ?`);
+      findStmt.bind([id]);
+      if (findStmt.step()) {
+        targetPaths.push(findStmt.getAsObject().file_path as string);
+      }
+      findStmt.free();
+
       db.run(
         `UPDATE known_gotchas SET status = 'deprecated', verified_by = 'deprecation', last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ? AND status != 'deprecated'`,
         [id]
@@ -638,11 +754,23 @@ export async function deprecateGotcha(
       deprecated = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
     } else {
       const scope = String(idOrScope).trim();
+      targetPaths.push(scope);
+      const findStmt = db.prepare(`SELECT DISTINCT file_path FROM known_gotchas WHERE (file_path = ? OR file_path LIKE ?)`);
+      findStmt.bind([scope, `%${scope}%`]);
+      while (findStmt.step()) {
+        targetPaths.push(findStmt.getAsObject().file_path as string);
+      }
+      findStmt.free();
+
       db.run(
         `UPDATE known_gotchas SET status = 'deprecated', verified_by = 'deprecation', last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE (file_path = ? OR file_path LIKE ?) AND status != 'deprecated'`,
         [scope, `%${scope}%`]
       );
       deprecated = Number(db.exec("SELECT changes()")[0]?.values?.[0]?.[0] || 0);
+    }
+
+    if (targetPaths.length > 0) {
+      syncGotchaStatusToMarkdown(targetPaths, "deprecated", reason);
     }
 
     if (deprecated > 0) {
@@ -653,6 +781,15 @@ export async function deprecateGotcha(
         message: `🧹 Deprecated ${deprecated} gotcha(s) for "${idOrScope}"${reason ? `: ${reason}` : ""}.`,
       };
     }
+
+    const mdUpdated = syncGotchaStatusToMarkdown(targetPaths.length > 0 ? targetPaths : [String(idOrScope)], "deprecated", reason);
+    if (mdUpdated) {
+      return {
+        deprecated: 1,
+        message: `🧹 Deprecated gotcha in KNOWN_GOTCHAS.md for "${idOrScope}"${reason ? `: ${reason}` : ""}.`,
+      };
+    }
+
     return { deprecated: 0, message: `⚠️ No active gotchas found matching "${idOrScope}".` };
   } catch (err) {
     return { deprecated: 0, message: `❌ Failed to deprecate gotcha: ${err}` };

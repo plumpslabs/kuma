@@ -353,7 +353,8 @@ export async function recordDomainFlow(params: {
       type: "feature_domain",
       name: params.domain,
       metadata: {
-        hops: params.hops.length,
+        hops: params.hops,
+        hopsCount: params.hops.length,
         gotchas: params.gotchas?.length || 0,
         decisions: params.decisions?.length || 0,
         filePaths: params.filePaths || [],

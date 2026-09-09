@@ -78,8 +78,10 @@ export interface FreshGotcha {
 export async function getFreshGotchasForFile(
   filePath: string,
   limit = 5,
+  includeStale = false,
 ): Promise<FreshGotcha[]> {
   const root = getProjectRoot();
+  const base = path.basename(filePath);
   // 1. Structured DB — but never trigger DB creation from the hook
   try {
     const dbFile = path.join(root, ".kuma", "kuma.db");
@@ -90,30 +92,36 @@ export async function getFreshGotchasForFile(
         SELECT id, file_path, description, severity, workaround, content_hash
         FROM known_gotchas
         WHERE status IN ('active', 'verified')
-          AND (file_path = ? OR ? LIKE ('%' || file_path || '%'))
+          AND (
+            file_path = ?
+            OR file_path LIKE ?
+            OR ? LIKE ('%' || file_path || '%')
+            OR file_path LIKE ?
+          )
         ORDER BY
-          CASE WHEN file_path = ? THEN 0 ELSE 1 END, -- exact match first
+          CASE WHEN file_path = ? THEN 0 WHEN file_path LIKE ? THEN 1 ELSE 2 END,
           CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
           updated_at DESC
         LIMIT ?
       `);
-      stmt.bind([filePath, filePath, filePath, limit]);
+      stmt.bind([filePath, `%${filePath}%`, filePath, `%${base}%`, filePath, `%${filePath}%`, limit * 2]);
       const rows: Array<Record<string, unknown>> = [];
       while (stmt.step()) rows.push(stmt.getAsObject());
       stmt.free();
 
-      const currentHash = hashFileContent(filePath);
-      return rows
-        .map((r) => ({
+      if (rows.length > 0) {
+        const currentHash = hashFileContent(filePath);
+        const mapped = rows.map((r) => ({
           id: r.id as number,
           filePath: r.file_path as string,
           description: r.description as string,
           severity: r.severity as string,
           workaround: (r.workaround as string | null) ?? null,
           stale: !isGotchaFresh((r.content_hash as string | null) ?? null, currentHash),
-        }))
-        .filter((g) => !g.stale)
-        .slice(0, limit);
+        }));
+        const filtered = includeStale ? mapped : mapped.filter((g) => !g.stale);
+        return filtered.slice(0, limit);
+      }
     }
   } catch { /* non-critical — fall through to markdown */ }
 
@@ -121,19 +129,27 @@ export async function getFreshGotchasForFile(
   //    stays read-only and side-effect free (never creates .kuma files)
   try {
     if (!fs.existsSync(path.join(root, ".kuma"))) return [];
-    const { checkFileGotchas } = await import("./domainRules.js");
-    const warnings = checkFileGotchas(filePath) as unknown as string[];
-    if (warnings.length === 0) return [];
-    return warnings.slice(0, limit).map((w) => ({
-      filePath,
-      description: w,
-      severity: "medium",
-      workaround: null,
-      stale: false,
-    }));
+    const { getActiveGotchas } = await import("./domainRules.js");
+    const allGotchas = getActiveGotchas();
+    const matched = allGotchas.filter(
+      (g) =>
+        g.filePath.includes(filePath) ||
+        filePath.includes(g.filePath) ||
+        (base && path.basename(g.filePath) === base)
+    );
+    if (matched.length > 0) {
+      return matched.slice(0, limit).map((g) => ({
+        filePath: g.filePath,
+        description: g.description,
+        severity: g.severity,
+        workaround: null,
+        stale: false,
+      }));
+    }
   } catch {
     return [];
   }
+  return [];
 }
 
 // ============================================================
@@ -207,16 +223,86 @@ export function formatFileTrace(entries: FileTraceEntry[], filePath: string): st
 // F4 — RELEVANCE RANKING (decisions from markdown memory)
 // ============================================================
 
-/** Relevant decisions/knowledge for a file (from .kuma/memories/*.md via scoring). */
+/** Relevant decisions/knowledge for a file (from decisions.md, graph decision nodes, and memory relevance). */
 export async function getDecisionsForFile(filePath: string, limit = 3): Promise<string[]> {
+  const decisions: string[] = [];
+  const root = getProjectRoot();
+  const base = path.basename(filePath);
+  const baseWithoutExt = base.replace(/\.[^.]+$/, "");
+
+  // 1. Check decisions.md directly for sections referencing this file or component
+  try {
+    const decisionsMdPath = path.join(root, ".kuma", "memories", "decisions.md");
+    if (fs.existsSync(decisionsMdPath)) {
+      const content = fs.readFileSync(decisionsMdPath, "utf-8");
+      const sections = content.split(/^##\s+/m);
+      for (const section of sections) {
+        if (!section.trim() || section.startsWith("# ")) continue;
+        const sectionLines = section.split("\n");
+        const title = sectionLines[0].trim();
+        const sectionText = section.toLowerCase();
+
+        const matches =
+          sectionText.includes(filePath.toLowerCase()) ||
+          sectionText.includes(base.toLowerCase()) ||
+          (baseWithoutExt.length > 3 && sectionText.includes(baseWithoutExt.toLowerCase()));
+
+        if (matches) {
+          let rationale = "";
+          for (const line of sectionLines) {
+            const rMatch = line.match(/^[-*]\s*\*\*Rationale:\*\*\s*(.+)$/i);
+            if (rMatch) { rationale = rMatch[1].trim(); break; }
+            const oMatch = line.match(/^[-*]\s*\*\*Outcome:\*\*\s*(.+)$/i);
+            if (!rationale && oMatch) { rationale = oMatch[1].trim(); }
+          }
+          decisions.push(`📌 ${title}${rationale ? ` — *${rationale}*` : ""}`);
+          if (decisions.length >= limit) return decisions;
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Check graph nodes of type 'decision'
+  try {
+    const { getDb } = await import("./kumaDb.js");
+    const db = await getDb();
+    const stmt = db.prepare(`
+      SELECT name, metadata FROM nodes
+      WHERE type = 'decision'
+        AND (name LIKE ? OR metadata LIKE ? OR name LIKE ? OR metadata LIKE ?)
+      LIMIT ?
+    `);
+    stmt.bind([`%${base}%`, `%${base}%`, `%${baseWithoutExt}%`, `%${baseWithoutExt}%`, limit]);
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as { name: string; metadata: string };
+      try {
+        const meta = JSON.parse(row.metadata || "{}");
+        const title = row.name.replace(/^ADR:\s*/, "");
+        const reason = meta.rationale || meta.context || meta.outcome || "";
+        const formatted = `📌 ${title}${reason ? ` — *${reason.substring(0, 100)}*` : ""}`;
+        if (!decisions.includes(formatted)) {
+          decisions.push(formatted);
+        }
+      } catch {}
+    }
+    stmt.free();
+    if (decisions.length >= limit) return decisions.slice(0, limit);
+  } catch {}
+
+  // 3. Fallback: fuzzy relevance scoring from memories
   try {
     const { scoreMemoryRelevance } = await import("./kumaMemory.js");
-    const base = path.basename(filePath);
-    const scored = scoreMemoryRelevance(`${filePath} ${base}`, limit);
-    return scored.map((m) => `📌 ${m.topic} — ${m.score}% match (${m.reason})`);
-  } catch {
-    return [];
-  }
+    const searchTerms = `${filePath} ${base} ${baseWithoutExt}`.replace(/[\/._-]/g, " ");
+    const scored = scoreMemoryRelevance(searchTerms, limit);
+    for (const m of scored) {
+      const formatted = `📌 ${m.topic} — ${m.content ? m.content.substring(0, 80) : `${m.score}% match`}`;
+      if (!decisions.includes(formatted)) {
+        decisions.push(formatted);
+      }
+    }
+  } catch {}
+
+  return decisions.slice(0, limit);
 }
 
 // ============================================================

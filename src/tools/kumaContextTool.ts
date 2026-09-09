@@ -322,11 +322,34 @@ async function handleHistory(params: ContextParams): Promise<string> {
   try {
     const { getFileTrace, formatFileTrace, getFreshGotchasForFile, getDecisionsForFile } = await import("../engine/kumaInject.js");
     const trace = await getFileTrace(target, 8);
-    lines.push(formatFileTrace(trace, target) || "  (no changes recorded for this file yet)");
+    const traceFormatted = formatFileTrace(trace, target);
+
+    if (traceFormatted) {
+      lines.push(traceFormatted);
+    } else {
+      // Git commit history fallback
+      try {
+        const { execSync } = await import("node:child_process");
+        const { getProjectRoot } = await import("../utils/pathValidator.js");
+        const root = getProjectRoot();
+        const gitHistory = execSync(
+          `git log -n 5 --pretty=format:"  • %h (%ad) %s" --date=short -- "${target}"`,
+          { cwd: root, encoding: "utf-8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"] }
+        ).trim();
+        if (gitHistory) {
+          lines.push(`🕰️ **Git Commit History (latest):**\n${gitHistory}`);
+        } else {
+          lines.push("  (no changes recorded for this file yet)");
+        }
+      } catch {
+        lines.push("  (no changes recorded for this file yet)");
+      }
+    }
     lines.push("");
-    const gotchas = await getFreshGotchasForFile(target, 5);
+
+    const gotchas = await getFreshGotchasForFile(target, 5, true);
     if (gotchas.length > 0) {
-      lines.push("⚠️ **Active gotchas** (fresh):");
+      lines.push("⚠️ **Active gotchas:**");
       for (const g of gotchas) {
         const icon = g.severity === "critical" ? "🔴" : g.severity === "high" ? "🟠" : g.severity === "medium" ? "🟡" : "🟢";
         lines.push(`  ${icon} [${g.severity}] ${g.description}`);
@@ -340,14 +363,40 @@ async function handleHistory(params: ContextParams): Promise<string> {
       }
       lines.push("");
     }
+
     try {
       const { getDb } = await import("../engine/kumaDb.js");
       const db = await getDb();
-      const stmt = db.prepare(`SELECT description, last_verified_at FROM known_gotchas WHERE status = 'resolved' AND file_path LIKE ? ORDER BY last_verified_at DESC LIMIT 3`);
-      stmt.bind([`%${path.basename(target)}%`]);
+      const base = path.basename(target);
+      const stmt = db.prepare(`
+        SELECT description, last_verified_at FROM known_gotchas
+        WHERE status = 'resolved' AND (file_path LIKE ? OR file_path LIKE ?)
+        ORDER BY last_verified_at DESC LIMIT 5
+      `);
+      stmt.bind([`%${base}%`, `%${target}%`]);
       const resolved: Array<{ description: string; last_verified_at: number | null }> = [];
       while (stmt.step()) resolved.push(stmt.getAsObject() as any);
       stmt.free();
+
+      // Markdown fallback for resolved gotchas
+      if (resolved.length === 0) {
+        try {
+          const { getProjectRoot } = await import("../utils/pathValidator.js");
+          const mdPath = path.join(getProjectRoot(), ".kuma", "KNOWN_GOTCHAS.md");
+          if (fs.existsSync(mdPath)) {
+            const mdContent = fs.readFileSync(mdPath, "utf-8");
+            const sections = mdContent.split(/^###\s+/m);
+            for (const sec of sections) {
+              const secLower = sec.toLowerCase();
+              if ((secLower.includes(base.toLowerCase()) || secLower.includes(target.toLowerCase())) && secLower.includes("status**: resolved")) {
+                const descLine = sec.split("\n")[0].trim();
+                resolved.push({ description: descLine, last_verified_at: null });
+              }
+            }
+          }
+        } catch {}
+      }
+
       if (resolved.length > 0) {
         lines.push("✅ **Resolved gotchas** (fixed):");
         for (const r of resolved) {
@@ -359,8 +408,13 @@ async function handleHistory(params: ContextParams): Promise<string> {
         lines.push("");
       }
     } catch {}
+
     const decisions = await getDecisionsForFile(target, 3);
-    if (decisions.length > 0) { lines.push("📌 **Relevant decisions**"); for (const d of decisions) lines.push(`  ${d}`); lines.push(""); }
+    if (decisions.length > 0) {
+      lines.push("📌 **Relevant decisions:**");
+      for (const d of decisions) lines.push(`  ${d}`);
+      lines.push("");
+    }
   } catch {}
   lines.push("💡 This content is injected automatically before edits via the Claude Code PreToolUse hook (`kuma hook pre-edit`).");
   return lines.join("\n");

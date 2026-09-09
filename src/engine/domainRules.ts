@@ -181,21 +181,21 @@ export function getActiveGotchas(): Array<{
     let currentStatus = "active";
 
     for (const line of lines) {
-      const fileMatch = line.match(/^###\s+(.+?)\s*[—–-]+\s*(.+)/);
+      const fileMatch = line.match(/^###\s+\[?(.+?)\]?\s*(?:[—–-]+\s*(.+))?$/);
       if (fileMatch) {
         if (currentFilePath && currentStatus !== "resolved" && currentStatus !== "deprecated") {
           results.push({ filePath: currentFilePath, description: currentDesc, severity: currentSeverity, content: currentSection });
         }
         currentFilePath = fileMatch[1].trim();
-        currentDesc = fileMatch[2].trim();
+        currentDesc = (fileMatch[2] || fileMatch[1]).trim();
         currentSeverity = "medium";
         currentStatus = "active";
         currentSection = line + "\n";
         continue;
       }
-      const sevMatch = line.match(/- \*\*Severity\*\*:\s*(\w+)/);
+      const sevMatch = line.match(/[-*]\s*(?:⚡\s*)?\*\*Severity\*\*:\s*(\w+)/i);
       if (sevMatch) currentSeverity = sevMatch[1].toLowerCase();
-      const statusMatch = line.match(/- \*\*Status\*\*:\s*(\w+)/);
+      const statusMatch = line.match(/[-*]\s*(?:🏷️\s*)?\*\*Status\*\*:\s*(\w+)/i);
       if (statusMatch) currentStatus = statusMatch[1].toLowerCase();
       currentSection += line + "\n";
     }
@@ -213,8 +213,10 @@ export function getActiveGotchas(): Array<{
 export function checkFileGotchas(filePath: string): string[] {
   const gotchas = getActiveGotchas();
   const warnings: string[] = [];
+  const base = path.basename(filePath);
   for (const g of gotchas) {
-    if (filePath.includes(g.filePath) || g.filePath.includes(filePath)) {
+    const gBase = path.basename(g.filePath);
+    if (filePath.includes(g.filePath) || g.filePath.includes(filePath) || (base && gBase && base === gBase)) {
       const icon = g.severity === "critical" ? "🔴"
         : g.severity === "high" ? "🟠"
           : g.severity === "medium" ? "🟡" : "🟢";

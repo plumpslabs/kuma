@@ -43,7 +43,7 @@ export function scoreMemoryRelevance(
 
   if (!fs.existsSync(kumaDir)) return [];
 
-  const terms = context.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const terms = Array.from(new Set(context.toLowerCase().split(/[\s/._-]+/).filter(w => w.length > 2)));
   if (terms.length === 0) return [];
 
   try {

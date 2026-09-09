@@ -138,15 +138,102 @@ export function deriveHopsFromImports(entryFile: string, maxHops = 6): Array<{
   return hops;
 }
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export async function getHopsForDomain(
+  domain: string
+): Promise<Array<{ from: string; to: string; relation?: string; description?: string }>> {
+  const hops: Array<{ from: string; to: string; relation?: string; description?: string }> = [];
+  try {
+    const { getDb } = await import("./kumaDb.js");
+    const db = await getDb();
+
+    // 1. Check feature_domain metadata.hops
+    const stmt = db.prepare(`SELECT metadata FROM nodes WHERE type = 'feature_domain' AND name = ? LIMIT 1`);
+    stmt.bind([domain]);
+    if (stmt.step()) {
+      const meta = JSON.parse((stmt.getAsObject().metadata as string) || "{}");
+      if (Array.isArray(meta.hops) && meta.hops.length > 0 && typeof meta.hops[0] === "object") {
+        stmt.free();
+        return meta.hops;
+      }
+    }
+    stmt.free();
+
+    // 2. Check cross_service_link nodes ordered by hopIndex
+    const nodeStmt = db.prepare(`
+      SELECT name, metadata FROM nodes
+      WHERE type = 'cross_service_link' AND (metadata LIKE ? OR id LIKE ?)
+      LIMIT 25
+    `);
+    nodeStmt.bind([`%"domain":"${domain}"%`, `%${domain}::%`]);
+    const rawNodes: Array<{ name: string; hopIndex: number; relation?: string; description?: string }> = [];
+    while (nodeStmt.step()) {
+      const row = nodeStmt.getAsObject() as { name: string; metadata: string };
+      try {
+        const meta = JSON.parse(row.metadata || "{}");
+        rawNodes.push({
+          name: row.name,
+          hopIndex: typeof meta.hopIndex === "number" ? meta.hopIndex : 999,
+          relation: meta.relation,
+          description: meta.description,
+        });
+      } catch {}
+    }
+    nodeStmt.free();
+
+    if (rawNodes.length >= 2) {
+      rawNodes.sort((a, b) => a.hopIndex - b.hopIndex);
+      const uniqueSteps: string[] = [];
+      for (const n of rawNodes) {
+        if (uniqueSteps.length === 0 || uniqueSteps[uniqueSteps.length - 1] !== n.name) {
+          uniqueSteps.push(n.name);
+        }
+      }
+      for (let i = 0; i < uniqueSteps.length - 1; i++) {
+        hops.push({ from: uniqueSteps[i], to: uniqueSteps[i + 1] });
+      }
+      if (hops.length > 0) return hops;
+    }
+  } catch {}
+
+  // 3. Fallback: Parse ARCHITECTURE_FLOW.md
+  try {
+    const root = getProjectRoot();
+    const archPath = path.join(root, ".kuma", "ARCHITECTURE_FLOW.md");
+    if (fs.existsSync(archPath)) {
+      const content = fs.readFileSync(archPath, "utf-8");
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const domMatch = line.match(new RegExp(`domain:\\s*${escapeRegex(domain)}\\s*\\|\\s*hops:\\s*(.+)`, "i"));
+        if (domMatch) {
+          const hopsPart = domMatch[1].trim();
+          const arrowSteps = hopsPart.split(/→|->/).map((s) => s.trim()).filter(Boolean);
+          for (let i = 0; i < arrowSteps.length - 1; i++) {
+            hops.push({ from: arrowSteps[i], to: arrowSteps[i + 1] });
+          }
+          if (hops.length > 0) return hops;
+        }
+      }
+    }
+  } catch {}
+
+  return hops;
+}
+
 /**
  * F13: serve a fresh domain flow.
  *  - fresh cache → serve as-is (with freshness flag)
  *  - stale cache → re-derive via imports, refresh the stored flow, serve new
- * Returns a human-readable description of the flow.
+ * Returns a human-readable description of the flow with sequence hops.
  */
 export async function getFreshDomainFlow(domain: string): Promise<string> {
   const freshness = await getFlowFreshness(domain);
-  if (!freshness) {
+  const hops = await getHopsForDomain(domain);
+
+  if (!freshness && hops.length === 0) {
     return `ℹ️ No arch_flow recorded for domain "${domain}".\nRecord one with kuma_memory({ action: 'arch_flow', content: 'domain: ${domain} | hops: a.ts → b.ts → c.ts' }).`;
   }
 
@@ -156,34 +243,59 @@ export async function getFreshDomainFlow(domain: string): Promise<string> {
     "",
   ];
 
-  if (freshness.fresh) {
-    lines.push(`✅ Cache FRESH — served as-is (${freshness.filePaths.length} file(s) tracked).`);
-  } else {
-    // Re-derive from the first tracked file (grep engine = source of truth)
-    lines.push(`🔁 Cache STALE (${freshness.staleFiles.length} file(s) changed) — re-deriving from imports...`);
-    try {
-      const entry = freshness.filePaths[0];
-      const hops = deriveHopsFromImports(entry);
-      if (hops.length > 0) {
-        const { recordDomainFlow } = await import("./kumaGraph.js");
-        await recordDomainFlow({
-          domain,
-          hops,
-          filePaths: freshness.filePaths,
-        });
-        lines.push(`✅ Re-derived ${hops.length} hop(s) from ${path.basename(entry)} — cache refreshed.`);
-      } else {
-        lines.push("⚠️ No imports to follow — cache left as-is (record hops manually if needed).");
+  if (freshness) {
+    if (freshness.fresh) {
+      lines.push(`✅ Cache FRESH — served as-is (${freshness.filePaths.length} file(s) tracked).`);
+    } else {
+      // Re-derive from the first tracked file (grep engine = source of truth)
+      lines.push(`🔁 Cache STALE (${freshness.staleFiles.length} file(s) changed) — re-deriving from imports...`);
+      try {
+        const entry = freshness.filePaths[0];
+        const derivedHops = deriveHopsFromImports(entry);
+        if (derivedHops.length > 0) {
+          const { recordDomainFlow } = await import("./kumaGraph.js");
+          await recordDomainFlow({
+            domain,
+            hops: derivedHops,
+            filePaths: freshness.filePaths,
+          });
+          lines.push(`✅ Re-derived ${derivedHops.length} hop(s) from ${path.basename(entry)} — cache refreshed.`);
+          hops.splice(0, hops.length, ...derivedHops);
+        } else {
+          lines.push("⚠️ No imports to follow — cache left as-is (record hops manually if needed).");
+        }
+      } catch (err) {
+        lines.push(`⚠️ Re-derivation failed: ${err}`);
       }
-    } catch (err) {
-      lines.push(`⚠️ Re-derivation failed: ${err}`);
     }
+  } else {
+    lines.push(`ℹ️ Serving flow from markdown definition.`);
   }
 
   lines.push("");
-  for (const fp of freshness.filePaths) {
-    lines.push(`  📄 ${fp}${freshness.staleFiles.includes(fp) ? " ⚠️ changed" : ""}`);
+
+  // Print Hops Sequence
+  if (hops.length > 0) {
+    lines.push("🔄 **Flow Sequence (Hops):**");
+    for (let i = 0; i < hops.length; i++) {
+      const h = hops[i];
+      const detail = h.relation && h.relation !== "flows" ? ` (${h.relation})` : "";
+      if (i === 0) {
+        lines.push(`  1. ${h.from} →`);
+      }
+      const isLast = i === hops.length - 1;
+      lines.push(`  ${i + 2}. ${h.to}${detail}${isLast ? "" : " →"}`);
+    }
+    lines.push("");
   }
 
-  return lines.join("\n");
+  if (freshness && freshness.filePaths.length > 0) {
+    lines.push("📁 **Tracked Files:**");
+    for (const fp of freshness.filePaths) {
+      lines.push(`  📄 ${fp}${freshness.staleFiles.includes(fp) ? " ⚠️ changed" : ""}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd();
 }

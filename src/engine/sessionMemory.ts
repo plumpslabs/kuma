@@ -34,6 +34,7 @@ interface TestFailure {
 interface SessionState {
   projectRoot: string;
   startTime: number;
+  lastActiveAt?: number;
   currentGoal: string;
   currentBranch?: string;
   previousBranch?: string;
@@ -101,25 +102,34 @@ class SessionMemory {
         const parsed = JSON.parse(raw);
         const storedBranch = parsed.currentBranch;
         const branchSwitched = Boolean(storedBranch && currentGitBranch && storedBranch !== currentGitBranch);
+        const lastActive = parsed.lastActiveAt || parsed.startTime || 0;
+        const isIdle = lastActive > 0 && (Date.now() - lastActive > 2 * 3600 * 1000);
+        const startTime = isIdle ? Date.now() : (parsed.startTime || config.startTime);
+        const metrics = isIdle
+          ? { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 }
+          : (parsed.metrics || { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 });
+        const toolCalls = isIdle ? [] : (parsed.toolCalls || []);
+
         this.state = {
           projectRoot: parsed.projectRoot || config.projectRoot,
-          startTime: parsed.startTime || config.startTime,
+          startTime,
+          lastActiveAt: Date.now(),
           currentGoal: parsed.currentGoal || "",
           currentBranch: currentGitBranch || storedBranch || undefined,
           previousBranch: branchSwitched ? storedBranch : parsed.previousBranch,
           branchSwitched,
-          completedSteps: parsed.completedSteps || [],
+          completedSteps: isIdle ? [] : (parsed.completedSteps || []),
           modifiedFiles: new Map(parsed.modifiedFiles || []),
           failedFiles: new Map(parsed.failedFiles || []),
           searchResults: new Map(parsed.searchResults || []),
           dependencyGraph: new Map(parsed.dependencyGraph || []),
-          toolCalls: parsed.toolCalls || [],
+          toolCalls,
           conventions: parsed.conventions,
           recordings: parsed.recordings || { archFlows: 0, gotchas: 0, decisions: 0, researchSaves: 0, features: 0, total: 0 },
-          metrics: parsed.metrics || { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 },
+          metrics,
         };
         this.initialized = true;
-        console.error(`[SessionMemory] Loaded persistent session memory.json`);
+        console.error(`[SessionMemory] Loaded persistent session memory.json${isIdle ? " (idle reset applied)" : ""}`);
         return;
       } catch (err) {
         console.error(`[SessionMemory] Failed to load persistent session: ${err}. Re-initializing.`);
@@ -285,6 +295,7 @@ class SessionMemory {
       const serialized = {
         projectRoot: this.state.projectRoot,
         startTime: this.state.startTime,
+        lastActiveAt: this.state.lastActiveAt || Date.now(),
         currentGoal: this.state.currentGoal,
         currentBranch: this.state.currentBranch,
         previousBranch: this.state.previousBranch,
@@ -767,6 +778,32 @@ class SessionMemory {
 
   getModifiedFiles(): FileModification[] {
     this.ensureInit();
+    // Sync with git status --porcelain to catch any files modified by external tools
+    try {
+      const root = this.state.projectRoot;
+      const gitOut = execSync("git status --porcelain", {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      if (gitOut) {
+        for (const line of gitOut.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const rawPath = trimmed.slice(2).trim();
+          const cleanPath = rawPath.replace(/^["']|["']$/g, "").split(" -> ").pop()!;
+          if (cleanPath.startsWith(".kuma/") || cleanPath.startsWith(".git/")) continue;
+          if (!this.state.modifiedFiles.has(cleanPath)) {
+            this.state.modifiedFiles.set(cleanPath, {
+              filePath: cleanPath,
+              modifiedAt: Date.now(),
+              status: trimmed.startsWith("??") || trimmed.startsWith("A") ? "created" : "modified",
+            });
+          }
+        }
+      }
+    } catch {}
     return Array.from(this.state.modifiedFiles.values());
   }
 
@@ -1028,6 +1065,14 @@ class SessionMemory {
         projectRoot: process.cwd(),
         startTime: Date.now(),
       });
+    } else if (this.state) {
+      const lastActive = this.state.lastActiveAt || this.state.startTime || 0;
+      if (lastActive > 0 && Date.now() - lastActive > 2 * 3600 * 1000) {
+        this.state.startTime = Date.now();
+        this.state.metrics = { filesRead: 0, filesEdited: 0, researchTimeSaved: 0 };
+        this.state.toolCalls = [];
+      }
+      this.state.lastActiveAt = Date.now();
     }
   }
 }

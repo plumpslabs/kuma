@@ -43,29 +43,73 @@ export async function createCheckpoint(
     }
     fs.mkdirSync(cpDir, { recursive: true });
 
-    // 1. Snapshot tracked files from change_log
-    const db = await getDb();
-    const filesStmt = db.prepare(
-      "SELECT DISTINCT file_path FROM change_log ORDER BY id DESC LIMIT 100",
-    );
-    const files: Array<{ path: string; hash: string }> = [];
-    while (filesStmt.step()) {
-      const row = filesStmt.getAsObject() as Record<string, unknown>;
-      const fp = row.file_path as string;
-      const fullPath = path.resolve(root, fp);
-      if (fs.existsSync(fullPath)) {
-        const content = fs.readFileSync(fullPath, "utf-8");
-        const hash = simpleHash(content);
-        // Save file copy to checkpoint dir
-        const fileDir = path.dirname(path.join(cpDir, "files", fp));
-        if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
-        fs.writeFileSync(path.join(cpDir, "files", fp), content, "utf-8");
-        files.push({ path: fp, hash });
+    // 1. Snapshot tracked files from git status + sessionMemory + change_log
+    const candidatePaths = new Set<string>();
+
+    // A. Git status porcelain (staged, unstaged, untracked)
+    try {
+      const { execSync } = await import("node:child_process");
+      const gitOut = execSync("git status --porcelain", {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 4000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      if (gitOut) {
+        for (const line of gitOut.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const rawPath = trimmed.slice(2).trim();
+          const cleanPath = rawPath.replace(/^["']|["']$/g, "").split(" -> ").pop()!;
+          if (cleanPath.startsWith(".kuma/") || cleanPath.startsWith(".git/")) continue;
+          candidatePaths.add(cleanPath);
+        }
       }
+    } catch {}
+
+    // B. sessionMemory modified files
+    try {
+      for (const m of sessionMemory.getModifiedFiles()) {
+        if (!m.filePath.startsWith(".kuma/") && !m.filePath.startsWith(".git/")) {
+          candidatePaths.add(m.filePath);
+        }
+      }
+    } catch {}
+
+    // C. change_log in DB
+    try {
+      const db = await getDb();
+      const filesStmt = db.prepare(
+        "SELECT DISTINCT file_path FROM change_log ORDER BY id DESC LIMIT 100",
+      );
+      while (filesStmt.step()) {
+        const row = filesStmt.getAsObject() as Record<string, unknown>;
+        const fp = row.file_path as string;
+        if (fp && !fp.startsWith(".kuma/") && !fp.startsWith(".git/")) {
+          candidatePaths.add(fp);
+        }
+      }
+      filesStmt.free();
+    } catch {}
+
+    const files: Array<{ path: string; hash: string }> = [];
+    for (const fp of candidatePaths) {
+      const fullPath = path.resolve(root, fp);
+      try {
+        if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          const hash = simpleHash(content);
+          // Save file copy to checkpoint dir
+          const fileDir = path.dirname(path.join(cpDir, "files", fp));
+          if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
+          fs.writeFileSync(path.join(cpDir, "files", fp), content, "utf-8");
+          files.push({ path: fp, hash });
+        }
+      } catch {}
     }
-    filesStmt.free();
 
     // 2. Snapshot DB state
+    const db = await getDb();
     const dbData = db.export();
     fs.writeFileSync(path.join(cpDir, "kuma.db"), Buffer.from(dbData));
 
