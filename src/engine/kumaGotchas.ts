@@ -183,9 +183,9 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     let linkedCount = 0;
     try {
       const { addEdge } = await import("./kumaGraph.js");
-      // Find arch_flow nodes that reference this file in their hops
+      // Find arch_flow or feature_domain nodes that reference this file in their hops
       const stmt = db.prepare(`
-        SELECT id FROM nodes WHERE type = 'arch_flow'
+        SELECT id FROM nodes WHERE type IN ('arch_flow', 'feature_domain')
         AND (metadata LIKE ? OR file_path = ?)
         LIMIT 5
       `);

@@ -231,7 +231,7 @@ export async function getDashboardData() {
       `SELECT json_group_array(json_object('id',id,'file_path',file_path,'description',REPLACE(REPLACE(description,char(10),' '),char(13),''),'severity',severity,'workaround',REPLACE(REPLACE(COALESCE(workaround,''),char(10),' '),char(13),''),'added_by',COALESCE(added_by,'agent'),'status',COALESCE(status,'active'),'scope_package',COALESCE(scope_package,''),'verified_by',COALESCE(verified_by,''),'created_at',created_at,'updated_at',COALESCE(updated_at,created_at))) FROM (SELECT * FROM known_gotchas ORDER BY created_at DESC)`
     );
     const flows = jsonRows(
-      `SELECT json_group_array(json_object('id',id,'name',name,'file_path',COALESCE(file_path,''),'metadata',COALESCE(metadata,'{}'),'updated_at',updated_at)) FROM (SELECT * FROM nodes WHERE type = 'arch_flow' ORDER BY updated_at DESC)`
+      `SELECT json_group_array(json_object('id',id,'name',name,'file_path',COALESCE(file_path,''),'metadata',COALESCE(metadata,'{}'),'updated_at',updated_at)) FROM (SELECT * FROM nodes WHERE type IN ('arch_flow', 'feature_domain') ORDER BY updated_at DESC)`
     );
     const decisions = jsonRows(
       `SELECT json_group_array(json_object('id',id,'name',name,'metadata',COALESCE(metadata,'{}'),'created_at',created_at)) FROM (SELECT * FROM nodes WHERE type = 'decision' ORDER BY created_at DESC)`

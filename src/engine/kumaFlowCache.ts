@@ -34,7 +34,7 @@ export async function getFlowFreshness(domain: string): Promise<FlowFreshness | 
     const { getDb } = await import("./kumaDb.js");
     const db = await getDb();
     const stmt = db.prepare(
-      `SELECT metadata FROM nodes WHERE type = 'feature_domain' AND name = ? LIMIT 1`
+      `SELECT metadata FROM nodes WHERE type IN ('feature_domain', 'arch_flow') AND name = ? LIMIT 1`
     );
     stmt.bind([domain]);
     const found = stmt.step();
@@ -150,8 +150,8 @@ export async function getHopsForDomain(
     const { getDb } = await import("./kumaDb.js");
     const db = await getDb();
 
-    // 1. Check feature_domain metadata.hops
-    const stmt = db.prepare(`SELECT metadata FROM nodes WHERE type = 'feature_domain' AND name = ? LIMIT 1`);
+    // 1. Check feature_domain or arch_flow metadata.hops
+    const stmt = db.prepare(`SELECT metadata FROM nodes WHERE type IN ('feature_domain', 'arch_flow') AND name = ? LIMIT 1`);
     stmt.bind([domain]);
     if (stmt.step()) {
       const meta = JSON.parse((stmt.getAsObject().metadata as string) || "{}");

@@ -84,4 +84,30 @@ describe("Kuma v2.4.8 Architectural Improvements & Edge Cases", () => {
     expect(hash1!.length).toBe(16);
     expect(hash1).toBe(hash2);
   });
+
+  // 6. Studio loads feature_domain flows and auto-links gotchas
+  it("Studio and gotchas recognize both feature_domain and arch_flow nodes", async () => {
+    const { recordDomainFlow } = await import("../src/engine/kumaGraph.js");
+    const { getFreshDomainFlow } = await import("../src/engine/kumaFlowCache.js");
+    const { getDashboardData } = await import("../packages/ide/studio/src/db.js");
+
+    const domainName = `email-to-ticket-test-${Date.now()}`;
+    await recordDomainFlow({
+      domain: domainName,
+      hops: [
+        { from: "routes/mailgun-webhook.route.ts", to: "services/email-inbound.service.ts", relation: "calls" },
+        { from: "services/email-inbound.service.ts", to: "services/tickets/ticket-mutation.service.ts", relation: "dispatches" },
+      ],
+      filePaths: ["routes/mailgun-webhook.route.ts", "services/email-inbound.service.ts"],
+    });
+
+    const flowStr = await getFreshDomainFlow(domainName);
+    expect(flowStr).toContain(domainName);
+    expect(flowStr).toContain("mailgun-webhook.route.ts");
+
+    const studioData = await getDashboardData();
+    expect(studioData.flows).toBeDefined();
+    const found = studioData.flows.find((f: any) => f.name === domainName);
+    expect(found).toBeDefined();
+  });
 });

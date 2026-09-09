@@ -790,7 +790,13 @@ function renderFlows(flows) {
         </div>
         <div class="flow-hops-chain">
           ${hops.map(function(h, idx) {
-            return `<span class="hop-node">${escapeHtml(h.to || h)}</span>${idx < hops.length - 1 ? '<span class="hop-arrow">→</span>' : ''}`;
+            var toLabel = typeof h === "object" ? (h.to || "") : String(h);
+            var fromLabel = (typeof h === "object" && h.from) ? h.from : "";
+            var rel = (typeof h === "object" && h.relation) ? ` <span style="opacity:0.6;font-size:10px">(${escapeHtml(h.relation)})</span>` : '';
+            var firstHopPrefix = (idx === 0 && fromLabel && fromLabel !== toLabel)
+              ? `<span class="hop-node">${escapeHtml(fromLabel)}</span><span class="hop-arrow">→</span>`
+              : '';
+            return `${firstHopPrefix}<span class="hop-node">${escapeHtml(toLabel)}${rel}</span>${idx < hops.length - 1 ? '<span class="hop-arrow">→</span>' : ''}`;
           }).join("")}
         </div>
         ${meta.gotchas && meta.gotchas.length ? `<div style="font-size:11px;color:var(--amber)">⚠️ Linked Gotchas: ${meta.gotchas.map(escapeHtml).join(", ")}</div>` : ''}
@@ -896,7 +902,8 @@ function initOrRefreshGraph() {
     var color = "#64748b";
     if (n.type === "file") color = "#06b6d4";
     else if (n.type === "gotcha") color = "#f59e0b";
-    else if (n.type === "arch_flow") color = "#6366f1";
+    else if (n.type === "arch_flow" || n.type === "feature_domain") color = "#6366f1";
+    else if (n.type === "cross_service_link" || n.type === "workflow") color = "#818cf8";
     else if (n.type === "decision") color = "#10b981";
     return {
       id: n.id,
