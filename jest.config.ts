@@ -29,10 +29,16 @@ const config: Config = {
     "src/engine/sessionMemory.ts",
   ],
   coverageReporters: ["text", "lcov"],
-  modulePathIgnorePatterns: ["<rootDir>/.kuma/backups"],
+  modulePathIgnorePatterns: [
+    "<rootDir>/dist/",
+    "<rootDir>/.kuma/",
+    "<rootDir>/.kuma/checkpoints/",
+    "<rootDir>/.kuma/backups/",
+  ],
   testPathIgnorePatterns: [
     "<rootDir>/node_modules/",
-    "<rootDir>/.kuma/backups/",
+    "<rootDir>/.kuma/",
+    "<rootDir>/dist/",
   ],
 };
 

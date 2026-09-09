@@ -74,7 +74,7 @@ describe("resolveGotchasForScope (I1)", () => {
     flushDb(db);
   });
 
-  test("marks gotchas RESOLVED only when the file changed since recording", async () => {
+  test("does NOT auto-resolve gotchas on file change (safety preservation)", async () => {
     await ensureSchema();
     const db = await getDb();
     const fp = writeFile("src/foo.ts", "export const a = 1;\n");
@@ -88,11 +88,11 @@ describe("resolveGotchasForScope (I1)", () => {
       ["src/foo.ts", "no hash — untracked"]);
     flushDb(db);
 
-    // Change the file → the previously matching gotcha now has a stale hash
+    // Change the file → gotchas must remain active (no safety inversion)
     writeFile("src/foo.ts", "export const a = 2;\n");
 
     const { resolved } = await resolveGotchasForScope("foo");
-    expect(resolved).toBe(2); // matching-hash gotcha + stale-hash gotcha
+    expect(resolved).toBe(0); // auto-resolve disabled for safety
 
     const stmt = db.prepare(`SELECT description, status FROM known_gotchas ORDER BY id`);
     const rows: Array<{ description: string; status: string }> = [];
@@ -100,9 +100,9 @@ describe("resolveGotchasForScope (I1)", () => {
     stmt.free();
 
     const byDesc = Object.fromEntries(rows.map((r) => [r.description, r.status]));
-    expect(byDesc["matching hash — still fresh"]).toBe("resolved");
-    expect(byDesc["stale hash — file changed"]).toBe("resolved");
-    expect(byDesc["no hash — untracked"]).toBe("active"); // untouched
+    expect(byDesc["matching hash — still fresh"]).toBe("active"); // preserved active
+    expect(byDesc["stale hash — file changed"]).toBe("active"); // preserved active
+    expect(byDesc["no hash — untracked"]).toBe("active"); // preserved active
   });
 
   test("no-op when no files match the scope", async () => {

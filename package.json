@@ -1,6 +1,6 @@
 {
   "name": "@plumpslabs/kuma",
-  "version": "2.4.7",
+  "version": "2.4.8",
   "description": "Safety-first context & orchestration engine for AI coding agents. MCP server with mandatory research pipeline, knowledge graph, impact analysis, decision memory, and safety guard — works with any MCP client.",
   "type": "module",
   "main": "dist/index.js",
@@ -34,7 +34,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "echo 'No linting configured'",
     "prepublishOnly": "pnpm run build:all",
-    "test": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --runInBand"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",

@@ -88,7 +88,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 
 // 🔴 RUNAWAY DETECTION: Sliding window — max 3 calls per 5 minutes
 const RUNAWAY_WINDOW_MS = 300_000;  // 5 minutes
-const RUNAWAY_MAX_CALLS = 3;
+const RUNAWAY_MAX_CALLS = 10;
 const _verifyCallTimestamps: number[] = [];
 
 function checkRunaway(): string | null {
@@ -211,11 +211,13 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
   const denial = checkAllowed(root);
   if (denial) return denial;
 
-  // 🚨 SAFETY GUARD: Runaway detection (sliding window >3 calls/5min)
-  const runawayBlock = checkRunaway();
-  if (runawayBlock) {
-    releaseFileLock(root);
-    return runawayBlock;
+  // 🚨 SAFETY GUARD: Runaway detection (sliding window) — bypassed when options.force is true
+  if (!options.force) {
+    const runawayBlock = checkRunaway();
+    if (runawayBlock) {
+      releaseFileLock(root);
+      return runawayBlock;
+    }
   }
 
   try {
@@ -406,16 +408,6 @@ export async function runAutoVerification(options: VerificationOptions = {}): Pr
           try {
             const { resetScopeFailures } = await import("./kumaAutoGotcha.js");
             resetScopeFailures(scope);
-          } catch { /* non-critical */ }
-        }
-
-        // I1 (Roadmap): verification passed → close the loop on gotchas whose
-        // file changed since recording (fix likely landed → mark resolved).
-        if (passed && !isNoTests && scope !== "session-impact") {
-          try {
-            const { resolveGotchasForScope } = await import("./kumaGotchas.js");
-            const { resolved } = await resolveGotchasForScope(scope);
-            if (resolved > 0) autoGotchaMessage = `✅ ${resolved} gotcha(s) resolved automatically (verification passed after file changes).`;
           } catch { /* non-critical */ }
         }
 

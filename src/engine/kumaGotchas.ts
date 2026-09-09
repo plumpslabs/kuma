@@ -387,46 +387,14 @@ export async function syncGotchasGraph(): Promise<{ created: number }> {
 // ============================================================
 
 /**
- * I1: mark gotchas as RESOLVED when verification passes for a scope
- * AND the underlying file changed since the gotcha was recorded
- * (content_hash mismatch → the code was modified, likely fixed).
- * Returns the number of gotchas resolved.
+ * Safe gotcha resolution: requires intentional resolution.
+ * Auto-resolving gotchas solely because content hash changed is DISABLED to prevent safety inversion
+ * (e.g. whitespace edits or comments prematurely removing critical gotcha protection).
  */
-export async function resolveGotchasForScope(scope: string): Promise<{ resolved: number }> {
-  try {
-    await ensureGotchasSchema();
-    const db = await getDb();
-    const stmt = db.prepare(
-      `SELECT id, file_path, content_hash FROM known_gotchas
-       WHERE status = 'active' AND (file_path LIKE ? OR file_path = ?) AND content_hash IS NOT NULL`
-    );
-    stmt.bind([`%${scope}%`, scope]);
-    const rows: Array<{ id: number; file_path: string; content_hash: string | null }> = [];
-    while (stmt.step()) rows.push(stmt.getAsObject() as any);
-    stmt.free();
-
-    let resolved = 0;
-    const resolvedPaths: string[] = [];
-    for (const r of rows) {
-      const current = hashFileContent(r.file_path);
-      // File changed since recording AND still exists → fix likely landed
-      if (current && current !== r.content_hash) {
-        db.run(
-          `UPDATE known_gotchas SET status = 'resolved', last_verified_at = strftime('%s','now') WHERE id = ?`,
-          [r.id]
-        );
-        resolved++;
-        resolvedPaths.push(r.file_path);
-      }
-    }
-    if (resolved > 0) {
-      saveDb();
-      syncGotchaStatusToMarkdown([scope, ...resolvedPaths], "resolved", "auto-verified");
-    }
-    return { resolved };
-  } catch {
-    return { resolved: 0 };
-  }
+export async function resolveGotchasForScope(_scope: string): Promise<{ resolved: number }> {
+  // Deliberately disabled to prevent safety inversion.
+  // Resolving gotchas requires conscious action via resolveGotcha(idOrScope).
+  return { resolved: 0 };
 }
 
 // ============================================================

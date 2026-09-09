@@ -22,6 +22,8 @@ const CHECKPOINT_DIR = ".kuma/checkpoints";
 interface CheckpointManifest {
   label: string;
   timestamp: number;
+  gitHead?: string;
+  isGitClean?: boolean;
   files: Array<{ path: string; hash: string }>;
   dbSnapshot: boolean;
   description?: string;
@@ -42,6 +44,26 @@ export async function createCheckpoint(
       return `⚠️ Checkpoint "${label}" already exists. Use a different label or remove it first.`;
     }
     fs.mkdirSync(cpDir, { recursive: true });
+
+    // Record git ref and clean tree status
+    let gitHead: string | undefined;
+    let isGitClean = false;
+    try {
+      const { execSync } = await import("node:child_process");
+      gitHead = execSync("git rev-parse HEAD", {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      const statusOut = execSync("git status --porcelain", {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      isGitClean = statusOut.length === 0;
+    } catch {}
 
     // 1. Snapshot tracked files from git status + sessionMemory + change_log
     const candidatePaths = new Set<string>();
@@ -99,10 +121,11 @@ export async function createCheckpoint(
         if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
           const content = fs.readFileSync(fullPath, "utf-8");
           const hash = simpleHash(content);
-          // Save file copy to checkpoint dir
-          const fileDir = path.dirname(path.join(cpDir, "files", fp));
+          // Save file copy to checkpoint dir with .kuma-snap suffix to avoid module name collisions
+          const snapFile = path.join(cpDir, "files", `${fp}.kuma-snap`);
+          const fileDir = path.dirname(snapFile);
           if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
-          fs.writeFileSync(path.join(cpDir, "files", fp), content, "utf-8");
+          fs.writeFileSync(snapFile, content, "utf-8");
           files.push({ path: fp, hash });
         }
       } catch {}
@@ -117,6 +140,8 @@ export async function createCheckpoint(
     const manifest: CheckpointManifest = {
       label,
       timestamp: Date.now(),
+      gitHead,
+      isGitClean,
       files,
       dbSnapshot: true,
       description,
@@ -130,13 +155,18 @@ export async function createCheckpoint(
     sessionMemory.recordToolCall("kuma_checkpoint_create", {
       label,
       filesCount: files.length,
+      gitHead,
     });
+
+    const fileNotice = files.length > 0
+      ? `📦 **${files.length} file(s)** snapshotted`
+      : (gitHead ? `📦 **Git commit snapshotted** (\`${gitHead.substring(0, 8)}\` — clean tree)` : `📦 **0 file(s)** snapshotted`);
 
     return [
       `✅ **Checkpoint Created**: "${label}"`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ``,
-      `📦 **${files.length} file(s)** snapshotted`,
+      fileNotice,
       `🗄️  **Database** snapshotted`,
       `📍 ${cpDir}`,
       ``,
@@ -172,10 +202,12 @@ export async function rollbackToCheckpoint(label: string): Promise<string> {
     let restored = 0;
     let failed = 0;
     for (const f of manifest.files) {
-      const snapshotPath = path.join(cpDir, "files", f.path);
-      if (fs.existsSync(snapshotPath)) {
+      const snapPath = path.join(cpDir, "files", `${f.path}.kuma-snap`);
+      const legacyPath = path.join(cpDir, "files", f.path);
+      const sourcePath = fs.existsSync(snapPath) ? snapPath : legacyPath;
+      if (fs.existsSync(sourcePath)) {
         try {
-          const content = fs.readFileSync(snapshotPath, "utf-8");
+          const content = fs.readFileSync(sourcePath, "utf-8");
           const targetPath = path.resolve(root, f.path);
           const targetDir = path.dirname(targetPath);
           if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
@@ -184,6 +216,22 @@ export async function rollbackToCheckpoint(label: string): Promise<string> {
         } catch {
           failed++;
         }
+      }
+    }
+
+    // Git ref fallback for clean tree checkpoints (revert uncommitted changes to snapshot gitHead)
+    if (manifest.files.length === 0 && manifest.gitHead) {
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync(`git checkout ${manifest.gitHead} -- .`, {
+          cwd: root,
+          encoding: "utf-8",
+          timeout: 8000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        restored++;
+      } catch {
+        failed++;
       }
     }
 

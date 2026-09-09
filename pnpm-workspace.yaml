@@ -2,7 +2,8 @@ packages:
   - 'packages/ide/*'
 allowBuilds:
   esbuild: false
-  keytar: set this to true or false
+  keytar: false
+  sql.js: true
 minimumReleaseAgeExclude:
   - '@modelcontextprotocol/core@2.0.0'
   - '@modelcontextprotocol/server@2.0.0'

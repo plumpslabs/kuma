@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execSync } from "node:child_process";
 import { getDb, saveDb } from "./kumaDb.js";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
@@ -136,40 +137,78 @@ export async function detectDrift(): Promise<StaleRecord[]> {
 }
 
 /**
- * Compute a hash for a research scope by hashing related files.
+ * Compute a stable hash for a research scope or project state by inspecting
+ * git status, git HEAD, and key subdirectories (src, lib, backend, packages, etc.).
  */
-function computeScopeHash(scope: string): string | null {
+export function computeScopeHash(scope: string): string | null {
   try {
-    const hash = crypto.createHash("sha256");
     const root = getProjectRoot();
-    hash.update(scope);
-
-    // Hash files matching the scope name
-    let found = false;
+    let gitHead = "";
+    let gitStatus = "";
     try {
-      const files = fs.readdirSync(root);
-      for (const file of files) {
-        if (file.toLowerCase().includes(scope.toLowerCase())) {
+      gitHead = execSync("git rev-parse HEAD", {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 1500,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      gitStatus = execSync("git status --porcelain", {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 2000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      // Not a git repository or git command timed out
+    }
+
+    const hash = crypto.createHash("sha256");
+    hash.update(scope);
+    let found = false;
+
+    if (gitHead || gitStatus) {
+      hash.update(gitHead);
+      hash.update(gitStatus);
+      found = true;
+    } else {
+      // Fallback: search root and common code subdirectories
+      const checkDirs = [
+        root,
+        path.join(root, "src"),
+        path.join(root, "lib"),
+        path.join(root, "backend"),
+        path.join(root, "packages"),
+        path.join(root, "app"),
+      ];
+      for (const dir of checkDirs) {
+        if (fs.existsSync(dir)) {
           try {
-            if (fs.statSync(path.join(root, file)).isFile()) {
-              const content = fs.readFileSync(path.join(root, file), "utf-8");
-              hash.update(file);
-              hash.update(content.substring(0, 10000));
-              found = true;
+            const files = fs.readdirSync(dir).slice(0, 30);
+            for (const f of files) {
+              try {
+                const fullPath = path.join(dir, f);
+                const stat = fs.statSync(fullPath);
+                if (stat.isFile()) {
+                  hash.update(`${f}:${stat.mtimeMs}`);
+                  found = true;
+                }
+              } catch {}
             }
-          } catch { /* skip */ }
+          } catch {}
         }
       }
-    } catch { /* skip */ }
+    }
 
     // Also hash the research cache scope file if it exists
     const researchDir = path.join(root, ".kuma", "research");
     if (fs.existsSync(researchDir)) {
       const scopeFile = path.join(researchDir, `${scope}.json`);
       if (fs.existsSync(scopeFile)) {
-        const content = fs.readFileSync(scopeFile, "utf-8");
-        hash.update(content);
-        found = true;
+        try {
+          const content = fs.readFileSync(scopeFile, "utf-8");
+          hash.update(content);
+          found = true;
+        } catch {}
       }
     }
 
@@ -179,6 +218,8 @@ function computeScopeHash(scope: string): string | null {
     return null;
   }
 }
+
+export const computeProjectHash = (scope: string): string => computeScopeHash(scope) || Date.now().toString(16);
 
 // ============================================================
 // AUTO-STALE FLAGGING

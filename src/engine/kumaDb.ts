@@ -27,6 +27,8 @@ export function generateNodeId(type: string, name: string): string {
   return `${type}::${uuid}::${name}`;
 }
 
+let lastLoadedMtime = 0;
+
 /**
  * Reset the cached dbInstance so the next getDb() call reloads from disk.
  * Used by checkpoint rollback to restore DB from snapshot.
@@ -34,10 +36,24 @@ export function generateNodeId(type: string, name: string): string {
 export function resetDbInstance(): void {
   dbInstance = null;
   initPromise = null;
+  lastLoadedMtime = 0;
 }
 
 export async function getDb(): Promise<SqlJsDatabase> {
-  if (dbInstance) return dbInstance;
+  if (dbInstance) {
+    try {
+      const kumaDir = getKumaDir();
+      const dbPath = path.join(kumaDir, DB_FILENAME);
+      if (fs.existsSync(dbPath)) {
+        const stat = fs.statSync(dbPath);
+        // If file was updated by another process/subagent since we loaded it, reload
+        if (stat.mtimeMs > lastLoadedMtime + 50) {
+          resetDbInstance();
+        }
+      }
+    } catch {}
+    if (dbInstance) return dbInstance;
+  }
   if (initPromise) return initPromise;
   initPromise = initDb();
   return initPromise;
@@ -54,6 +70,9 @@ async function initDb(): Promise<SqlJsDatabase> {
 
   let db: SqlJsDatabase;
   if (fs.existsSync(dbPath)) {
+    try {
+      lastLoadedMtime = fs.statSync(dbPath).mtimeMs;
+    } catch {}
     const buffer = fs.readFileSync(dbPath);
     db = new SQL.Database(buffer);
   } else {
@@ -100,8 +119,10 @@ export function flushDb(db?: SqlJsDatabase): void {
     fs.writeFileSync(tmpPath, buffer);
     try {
       fs.renameSync(tmpPath, dbPath);
+      try { lastLoadedMtime = fs.statSync(dbPath).mtimeMs; } catch {}
     } catch {
       fs.writeFileSync(dbPath, buffer);
+      try { lastLoadedMtime = fs.statSync(dbPath).mtimeMs; } catch {}
       try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
     }
   } catch (err) {

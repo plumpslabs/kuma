@@ -2,10 +2,10 @@ import { sessionMemory } from "../engine/sessionMemory.js";
 import { getResearchCache, saveResearchCache } from "../engine/kumaDb.js";
 import { searchGraph, analyzeImpact } from "../engine/kumaGraph.js";
 import { scoreMemoryRelevance, getProactiveMemories } from "../engine/kumaMemory.js";
+import { computeProjectHash } from "../engine/kumaDriftDetector.js";
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
-import crypto from "node:crypto";
 
 type ContextAction = "init" | "research" | "history" | "flow" | "map" | "impact";
 
@@ -455,15 +455,3 @@ async function handleImpact(params: ContextParams): Promise<string> {
   return formatImpact(impact);
 }
 
-function computeProjectHash(scope: string): string {
-  try {
-    const root = getProjectRoot();
-    const files = fs.readdirSync(root).slice(0, 20);
-    const hash = crypto.createHash("md5");
-    hash.update(scope);
-    for (const f of files) {
-      try { const stat = fs.statSync(path.join(root, f)); hash.update(`${f}:${stat.mtimeMs}`); } catch {}
-    }
-    return hash.digest("hex").substring(0, 12);
-  } catch { return Date.now().toString(16); }
-}

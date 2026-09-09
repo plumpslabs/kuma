@@ -5,11 +5,18 @@
 import fs from "node:fs";
 import path from "node:path";
 
+const GENERIC_FILENAMES = new Set([
+  "index.ts", "index.js", "index.tsx", "index.jsx",
+  "types.ts", "types.d.ts", "constants.ts", "utils.ts",
+  "config.ts", "schema.ts", "styles.css", "main.ts", "main.js"
+]);
+
 function findGotchasForFile(targetPath) {
   if (!targetPath) return [];
   const results = [];
   const normalized = targetPath.replace(/\\/g, "/");
   const baseName = path.basename(normalized);
+  const isGeneric = GENERIC_FILENAMES.has(baseName.toLowerCase());
 
   const gotchasMd = path.resolve(process.cwd(), ".kuma", "KNOWN_GOTCHAS.md");
   if (fs.existsSync(gotchasMd)) {
@@ -17,11 +24,29 @@ function findGotchasForFile(targetPath) {
       const content = fs.readFileSync(gotchasMd, "utf-8");
       const sections = content.split(/(?=^###\s+)/m);
       for (const sec of sections) {
-        if (sec.includes(baseName) || sec.includes(normalized)) {
-          const firstLine = sec.split("\n")[0].replace(/^###\s+/, "").trim();
+        // Skip resolved or deprecated gotchas
+        if (/[-*]\s*(?:🏷️\s*)?\*\*Status\*\*:\s*(?:resolved|deprecated)/i.test(sec)) {
+          continue;
+        }
+
+        const headingLine = sec.split("\n")[0] || "";
+        const headingMatch = headingLine.match(/^###\s+\[?(.+?)\]?\s*(?:[—–-]+\s*(.+))?$/);
+        if (!headingMatch) continue;
+
+        const secFilePath = headingMatch[1].trim().replace(/\\/g, "/");
+        const secBase = path.basename(secFilePath);
+
+        // Path matching: exact match, suffix match, or non-generic basename match
+        const isMatch =
+          normalized.endsWith(secFilePath) ||
+          secFilePath.endsWith(normalized) ||
+          (!isGeneric && secBase.toLowerCase() === baseName.toLowerCase());
+
+        if (isMatch) {
+          const firstLine = headingLine.replace(/^###\s+/, "").trim();
           const trapMatch = sec.match(/- \S*\s*\*\*Trap\*\*:\s*([^\n]+)/i) || sec.match(/- \*\*Issue\*\*:\s*([^\n]+)/i);
           const ruleMatch = sec.match(/- \S*\s*\*\*Rule(?:\/Fix)?\*\*:\s*([^\n]+)/i) || sec.match(/- \*\*Workaround\*\*:\s*([^\n]+)/i);
-          const trap = trapMatch ? trapMatch[1].trim() : firstLine;
+          const trap = trapMatch ? trapMatch[1].trim() : (headingMatch[2]?.trim() || firstLine);
           const rule = ruleMatch ? ruleMatch[1].trim() : "";
           results.push({ file: baseName, trap, rule });
         }
