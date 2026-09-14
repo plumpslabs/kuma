@@ -64,45 +64,34 @@ async function handleRollbackLabel(params: SafetyParams): Promise<string> {
 }
 
 // ============================================================
-// VERIFY — Scoped test verification
+// VERIFY — Blast radius & scope notice (test execution removed)
 // ============================================================
 
-const VERIFY_COOLDOWN_MS = 30_000;
-let _lastVerifyCall = 0;
-
 async function handleVerify(params: SafetyParams): Promise<string> {
-  const now = Date.now();
-  if (now - _lastVerifyCall < VERIFY_COOLDOWN_MS && !params.force) {
-    const remaining = Math.ceil((VERIFY_COOLDOWN_MS - (now - _lastVerifyCall)) / 1000);
-    return `⏳ Verification cooldown active. Please wait ${remaining}s before calling verify again, or use force: true.`;
-  }
-  _lastVerifyCall = now;
+  sessionMemory.recordToolCall("kuma_safety_verify", { scope: params.scope, target: params.target });
+  const target = params.target || params.scope;
 
-  const recordingSummary = sessionMemory.getRecordingSummary();
-  const stats = sessionMemory.getSummary();
-  const toolCallCount = (stats.toolCallCount as number) || 0;
-  let recordingWarning = "";
-  if (toolCallCount >= 5 && !recordingSummary.hasAnyRecordings) {
-    recordingWarning = `\n\n⚠️ **RECORDING MISSING:** You made ${toolCallCount} tool calls with 0 recordings. Before switching tasks, record what you learned:\n- kuma_memory({ action: 'research_save', scope: '<file>' })\n- kuma_memory({ action: 'gotcha', ... }) if you found bugs\n- kuma_memory({ action: 'arch_flow', ... }) if you traced a flow`;
-  } else if (recordingSummary.total > 0) {
-    recordingWarning = `\n\n✅ **Recordings:** ${recordingSummary.total} total (${recordingSummary.archFlows} arch_flow, ${recordingSummary.gotchas} gotcha, ${recordingSummary.decisions} decision, ${recordingSummary.researchSaves} research_save)`;
+  if (target) {
+    const { analyzeImpact } = await import("../engine/kumaGraph.js");
+    const impact = await analyzeImpact(target);
+    return [
+      `ℹ️ **Kuma Scope Notice**: Test execution is outside Kuma's scope. Please execute your native test runner directly (e.g. \`pnpm test\`, \`npm test\`, \`pytest\`).`,
+      "",
+      `🎯 **Post-Edit Blast Radius & Dependency Impact for \`${target}\`:**`,
+      impact,
+    ].join("\n");
   }
 
-  const effectiveScope = params.scope || params.target;
-  const timeoutMs = typeof params.timeoutMs === "number" && params.timeoutMs > 0
-    ? params.timeoutMs
-    : (typeof params.timeout === "number" && params.timeout > 0
-        ? params.timeout * 1000
-        : (process.env.KUMA_VERIFY_TIMEOUT_MS ? parseInt(process.env.KUMA_VERIFY_TIMEOUT_MS, 10) : 60000));
-
-  sessionMemory.recordToolCall("kuma_safety_verify", { scope: effectiveScope, timeoutMs });
-  const { runAutoVerification } = await import("../engine/kumaVerifier.js");
-  const verifyResult = await runAutoVerification({
-    scope: effectiveScope,
-    target: params.target,
-    command: params.command,
-    force: params.force,
-    timeoutMs,
-  });
-  return verifyResult + recordingWarning;
+  return [
+    `ℹ️ **Kuma Scope Notice**: Test execution is outside Kuma's scope.`,
+    `Please run your project's native test runner directly in your shell (e.g. \`npm test\`, \`pnpm test\`, \`pytest\`, \`cargo test\`).`,
+    "",
+    `💡 Use Kuma for:`,
+    `- Codebase Topology & AST Search: kuma_context({ action: "research", scope: "..." })`,
+    `- Blast Radius & Impact Analysis: kuma_context({ action: "impact", target: "..." })`,
+    `- Monorepo Map & Package Boundaries: kuma_context({ action: "map" })`,
+    `- Living Memory & Decision History: kuma_context({ action: "history", target: "..." })`,
+    `- Safety Guard & Rollback Checkpoints: kuma_safety({ action: "guard" })`,
+  ].join("\n");
 }
+

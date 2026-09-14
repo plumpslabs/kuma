@@ -1,5 +1,13 @@
 import { Hono } from "hono";
-import { getDashboardData, getNodeDetail, findKumaDb } from "./db.js";
+import {
+  getDashboardData,
+  getNodeDetail,
+  findKumaDb,
+  upsertStudioNode,
+  deleteStudioNode,
+  createStudioEdge,
+  deleteStudioEdge,
+} from "./db.js";
 
 import fs from "node:fs";
 
@@ -78,6 +86,60 @@ api.get("/node/:id", async (c) => {
     const detail = await getNodeDetail(nodeId);
     if (!detail) return c.json({ error: "Node not found" }, 404);
     return c.json(detail);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+/** POST /api/node — create or update a node */
+api.post("/node", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body || !body.name || !body.type) {
+      return c.json({ error: "Missing required fields: name and type are required" }, 400);
+    }
+    const node = await upsertStudioNode(body);
+    return c.json({ ok: true, node });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+/** DELETE /api/node/:id — delete a node and connected edges */
+api.delete("/node/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Node id required" }, 400);
+    await deleteStudioNode(id);
+    return c.json({ ok: true, id });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+/** POST /api/edge — create or update an edge between two nodes */
+api.post("/edge", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body || !body.source || !body.target || !body.type) {
+      return c.json({ error: "Missing required fields: source, target, and type are required" }, 400);
+    }
+    await createStudioEdge(body);
+    return c.json({ ok: true, edge: body });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+/** DELETE /api/edge — delete an edge */
+api.delete("/edge", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body || !body.source || !body.target || !body.type) {
+      return c.json({ error: "Missing required fields: source, target, and type are required" }, 400);
+    }
+    await deleteStudioEdge(body.source, body.target, body.type);
+    return c.json({ ok: true, edge: body });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }

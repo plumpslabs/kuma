@@ -147,19 +147,8 @@ async function main(): Promise<void> {
     console.error(`🐻 Kuma v${SERVER_VERSION} — Kill Switch`);
     console.error("");
 
-    // 1. Kill verification child processes (local + cross-instance from DB)
+    // 1. Clean up lock files and stale state
     let killedCount = 0;
-    // Kill local process
-    try {
-      const { getRunningVerificationPid } = await import("./engine/kumaVerifier.js");
-      const pid = getRunningVerificationPid();
-      if (pid) {
-        try { process.kill(-pid, "SIGKILL"); } catch {}
-        try { process.kill(pid, "SIGKILL"); } catch {}
-        console.error(`✅ Killed local verification process (PID: ${pid})`);
-        killedCount++;
-      }
-    } catch {}
     // Clean up any lock files
     try {
       const path = await import("node:path");

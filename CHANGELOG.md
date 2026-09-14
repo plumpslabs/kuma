@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.4.11] — 2026-09-14
+
+### 🌐 Polyglot AST Engine & Concept-Level Subsystem Architecture
+
+- **Multi-Language Polyglot Grammar AST Engine (`src/engine/polyglotScanner.ts`)**:
+  - Full structural AST extraction across **Python** (`.py`), **Go** (`.go`), **Rust** (`.rs`), **Java / C# / Kotlin** (`.java`, `.cs`, `.kt`), **Ruby** (`.rb`), and **PHP** (`.php`).
+  - Extracts classes, structs, traits, interfaces, docstrings, method signatures, return types, call identifiers, and import graphs with zero external native toolchain dependencies.
+- **Concept-Level Subsystem Nodes (`domainClusterEngine.ts`)**:
+  - Automatically aggregates 100–500+ granular files into 8–15 high-level architecture concept clusters.
+  - Connects subsystems using typed relationship verbs (`uses`, `produces`, `validates`, `routes_to`, `configures`).
+  - Accessible via `kuma_context({ action: "cluster" })` (aliases: `clusters`, `subsystems`, `concepts`, `overview`).
+- **AST Code Skeleton Context Compressor (`action: "skeleton"`)**:
+  - Compresses 500–1000+ line source files into 30–50 line load-bearing outlines by omitting implementation bodies while preserving all signatures, interfaces, and docstrings.
+  - Delivers **85%–93% token reduction**, preventing context degradation.
+- **Knowledge Graph PageRank & Centrality Engine (`src/engine/graphCentrality.ts`)**:
+  - Power-iteration PageRank ($d=0.85$) and In/Out-degree centrality computation directly over SQLite `kuma.db`.
+  - Automatically highlights `🔥 CRITICAL CORE HUB` nodes in `analyzeImpact` and ranks crux symbols in `cluster`.
+- **Code Reuse & Anti-Duplication Engine (`action: "reuse"`)**:
+  - Intent-based discovery of existing helpers, types, and functions before new code is written to prevent dead code duplication.
+- **Kuma Studio Visualizer Upgrade**:
+  - Rendered visible labels on concept relationship edges (`uses`, `produces`, etc.) with glowing indigo styling.
+  - Added Centrality & Blast Radius rank display in node inspector.
+- **Test Subprocess Decoupling**:
+  - Decoupled `kuma_safety verify` from external child process test runners; focused purely on blast radius calculation and deterministic safety boundaries.
+
 ## [2.4.10] — 2026-09-09
 
 ### 🖥️ Kuma Studio Dashboard Resilience & UX Polish

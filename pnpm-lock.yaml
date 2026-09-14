@@ -17,6 +17,9 @@ importers:
       sql.js:
         specifier: ^1.14.1
         version: 1.14.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -45,9 +48,6 @@ importers:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(supports-color@8.1.1)(tsx@4.23.1)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
     optionalDependencies:
       typescript-language-server:
         specifier: ^5.3.0

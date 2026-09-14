@@ -424,7 +424,148 @@ export async function getNodeDetail(nodeId: string) {
       })
       .filter(Boolean);
 
-    return { node, outgoing, incoming, gotchas };
+    const inDegree = incoming.length;
+    const outDegree = outgoing.length;
+    const isHub = inDegree >= 4;
+
+    return { node, outgoing, incoming, gotchas, centrality: { inDegree, outDegree, isHub } };
+  } finally {
+    db.close();
+  }
+}
+
+/** Save in-memory SQLite database back to disk atomically. */
+export function saveDbToDisk(db: any): void {
+  const dbPath = findKumaDb();
+  if (!dbPath) throw new Error("No .kuma/kuma.db found");
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  const tmpPath = `${dbPath}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmpPath, buffer);
+  try {
+    fs.renameSync(tmpPath, dbPath);
+  } catch {
+    fs.writeFileSync(dbPath, buffer);
+    try { fs.unlinkSync(tmpPath); } catch {}
+  }
+}
+
+/** Create or update a node from Studio. */
+export async function upsertStudioNode(data: {
+  id?: string;
+  type: string;
+  name: string;
+  file_path?: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}): Promise<Record<string, any>> {
+  const db = await openDb();
+  try {
+    const type = data.type || "feature_domain";
+    const name = (data.name || "").trim();
+    const filePath = (data.file_path || "").trim();
+
+    let id = data.id;
+    if (!id) {
+      if (type === "file" && filePath) {
+        id = `file::${filePath}`;
+      } else if (type === "function" && filePath) {
+        id = `function::${filePath}::${name}`;
+      } else {
+        id = `${type}::${name}`;
+      }
+    }
+
+    const meta = data.metadata || {};
+    if (data.description) {
+      meta.description = data.description;
+    }
+    const metaStr = JSON.stringify(meta);
+
+    db.run(
+      `INSERT INTO nodes (id, type, name, file_path, metadata, severity, confidence, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'medium', 0.8, strftime('%s','now'))
+       ON CONFLICT(id) DO UPDATE SET
+         type = excluded.type,
+         name = excluded.name,
+         file_path = COALESCE(excluded.file_path, nodes.file_path),
+         metadata = excluded.metadata,
+         updated_at = strftime('%s','now')`,
+      [id, type, name, filePath || null, metaStr]
+    );
+
+    // Update tokens index
+    try {
+      const terms = `${name} ${filePath} ${metaStr}`
+        .toLowerCase()
+        .split(/[\s,.;:!?()\[\]{}"'\/\\|@#$%^&*+=<>~`_-]+/)
+        .filter((t) => t.length > 2 && t.length < 40);
+      const uniqueTerms = Array.from(new Set(terms));
+      db.run(`DELETE FROM node_tokens WHERE node_id = ?`, [id]);
+      for (const term of uniqueTerms.slice(0, 30)) {
+        db.run(`INSERT OR IGNORE INTO node_tokens (token, node_id) VALUES (?, ?)`, [term, id]);
+      }
+    } catch {}
+
+    saveDbToDisk(db);
+    return { id, type, name, file_path: filePath, metadata: meta };
+  } finally {
+    db.close();
+  }
+}
+
+/** Delete a node and all connected edges from Studio. */
+export async function deleteStudioNode(id: string): Promise<void> {
+  const db = await openDb();
+  try {
+    db.run(`DELETE FROM nodes WHERE id = ?`, [id]);
+    db.run(`DELETE FROM edges WHERE source_id = ? OR target_id = ?`, [id, id]);
+    try {
+      db.run(`DELETE FROM node_tokens WHERE node_id = ?`, [id]);
+    } catch {}
+    saveDbToDisk(db);
+  } finally {
+    db.close();
+  }
+}
+
+/** Create or update an edge between two nodes from Studio. */
+export async function createStudioEdge(edge: {
+  source: string;
+  target: string;
+  type: string;
+  weight?: number;
+  metadata?: Record<string, any>;
+}): Promise<void> {
+  const db = await openDb();
+  try {
+    const weight = edge.weight ?? 1.0;
+    const metadata = JSON.stringify(edge.metadata ?? {});
+
+    db.run(
+      `INSERT INTO edges (source_id, target_id, type, weight, metadata)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(source_id, target_id, type) DO UPDATE SET
+         weight = excluded.weight,
+         metadata = excluded.metadata`,
+      [edge.source, edge.target, edge.type, weight, metadata]
+    );
+
+    saveDbToDisk(db);
+  } finally {
+    db.close();
+  }
+}
+
+/** Delete an edge between two nodes from Studio. */
+export async function deleteStudioEdge(source: string, target: string, type: string): Promise<void> {
+  const db = await openDb();
+  try {
+    db.run(
+      `DELETE FROM edges WHERE source_id = ? AND target_id = ? AND type = ?`,
+      [source, target, type]
+    );
+    saveDbToDisk(db);
   } finally {
     db.close();
   }

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type ContextAction = "init" | "research" | "history" | "flow" | "map" | "impact";
+type ContextAction = "init" | "research" | "history" | "flow" | "map" | "impact" | "cluster" | "skeleton" | "reuse";
 
 const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "research": "research", "search": "research", "explore": "research", "inspect": "research",
@@ -16,6 +16,9 @@ const CONTEXT_ALIASES: Record<string, ContextAction> = {
   "history": "history", "why": "history", "touched": "history", "provenance": "history",
   "map": "map", "repo-map": "map", "repo_map": "map", "workspace": "map", "topology": "map",
   "impact": "impact", "blast-radius": "impact", "blast_radius": "impact", "blast": "impact",
+  "cluster": "cluster", "clusters": "cluster", "subsystems": "cluster", "concepts": "cluster", "overview": "cluster",
+  "skeleton": "skeleton", "outline": "skeleton", "ast": "skeleton", "signatures": "skeleton", "contract": "skeleton",
+  "reuse": "reuse", "find": "reuse", "helper": "reuse", "helpers": "reuse", "duplicate": "reuse", "anti-duplication": "reuse",
 };
 
 interface ContextParams {
@@ -26,6 +29,14 @@ interface ContextParams {
 }
 
 export async function handleContext(params: ContextParams): Promise<string> {
+  // Lazy incremental auto-sync: keep knowledge graph fresh with working tree changes
+  try {
+    const { syncModifiedFiles } = await import("../engine/kumaCodeScanner.js");
+    await syncModifiedFiles(30);
+  } catch {
+    // Non-blocking
+  }
+
   const rawAction = params.action || "init";
   const resolvedAction = CONTEXT_ALIASES[rawAction.toLowerCase()] || rawAction;
   const action = resolvedAction as ContextAction;
@@ -37,8 +48,43 @@ export async function handleContext(params: ContextParams): Promise<string> {
     case "flow": return handleFlow(params);
     case "map": return handleMap(params);
     case "impact": return handleImpact(params);
-    default: return `Unknown action "${action}". Use: init, research, history, flow, map, impact`;
+    case "cluster": return handleCluster(params);
+    case "skeleton": return handleSkeleton(params);
+    case "reuse": return handleReuse(params);
+    default: return `Unknown action "${action}". Use: init, research, history, flow, map, impact, cluster, skeleton, reuse`;
   }
+}
+
+async function handleSkeleton(params: ContextParams): Promise<string> {
+  const target = params.target || params.scope;
+  if (!target) {
+    return "Error: target file required for skeleton action. Example: kuma_context({ action: 'skeleton', target: 'src/engine/kumaGraph.ts' })";
+  }
+  sessionMemory.recordToolCall("kuma_context_skeleton", { target });
+  const { generateFileSkeleton } = await import("../engine/astSkeletonEngine.js");
+  const result = generateFileSkeleton(target);
+  if (!result) {
+    return `File "${target}" not found or cannot be read. Provide a relative path or filename.`;
+  }
+  return result.formattedOutput;
+}
+
+async function handleReuse(params: ContextParams): Promise<string> {
+  const query = params.target || params.scope || params.goal || "";
+  if (!query) {
+    return "Error: query or intent required for reuse action. Example: kuma_context({ action: 'reuse', target: 'format date' })";
+  }
+  sessionMemory.recordToolCall("kuma_context_reuse", { query });
+  const { findReusableSymbols } = await import("../engine/codeReuseEngine.js");
+  const result = await findReusableSymbols(query, params.scope);
+  return result.formattedOutput;
+}
+
+async function handleCluster(_params: ContextParams): Promise<string> {
+  sessionMemory.recordToolCall("kuma_context_cluster", {});
+  const { buildSubsystemClusters } = await import("../engine/domainClusterEngine.js");
+  const result = await buildSubsystemClusters();
+  return result.formattedOutput;
 }
 
 // ============================================================

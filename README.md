@@ -68,7 +68,10 @@ Kuma exposes **3 coarse-grained tools** with **15 core actions** — the full ag
 | `init` | Lean project brief + restore session + branch tracking | 🔴 Required first |
 | `research` | 5-step pipeline: cache → graph → scan → impact → decision | 🔴 Required before edits |
 | `map` | Monorepo package topology & workspace boundary mapping | 🔴 High |
-| `impact` | Blast radius analysis: affected consumers & risk scoring | 🔴 High |
+| `cluster` | Concept-level subsystem clusters with typed relationship verbs | 🔴 High |
+| `skeleton` | Compressed AST code outline (85-93% token reduction) | 🔴 High |
+| `reuse` | Anti-duplication helper discovery before writing new code | 🔴 High |
+| `impact` | Blast radius analysis with PageRank centrality scoring | 🔴 High |
 | `history` | Why is this file written this way (cross-session trace) | 🔴 High |
 | `flow` | Read a recorded architecture flow | 🔴 High |
 
@@ -87,7 +90,7 @@ Kuma exposes **3 coarse-grained tools** with **15 core actions** — the full ag
 | Action | Purpose | Impact |
 |--------|---------|--------|
 | `guard` | Detect anti-patterns, drift, runaway loops | 🔴 Required |
-| `verify` | Auto-run scoped tests after edits | 🔴 High |
+| `verify` | Post-edit blast radius & affected test targeting (<50ms static resolution) | 🔴 High |
 | `checkpoint` | Labeled snapshot before risky work | 🟡 Linear |
 | `rollback_label` | Restore a labeled snapshot | 🟡 Linear |
 
@@ -99,9 +102,9 @@ Kuma exposes exactly **3 coarse-grained tools** — the agent picks an *action*,
 
 | Tool | Core Actions | Purpose |
 |------|--------------|---------|
-| `kuma_context` | `init`, `research`, `history`, `flow`, `map`, `impact` | Load project context, understand unfamiliar code |
+| `kuma_context` | `init`, `research`, `map`, `cluster`, `skeleton`, `reuse`, `impact`, `history`, `flow` | Load project context, understand unfamiliar code |
 | `kuma_memory` | `gotcha`, `decision`, `arch_flow`, `research_save`, `search` | Persistent knowledge that saves future sessions |
-| `kuma_safety` | `guard`, `verify`, `checkpoint`, `rollback_label` | Pre-risk check, post-edit verification, snapshot/restore |
+| `kuma_safety` | `guard`, `verify`, `checkpoint`, `rollback_label` | Pre-risk guard, post-edit blast radius verification, snapshot/restore |
 
 Everything else is an internal action — not exposed to the agent. The agent uses its **own native tools** for editing, searching, and execution — Kuma is memory & safety, not a code manager.
 

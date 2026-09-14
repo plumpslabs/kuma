@@ -505,32 +505,280 @@ table.clean-table tr:hover td {
 #graph-canvas {
   width: 100%;
   height: 100%;
-  background: radial-gradient(ellipse at center, #161e31 0%, var(--bg) 75%);
+  background-color: #060911;
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.45) 0%, transparent 85%),
+    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px;
 }
 .graph-toolbar {
   position: absolute;
   top: 16px;
   left: 16px;
   display: flex;
+  align-items: center;
   gap: 8px;
-  background: rgba(17,24,39,0.9);
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.88);
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
   z-index: 10;
 }
 .graph-toolbar button {
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+  padding: 5px 10px;
+  border-radius: 6px;
   font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.graph-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 .graph-toolbar button.active {
-  background: var(--amber-dark);
+  background: #d97706;
+  border-color: #f59e0b;
+  color: #fff;
+}
+.graph-toolbar select, .graph-toolbar input {
+  background: rgba(11, 15, 25, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.graph-toolbar input:focus, .graph-toolbar select:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+.btn-primary {
+  background: var(--amber-dark) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+}
+.btn-primary:hover {
+  background: var(--amber) !important;
+}
+
+/* Slide-over Inspector Sidebar */
+#graph-inspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 90vw;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.5);
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+}
+#graph-inspector.open {
+  transform: translateX(0);
+}
+.inspector-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--card-bg);
+}
+.inspector-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 4px;
+}
+.inspector-close:hover {
+  color: #fff;
+  background: var(--surface-hover);
+}
+.inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.inspector-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--card-bg);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inspector-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inspector-code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: #090d16;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #38bdf8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.inspector-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  background: rgba(245, 158, 11, 0.05);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 6px 6px 0;
+  padding: 10px 12px;
+}
+.inspector-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.inspector-chip:hover {
+  background: var(--surface-hover);
+  border-color: var(--amber);
+  color: #fff;
+}
+.inspector-chip .chip-badge {
+  font-size: 10px;
+  font-family: var(--mono);
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.chip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* Modals */
+.kuma-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.kuma-modal-backdrop.open {
+  display: flex;
+}
+.kuma-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.kuma-modal-header {
+  padding: 14px 18px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.kuma-modal-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kuma-modal-footer {
+  padding: 14px 18px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.form-control {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--amber);
 }
 
 .empty-placeholder {
@@ -562,27 +810,24 @@ table.clean-table tr:hover td {
   </div>
 
   <nav class="nav-tabs">
-    <button class="nav-tab active" data-view="gotchas">
-      <i data-lucide="shield-alert" style="width:14px;height:14px"></i>
-      Gotcha Shield
-      <span class="tab-badge" id="badge-gotcha-count">0</span>
+    <button class="nav-tab active" data-view="graph">
+      <i data-lucide="network" style="width:14px;height:14px"></i>
+      Knowledge Graph
+      <span class="tab-badge" id="badge-graph-count">0</span>
     </button>
     <button class="nav-tab" data-view="flows">
       <i data-lucide="git-merge" style="width:14px;height:14px"></i>
-      Sequence Flows
+      Architecture & Flows
       <span class="tab-badge" id="badge-flow-count">0</span>
     </button>
-    <button class="nav-tab" data-view="workspace">
-      <i data-lucide="box" style="width:14px;height:14px"></i>
-      Workspace & Impact
+    <button class="nav-tab" data-view="gotchas">
+      <i data-lucide="shield-alert" style="width:14px;height:14px"></i>
+      Known Gotchas
+      <span class="tab-badge" id="badge-gotcha-count">0</span>
     </button>
     <button class="nav-tab" data-view="health">
       <i data-lucide="activity" style="width:14px;height:14px"></i>
-      Efficiency & Health
-    </button>
-    <button class="nav-tab" data-view="graph">
-      <i data-lucide="network" style="width:14px;height:14px"></i>
-      Knowledge Graph
+      Health & Audit
     </button>
   </nav>
 
@@ -593,8 +838,63 @@ table.clean-table tr:hover td {
 </header>
 
 <main id="viewport">
-  <!-- VIEW 1: GOTCHA SHIELD -->
-  <section class="view-panel active" id="view-gotchas">
+  <!-- VIEW 1: KNOWLEDGE GRAPH (PRIMARY HERO) -->
+  <section class="view-panel active" id="view-graph" style="padding:0">
+    <div id="graph-viewport">
+      <div class="graph-toolbar">
+        <button onclick="fitGraph()"><i data-lucide="maximize" style="width:11px;height:11px"></i> Fit</button>
+        <button id="btn-toggle-physics" onclick="togglePhysics()">Physics: Off</button>
+        <select id="graph-filter-type" onchange="onGraphFilterChange(this.value)">
+          <option value="all">All Types</option>
+          <option value="file">Files</option>
+          <option value="function">Functions</option>
+          <option value="class">Classes</option>
+          <option value="interface">Interfaces</option>
+          <option value="feature_domain">Domains & Architecture</option>
+          <option value="gotcha">Gotchas</option>
+          <option value="decision">Decisions</option>
+        </select>
+        <input id="graph-search-input" type="text" placeholder="Jump to node..." oninput="onGraphSearch(this.value)" />
+        <button class="btn-primary" onclick="openCreateNodeModal()">+ New Node</button>
+        <button onclick="openConnectEdgeModal()">+ Connect Edge</button>
+        <span style="color:var(--muted);font-size:11px;align-self:center;margin-left:4px" id="graph-stats-label">0 nodes</span>
+      </div>
+      <div id="graph-canvas"></div>
+
+      <!-- Slide-over Inspector Sidebar -->
+      <aside id="graph-inspector">
+        <div class="inspector-header">
+          <div style="display:flex;align-items:center;gap:8px;overflow:hidden">
+            <span id="inspector-badge" class="badge-project">NODE</span>
+            <span id="inspector-name" class="inspector-title">Node Name</span>
+          </div>
+          <button class="inspector-close" onclick="closeNodeInspector()">&times;</button>
+        </div>
+        <div class="inspector-body" id="inspector-body">
+          <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Select a node in the graph to inspect details.</div>
+        </div>
+        <div class="inspector-footer" id="inspector-footer" style="display:none">
+          <button class="btn-action" id="inspector-connect-btn">+ Connect</button>
+          <button class="btn-action" id="inspector-edit-btn">Edit</button>
+          <button class="btn-action" style="color:var(--rose);border-color:rgba(244,63,94,0.3)" id="inspector-delete-btn">Delete</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- VIEW 2: ARCHITECTURE & FLOWS -->
+  <section class="view-panel" id="view-flows">
+    <div class="view-header">
+      <div>
+        <div class="view-title"><i data-lucide="git-merge" style="color:var(--indigo)"></i> Architecture & Sequence Flows</div>
+        <div class="view-desc">Execution call chains and architectural dependencies connecting entry points to services and database.</div>
+      </div>
+    </div>
+    <div class="flow-list" id="flow-cards-container"></div>
+  </section>
+
+  <!-- VIEW 3: GOTCHA SHIELD -->
+  <section class="view-panel" id="view-gotchas">
     <div class="view-header">
       <div>
         <div class="view-title"><i data-lucide="shield-alert" style="color:var(--amber)"></i> Known Code Gotchas</div>
@@ -615,48 +915,12 @@ table.clean-table tr:hover td {
     <div class="gotcha-grid" id="gotcha-cards-container"></div>
   </section>
 
-  <!-- VIEW 2: SEQUENCE FLOWS -->
-  <section class="view-panel" id="view-flows">
-    <div class="view-header">
-      <div>
-        <div class="view-title"><i data-lucide="git-merge" style="color:var(--indigo)"></i> Architecture & Sequence Flows</div>
-        <div class="view-desc">Execution call chains and architectural dependencies connecting entry points to services and database.</div>
-      </div>
-    </div>
-    <div class="flow-list" id="flow-cards-container"></div>
-  </section>
-
-  <!-- VIEW 3: WORKSPACE & IMPACT -->
-  <section class="view-panel" id="view-workspace">
-    <div class="view-header">
-      <div>
-        <div class="view-title"><i data-lucide="box" style="color:var(--cyan)"></i> Workspace & Blast Radius Topology</div>
-        <div class="view-desc">Monorepo packages, package graph, and blast radius simulation.</div>
-      </div>
-    </div>
-    <div class="workspace-grid">
-      <div class="ws-card">
-        <h3><i data-lucide="layers" style="width:16px;height:16px"></i> Repository Topology</h3>
-        <div id="ws-topology-info" style="font-size:13px;color:#cbd5e1;line-height:1.6">Loading workspace information...</div>
-      </div>
-      <div class="ws-card">
-        <h3><i data-lucide="target" style="width:16px;height:16px"></i> Blast Radius Checker</h3>
-        <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Check downstream impact and consumer packages for a target file:</p>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <input type="text" id="blast-input" class="search-input" placeholder="e.g. src/auth.ts or package/core" style="flex:1" />
-          <button class="btn-action" onclick="simulateBlastRadius()">Check</button>
-        </div>
-        <div id="blast-result" style="font-size:12px;color:#cbd5e1;background:var(--bg);padding:12px;border-radius:6px;border:1px solid var(--border)">Enter a target path to inspect blast radius.</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- VIEW 4: HEALTH & EFFICIENCY -->
+  <!-- VIEW 4: HEALTH & AUDIT -->
   <section class="view-panel" id="view-health">
     <div class="view-header">
       <div>
         <div class="view-title"><i data-lucide="activity" style="color:var(--emerald)"></i> Efficiency & Health Metrics</div>
-        <div class="view-desc">Proving that the more coding agents use Kuma, the more efficient and regression-free development becomes.</div>
+        <div class="view-desc">Project metrics and stale reference detection ensuring memory reliability.</div>
       </div>
     </div>
 
@@ -684,19 +948,94 @@ table.clean-table tr:hover td {
       <div id="staleness-container" style="padding:16px;font-size:12px;color:var(--muted)">Checking staleness...</div>
     </div>
   </section>
-
-  <!-- VIEW 5: KNOWLEDGE GRAPH -->
-  <section class="view-panel" id="view-graph" style="padding:0">
-    <div id="graph-viewport">
-      <div class="graph-toolbar">
-        <button onclick="fitGraph()"><i data-lucide="maximize" style="width:11px;height:11px"></i> Fit</button>
-        <button id="btn-toggle-physics" onclick="togglePhysics()">Physics: Off</button>
-        <span style="color:var(--muted);font-size:11px;align-self:center;margin-left:4px" id="graph-stats-label">0 nodes</span>
-      </div>
-      <div id="graph-canvas"></div>
-    </div>
-  </section>
 </main>
+
+<!-- Modal: Create / Edit Node -->
+<div class="kuma-modal-backdrop" id="modal-node">
+  <div class="kuma-modal">
+    <div class="kuma-modal-header">
+      <span style="font-weight:700;font-size:14px" id="modal-node-title">Create Knowledge Node</span>
+      <button class="inspector-close" onclick="closeModal('modal-node')">&times;</button>
+    </div>
+    <div class="kuma-modal-body">
+      <input type="hidden" id="node-form-id" />
+      <div class="form-group">
+        <label>Type</label>
+        <select id="node-form-type" class="form-control">
+          <option value="feature_domain">feature_domain (Domain / Architecture Boundary)</option>
+          <option value="arch_flow">arch_flow (Architecture Flow / Sequence)</option>
+          <option value="decision">decision (Architecture Decision)</option>
+          <option value="workflow">workflow (Business / Code Workflow)</option>
+          <option value="function">function</option>
+          <option value="class">class</option>
+          <option value="interface">interface</option>
+          <option value="file">file</option>
+          <option value="api_route">api_route</option>
+          <option value="gotcha">gotcha</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="node-form-name" class="form-control" placeholder="e.g. AuthEngine, calculateMetrics, UserStore" />
+      </div>
+      <div class="form-group">
+        <label>File Path (optional)</label>
+        <input type="text" id="node-form-filepath" class="form-control" placeholder="e.g. src/engine/kumaDb.ts" />
+      </div>
+      <div class="form-group">
+        <label>Purpose / Description (for AI Agents and Developers)</label>
+        <textarea id="node-form-desc" class="form-control" rows="3" placeholder="Explain what this component or function does..."></textarea>
+      </div>
+    </div>
+    <div class="kuma-modal-footer">
+      <button class="btn-action" onclick="closeModal('modal-node')">Cancel</button>
+      <button class="btn-action btn-primary" onclick="submitNodeForm()">Save Node</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Connect Edge -->
+<div class="kuma-modal-backdrop" id="modal-edge">
+  <div class="kuma-modal">
+    <div class="kuma-modal-header">
+      <span style="font-weight:700;font-size:14px">Connect Nodes (Create Edge)</span>
+      <button class="inspector-close" onclick="closeModal('modal-edge')">&times;</button>
+    </div>
+    <div class="kuma-modal-body">
+      <div class="form-group">
+        <label>Source Node</label>
+        <select id="edge-form-source" class="form-control"></select>
+      </div>
+      <div class="form-group">
+        <label>Relationship Type</label>
+        <select id="edge-form-type" class="form-control">
+          <option value="calls">calls (Function A calls Function B)</option>
+          <option value="imports">imports (Module A imports Module B)</option>
+          <option value="defines">defines (File defines Function/Class)</option>
+          <option value="tests">tests (Test verifies Code)</option>
+          <option value="depends_on">depends_on (Component depends on Target)</option>
+          <option value="affects">affects (Change here impacts Target)</option>
+          <option value="implements">implements (Class implements Interface)</option>
+          <option value="extends">extends (Class extends Superclass)</option>
+          <option value="flows_through">flows_through (Architecture Flow)</option>
+          <option value="uses">uses (Subsystem uses Component/Service)</option>
+          <option value="produces">produces (Subsystem produces Artifact/Event)</option>
+          <option value="validates">validates (Subsystem validates Contract)</option>
+          <option value="routes_to">routes_to (Router routes to Subsystem)</option>
+          <option value="configures">configures (Subsystem configures Target)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Target Node</label>
+        <select id="edge-form-target" class="form-control"></select>
+      </div>
+    </div>
+    <div class="kuma-modal-footer">
+      <button class="btn-action" onclick="closeModal('modal-edge')">Cancel</button>
+      <button class="btn-action btn-primary" onclick="submitEdgeForm()">Create Connection</button>
+    </div>
+  </div>
+</div>
 
 <script>
 var API = window.location.origin + "/api";
@@ -737,10 +1076,17 @@ async function fetchDashboard() {
 
 function renderAll(data) {
   if (!data) return;
+  if (document.getElementById("badge-graph-count")) {
+    document.getElementById("badge-graph-count").textContent = data.nodes ? data.nodes.length : 0;
+  }
   try { renderGotchas(data.gotchas || []); } catch (e) { console.error("renderGotchas error:", e); }
   try { renderFlows(data.flows || []); } catch (e) { console.error("renderFlows error:", e); }
-  try { renderWorkspace(data.workspace, data.nodes || []); } catch (e) { console.error("renderWorkspace error:", e); }
   try { renderHealth(data); } catch (e) { console.error("renderHealth error:", e); }
+
+  var graphTab = document.querySelector('.nav-tab[data-view="graph"]');
+  if (graphTab && graphTab.classList.contains("active")) {
+    setTimeout(initOrRefreshGraph, 20);
+  }
   if (window.lucide && window.lucide.createIcons) {
     try { window.lucide.createIcons(); } catch {}
   }
@@ -864,53 +1210,6 @@ function renderFlows(flows) {
   if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
 }
 
-function renderWorkspace(ws, nodes) {
-  var container = document.getElementById("ws-topology-info");
-  if (!container) return;
-  if (!ws) {
-    container.innerHTML = "<div>Single package workspace.</div>";
-    return;
-  }
-  var nodesLen = (nodes && nodes.length) ? nodes.length : 0;
-  var pkgHtml = '';
-  if (ws.packages && Array.isArray(ws.packages) && ws.packages.length > 0) {
-    pkgHtml = `
-      <div style="margin-top:10px"><strong>Monorepo Packages (${ws.packages.length}):</strong></div>
-      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
-        ${ws.packages.map(function(p) {
-          var name = typeof p === 'string' ? p : (p.name || p.path || '');
-          return `<span class="badge-pkg" style="background:#1e293b;border:1px solid #334155;padding:2px 8px;border-radius:4px;font-size:11px">📦 ${escapeHtml(name)}</span>`;
-        }).join("")}
-      </div>
-    `;
-  }
-  container.innerHTML = `
-    <div style="margin-bottom:8px"><strong>Workspace Type:</strong> <span class="badge-project">${escapeHtml(ws.type || "standard")}</span></div>
-    <div style="margin-bottom:8px"><strong>Project Root:</strong> <code>${escapeHtml(ws.name || "root")}</code> (v${escapeHtml(ws.version || "1.0.0")})</div>
-    ${pkgHtml}
-    <div style="margin-top:12px;color:var(--muted)">Total indexed knowledge entities: <strong>${nodesLen}</strong></div>
-  `;
-}
-
-function simulateBlastRadius() {
-  var val = (document.getElementById("blast-input").value || "").trim();
-  var out = document.getElementById("blast-result");
-  if (!val) {
-    out.innerHTML = "⚠️ Please enter a target path or symbol.";
-    return;
-  }
-  if (!currentData || !currentData.edges) {
-    out.innerHTML = "No graph data available.";
-    return;
-  }
-  var matchingEdges = currentData.edges.filter(e => String(e.source).includes(val) || String(e.target).includes(val));
-  out.innerHTML = `
-    <div style="font-weight:700;color:var(--amber-light);margin-bottom:6px">Blast Radius for "${escapeHtml(val)}":</div>
-    <div>Found <strong>${matchingEdges.length}</strong> directly connected relationship(s).</div>
-    <div style="margin-top:8px">${matchingEdges.slice(0, 5).map(e => `• <code>${escapeHtml(e.source)}</code> <strong>${escapeHtml(e.relation)}</strong> <code>${escapeHtml(e.target)}</code>`).join("<br>")}</div>
-  `;
-}
-
 function renderHealth(data) {
   var eff = data.efficiency || {};
   var kpiContainer = document.getElementById("kpi-container");
@@ -923,8 +1222,8 @@ function renderHealth(data) {
       <div class="kpi-label">Known Gotchas Tracked</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-num" style="color:var(--emerald)">${passedRate}</div>
-      <div class="kpi-label">Auto-Verification Pass Rate</div>
+      <div class="kpi-num" style="color:var(--emerald)">${data.nodes ? data.nodes.length : 0}</div>
+      <div class="kpi-label">Topology Nodes Mapped</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-num" style="color:var(--amber)">~${savedMinutes}</div>
@@ -970,50 +1269,534 @@ function renderHealth(data) {
   }
 }
 
+var selectedNodeId = null;
+var visNodesDataSet = null;
+var visEdgesDataSet = null;
+
+var NODE_COLORS = {
+  file: "#06b6d4",
+  function: "#3b82f6",
+  class: "#ec4899",
+  interface: "#a855f7",
+  type: "#8b5cf6",
+  component: "#0ea5e9",
+  api_route: "#14b8a6",
+  test: "#f59e0b",
+  arch_flow: "#6366f1",
+  feature_domain: "#6366f1",
+  feature: "#4f46e5",
+  decision: "#10b981",
+  gotcha: "#f97316",
+  workflow: "#818cf8",
+  cross_service_link: "#818cf8",
+  research: "#22c55e",
+};
+
+function getNodeColor(type) {
+  return NODE_COLORS[type] || "#64748b";
+}
+
 function initOrRefreshGraph() {
   if (!currentData || !currentData.nodes) return;
   var container = document.getElementById("graph-canvas");
   document.getElementById("graph-stats-label").textContent = `${currentData.nodes.length} nodes, ${currentData.edges ? currentData.edges.length : 0} edges`;
 
-  var visNodes = new vis.DataSet(currentData.nodes.slice(0, 300).map(function(n) {
-    var color = "#64748b";
-    if (n.type === "file") color = "#06b6d4";
-    else if (n.type === "gotcha") color = "#f59e0b";
-    else if (n.type === "arch_flow" || n.type === "feature_domain") color = "#6366f1";
-    else if (n.type === "cross_service_link" || n.type === "workflow") color = "#818cf8";
-    else if (n.type === "decision") color = "#10b981";
+  var filterType = document.getElementById("graph-filter-type") ? document.getElementById("graph-filter-type").value : "all";
+  var displayNodes = currentData.nodes;
+  if (filterType !== "all") {
+    if (filterType === "feature_domain") {
+      displayNodes = displayNodes.filter(n => n.type === "feature_domain" || n.type === "arch_flow" || n.type === "decision");
+    } else {
+      displayNodes = displayNodes.filter(n => n.type === filterType);
+    }
+  }
+
+  visNodesDataSet = new vis.DataSet(displayNodes.slice(0, 400).map(function(n) {
+    var color = getNodeColor(n.type);
+    var label = n.name || n.id.split("::").pop();
+
+    let meta = {};
+    try { meta = typeof n.metadata === "string" ? JSON.parse(n.metadata) : (n.metadata || {}); } catch {}
+
+    var title = `${label} (${n.type})${n.file_path ? '\nFile: ' + n.file_path : ''}`;
+    if (meta.description) title += `\nPurpose: ${meta.description.split('\n')[0]}`;
+    if (meta.signature) title += `\nSignature: ${meta.signature}`;
+
+    // Size hierarchy for clear visual scanning
+    var size = 11;
+    if (n.type === "file") size = 17;
+    else if (n.type === "feature_domain" || n.type === "arch_flow") size = 15;
+    else if (n.type === "class" || n.type === "interface") size = 13;
+    else if (n.type === "function" || n.type === "component") size = 11;
+    else if (n.type === "decision") size = 12;
+    else if (n.type === "gotcha") size = 12;
+
     return {
       id: n.id,
-      label: n.name || n.id,
-      shape: "box",
-      color: { background: color, border: "#243049", highlight: "#fde68a" },
-      font: { color: "#fff", size: 11, face: "ui-monospace, monospace" },
-      margin: 8,
+      label: label,
+      title: title,
+      shape: "dot",
+      size: size,
+      color: {
+        background: color,
+        border: "#0f172a",
+        highlight: {
+          background: color,
+          border: "#ffffff",
+        },
+        hover: {
+          background: color,
+          border: "#e2e8f0",
+        },
+      },
+      borderWidth: 2,
+      borderWidthSelected: 3,
+      font: {
+        color: "#cbd5e1",
+        size: 11,
+        face: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        strokeWidth: 2,
+        strokeColor: "#060911",
+        vadjust: 3, // Pushes title directly underneath the circular node!
+      },
     };
   }));
 
-  var visEdges = new vis.DataSet((currentData.edges || []).slice(0, 500).map(function(e) {
+  var displayedNodeIds = new Set(visNodesDataSet.getIds());
+  var validEdges = (currentData.edges || []).filter(e => displayedNodeIds.has(e.source) && displayedNodeIds.has(e.target));
+
+  visEdgesDataSet = new vis.DataSet(validEdges.slice(0, 700).map(function(e) {
+    const isConceptVerb = ["uses", "produces", "validates", "routes_to", "configures", "flows_through"].includes(e.type);
     return {
       from: e.source,
       to: e.target,
-      arrows: "to",
-      color: { color: "#334155", highlight: "#f59e0b" },
-      width: 1,
+      arrows: {
+        to: { enabled: true, scaleFactor: 0.5 }
+      },
+      title: e.relation || e.type,
+      label: isConceptVerb ? e.type : undefined,
+      font: isConceptVerb ? { size: 9, color: "#94a3b8", strokeWidth: 2, strokeColor: "#060911", align: "middle" } : undefined,
+      color: {
+        color: isConceptVerb ? "rgba(99, 102, 241, 0.45)" : "rgba(148, 163, 184, 0.22)",
+        highlight: "#f59e0b",
+        hover: "#38bdf8",
+      },
+      smooth: {
+        type: "continuous",
+        roundness: 0.15,
+      },
+      width: isConceptVerb ? 1.8 : 1.2,
     };
   }));
 
   var options = {
     physics: {
       enabled: physicsEnabled,
-      barnesHut: { gravitationalConstant: -3000, springLength: 80 },
+      barnesHut: {
+        gravitationalConstant: -2800,
+        centralGravity: 0.2,
+        springLength: 90,
+        springConstant: 0.04,
+        damping: 0.09,
+      },
+      stabilization: {
+        iterations: 150,
+        updateInterval: 25,
+      },
     },
-    interaction: { hover: true, tooltipDelay: 100 },
+    interaction: {
+      hover: true,
+      tooltipDelay: 120,
+      zoomView: true,
+      dragView: true,
+      selectConnectedEdges: true,
+    },
   };
 
   if (graphNetwork) {
     graphNetwork.destroy();
   }
-  graphNetwork = new vis.Network(container, { nodes: visNodes, edges: visEdges }, options);
+  graphNetwork = new vis.Network(container, { nodes: visNodesDataSet, edges: visEdgesDataSet }, options);
+
+  graphNetwork.on("selectNode", function(params) {
+    if (params.nodes && params.nodes.length > 0) {
+      openNodeInspector(params.nodes[0]);
+    }
+  });
+
+  graphNetwork.on("click", function(params) {
+    if (!params.nodes || params.nodes.length === 0) {
+      // Clicked on empty space
+    }
+  });
+}
+
+function onGraphFilterChange(val) {
+  initOrRefreshGraph();
+}
+
+function onGraphSearch(query) {
+  if (!query || !graphNetwork || !visNodesDataSet) return;
+  var q = query.trim().toLowerCase();
+  var foundId = null;
+  var allItems = visNodesDataSet.get();
+  for (var i = 0; i < allItems.length; i++) {
+    var item = allItems[i];
+    if (item.label.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)) {
+      foundId = item.id;
+      break;
+    }
+  }
+  if (foundId) {
+    selectAndFocusNode(foundId);
+  }
+}
+
+async function openNodeInspector(nodeId) {
+  selectedNodeId = nodeId;
+  var inspector = document.getElementById("graph-inspector");
+  var badge = document.getElementById("inspector-badge");
+  var nameEl = document.getElementById("inspector-name");
+  var body = document.getElementById("inspector-body");
+  var footer = document.getElementById("inspector-footer");
+
+  inspector.classList.add("open");
+  badge.textContent = "...";
+  badge.style.background = "rgba(255,255,255,0.1)";
+  nameEl.textContent = "Loading node details...";
+  body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:30px">Fetching metadata & topology...</div>';
+  footer.style.display = "none";
+
+  try {
+    var res = await fetch(API + "/node/" + encodeURIComponent(nodeId)).then(r => r.json());
+    if (!res || !res.node) {
+      body.innerHTML = '<div style="color:var(--rose);padding:20px">Node not found.</div>';
+      return;
+    }
+
+    var node = res.node;
+    var outgoing = res.outgoing || [];
+    var incoming = res.incoming || [];
+    var gotchas = res.gotchas || [];
+
+    var meta = {};
+    try { meta = typeof node.metadata === "string" ? JSON.parse(node.metadata) : (node.metadata || {}); } catch {}
+
+    var typeColor = getNodeColor(node.type);
+    badge.textContent = node.type;
+    badge.style.background = typeColor;
+    badge.style.color = "#fff";
+    nameEl.textContent = node.name || node.id;
+    nameEl.title = node.name || node.id;
+
+    var html = [];
+
+    // 1. Identity & File Path
+    html.push(`
+      <div class="inspector-section">
+        <div class="inspector-label">Location</div>
+        <div style="display:flex;align-items:center;gap:6px;background:var(--card-bg);padding:8px 10px;border-radius:6px;border:1px solid var(--border)">
+          <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(node.file_path || 'Virtual / In-memory entity')}</span>
+          ${node.file_path ? `<button class="btn-action" style="padding:2px 6px;font-size:10px" onclick="copyText('${escapeAttr(node.file_path)}')">Copy</button>` : ''}
+        </div>
+      </div>
+    `);
+
+    // 1b. Centrality & Blast Radius
+    var centrality = res.centrality || { inDegree: incoming.length, outDegree: outgoing.length, isHub: incoming.length >= 4 };
+    var hubTag = centrality.isHub
+      ? '<span style="background:rgba(239,68,68,0.2);color:#f87171;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px">🔥 ARCHITECTURAL HUB</span>'
+      : '<span style="background:rgba(59,130,246,0.15);color:#60a5fa;padding:2px 8px;border-radius:4px;font-size:11px">Modular Node</span>';
+    html.push(`
+      <div class="inspector-section">
+        <div class="inspector-label">Centrality & Impact Rank</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card-bg);padding:8px 10px;border-radius:6px;border:1px solid var(--border)">
+          <div>${hubTag}</div>
+          <div style="font-size:11px;color:var(--muted)"><b>${centrality.inDegree}</b> incoming · <b>${centrality.outDegree}</b> dependencies</div>
+        </div>
+      </div>
+    `);
+
+    // 2. Description / Purpose
+    if (meta.description) {
+      html.push(`
+        <div class="inspector-section">
+          <div class="inspector-label"><i data-lucide="book-open" style="width:12px;height:12px"></i> Purpose / Explanation</div>
+          <div class="inspector-desc">${escapeHtml(meta.description)}</div>
+        </div>
+      `);
+    } else {
+      html.push(`
+        <div class="inspector-section">
+          <div class="inspector-label"><i data-lucide="book-open" style="width:12px;height:12px"></i> Purpose / Explanation</div>
+          <div style="font-size:12px;color:var(--muted);font-style:italic">No description recorded. Click 'Edit' below to add one.</div>
+        </div>
+      `);
+    }
+
+    // 3. Signature & Parameters
+    if (meta.signature) {
+      html.push(`
+        <div class="inspector-section">
+          <div class="inspector-label"><i data-lucide="code" style="width:12px;height:12px"></i> Type Signature</div>
+          <pre class="inspector-code"><code>${escapeHtml(meta.signature)}</code></pre>
+        </div>
+      `);
+    }
+
+    // 4. Methods / Members
+    if (meta.methods && Array.isArray(meta.methods) && meta.methods.length > 0) {
+      html.push(`
+        <div class="inspector-section">
+          <div class="inspector-label">Public Methods (${meta.methods.length})</div>
+          <div class="chip-list">
+            ${meta.methods.map(m => `<div class="inspector-chip" style="cursor:default"><span class="chip-badge">method</span> ${escapeHtml(m)}</div>`).join("")}
+          </div>
+        </div>
+      `);
+    } else if (meta.members && Array.isArray(meta.members) && meta.members.length > 0) {
+      html.push(`
+        <div class="inspector-section">
+          <div class="inspector-label">Members (${meta.members.length})</div>
+          <div class="chip-list">
+            ${meta.members.map(m => `<div class="inspector-chip" style="cursor:default"><span class="chip-badge">member</span> ${escapeHtml(m)}</div>`).join("")}
+          </div>
+        </div>
+      `);
+    }
+
+    // 5. Incoming Connections (who references/calls/imports this)
+    html.push(`
+      <div class="inspector-section">
+        <div class="inspector-label">Incoming Connections (${incoming.length})</div>
+        <div class="chip-list">
+          ${incoming.length === 0 ? '<div style="color:var(--muted);font-size:12px">None</div>' : ''}
+          ${incoming.map(e => `
+            <div class="inspector-chip" onclick="selectAndFocusNode('${escapeAttr(e.source)}')">
+              <span class="chip-badge" style="color:var(--amber-light)">${escapeHtml(e.relation)}</span>
+              <span>${escapeHtml(e.source_name || e.source)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `);
+
+    // 6. Outgoing Connections (what this calls/imports/defines)
+    html.push(`
+      <div class="inspector-section">
+        <div class="inspector-label">Outgoing Connections (${outgoing.length})</div>
+        <div class="chip-list">
+          ${outgoing.length === 0 ? '<div style="color:var(--muted);font-size:12px">None</div>' : ''}
+          ${outgoing.map(e => `
+            <div class="inspector-chip" onclick="selectAndFocusNode('${escapeAttr(e.target)}')">
+              <span class="chip-badge" style="color:var(--cyan)">${escapeHtml(e.relation)}</span>
+              <span>${escapeHtml(e.target_name || e.target)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `);
+
+    // 7. Associated Gotchas
+    if (gotchas.length > 0) {
+      html.push(`
+        <div class="inspector-section">
+          <div class="inspector-label" style="color:var(--rose)">Associated Gotchas (${gotchas.length})</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${gotchas.map(g => `
+              <div style="background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);border-radius:6px;padding:10px;font-size:12px">
+                <div style="font-weight:700;color:var(--rose);margin-bottom:4px">⚠️ ${escapeHtml(g.description)}</div>
+                ${g.workaround ? `<div style="color:var(--muted);font-size:11px">Workaround: ${escapeHtml(g.workaround)}</div>` : ''}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `);
+    }
+
+    body.innerHTML = html.join("");
+    footer.style.display = "flex";
+
+    // Setup action buttons
+    document.getElementById("inspector-connect-btn").onclick = function() {
+      openConnectEdgeModal(node.id);
+    };
+    document.getElementById("inspector-edit-btn").onclick = function() {
+      openEditNodeModal(node);
+    };
+    document.getElementById("inspector-delete-btn").onclick = function() {
+      deleteNode(node.id);
+    };
+
+    if (window.lucide && window.lucide.createIcons) {
+      try { window.lucide.createIcons(); } catch {}
+    }
+  } catch (err) {
+    body.innerHTML = `<div style="color:var(--rose);padding:20px">Failed to load node: ${escapeHtml(String(err))}</div>`;
+  }
+}
+
+function closeNodeInspector() {
+  document.getElementById("graph-inspector").classList.remove("open");
+  selectedNodeId = null;
+}
+
+function selectAndFocusNode(nodeId) {
+  if (graphNetwork) {
+    graphNetwork.selectNodes([nodeId]);
+    graphNetwork.focus(nodeId, {
+      scale: 1.2,
+      animation: { duration: 400, easingFunction: "easeInOutQuad" },
+    });
+  }
+  openNodeInspector(nodeId);
+}
+
+function closeModal(modalId) {
+  var el = document.getElementById(modalId);
+  if (el) el.classList.remove("open");
+}
+
+function openCreateNodeModal() {
+  document.getElementById("modal-node-title").textContent = "Create Knowledge Node";
+  document.getElementById("node-form-id").value = "";
+  document.getElementById("node-form-type").value = "feature_domain";
+  document.getElementById("node-form-name").value = "";
+  document.getElementById("node-form-filepath").value = "";
+  document.getElementById("node-form-desc").value = "";
+  document.getElementById("modal-node").classList.add("open");
+}
+
+function openEditNodeModal(node) {
+  document.getElementById("modal-node-title").textContent = "Edit Knowledge Node";
+  document.getElementById("node-form-id").value = node.id;
+  document.getElementById("node-form-type").value = node.type;
+  document.getElementById("node-form-name").value = node.name || "";
+  document.getElementById("node-form-filepath").value = node.file_path || "";
+  var meta = {};
+  try { meta = typeof node.metadata === "string" ? JSON.parse(node.metadata) : (node.metadata || {}); } catch {}
+  document.getElementById("node-form-desc").value = meta.description || "";
+  document.getElementById("modal-node").classList.add("open");
+}
+
+async function submitNodeForm() {
+  var id = document.getElementById("node-form-id").value.trim();
+  var type = document.getElementById("node-form-type").value;
+  var name = document.getElementById("node-form-name").value.trim();
+  var filePath = document.getElementById("node-form-filepath").value.trim();
+  var desc = document.getElementById("node-form-desc").value.trim();
+
+  if (!name) {
+    alert("Node name is required.");
+    return;
+  }
+
+  try {
+    var res = await fetch(API + "/node", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: id || undefined,
+        type: type,
+        name: name,
+        file_path: filePath || undefined,
+        description: desc || undefined,
+      }),
+    }).then(r => r.json());
+
+    if (res.ok) {
+      showToast("Knowledge node saved successfully!");
+      closeModal("modal-node");
+      await fetchDashboard();
+      if (res.node && res.node.id) {
+        selectAndFocusNode(res.node.id);
+      }
+    } else {
+      alert("Failed to save node: " + (res.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Error saving node: " + err);
+  }
+}
+
+function openConnectEdgeModal(prefillSource) {
+  var sourceSelect = document.getElementById("edge-form-source");
+  var targetSelect = document.getElementById("edge-form-target");
+  sourceSelect.innerHTML = "";
+  targetSelect.innerHTML = "";
+
+  if (currentData && currentData.nodes) {
+    currentData.nodes.forEach(function(n) {
+      var opt1 = document.createElement("option");
+      opt1.value = n.id;
+      opt1.textContent = `[${n.type}] ${n.name || n.id}`;
+      sourceSelect.appendChild(opt1);
+
+      var opt2 = document.createElement("option");
+      opt2.value = n.id;
+      opt2.textContent = `[${n.type}] ${n.name || n.id}`;
+      targetSelect.appendChild(opt2);
+    });
+  }
+
+  if (prefillSource) {
+    sourceSelect.value = prefillSource;
+  }
+  document.getElementById("modal-edge").classList.add("open");
+}
+
+async function submitEdgeForm() {
+  var source = document.getElementById("edge-form-source").value;
+  var target = document.getElementById("edge-form-target").value;
+  var type = document.getElementById("edge-form-type").value;
+
+  if (!source || !target) {
+    alert("Please select both source and target nodes.");
+    return;
+  }
+  if (source === target) {
+    alert("Source and target cannot be the same node.");
+    return;
+  }
+
+  try {
+    var res = await fetch(API + "/edge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: source, target: target, type: type }),
+    }).then(r => r.json());
+
+    if (res.ok) {
+      showToast("Connection created successfully!");
+      closeModal("modal-edge");
+      await fetchDashboard();
+      selectAndFocusNode(source);
+    } else {
+      alert("Failed to create connection: " + (res.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Error creating connection: " + err);
+  }
+}
+
+async function deleteNode(nodeId) {
+  if (!confirm(`Are you sure you want to delete node "${nodeId}" and its connections?`)) return;
+
+  try {
+    var res = await fetch(API + "/node/" + encodeURIComponent(nodeId), {
+      method: "DELETE",
+    }).then(r => r.json());
+
+    if (res.ok) {
+      showToast("Node deleted successfully!");
+      closeNodeInspector();
+      await fetchDashboard();
+    } else {
+      alert("Failed to delete node: " + (res.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Error deleting node: " + err);
+  }
 }
 
 function togglePhysics() {

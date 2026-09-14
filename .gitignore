@@ -8,3 +8,26 @@ coverage/
 .env
 .env.local
 *.tsbuildinfo
+
+# Local agent configs & test artifacts
+.aider.conf.yml
+.claude/
+.clinerules/
+.codewhale/
+.codex/
+.cursor/
+.github/skills/
+.kiro/
+.mcp.json
+.opencode/
+.qoder/
+.roo/
+.trae/
+.windsurf/
+.windsurfrules
+AGENTS.md
+CLAUDE.md
+CONVENTIONS.md
+GEMINI.md
+opencode.json
+settings.json

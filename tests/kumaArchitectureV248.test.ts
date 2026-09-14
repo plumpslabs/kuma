@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../src/utils/pathValidator.js";
 import { createCheckpoint, rollbackToCheckpoint, listCheckpoints } from "../src/engine/kumaCheckpoint.js";
-import { runAutoVerification } from "../src/engine/kumaVerifier.js";
 import { resolveGotchasForScope, addGotcha } from "../src/engine/kumaGotchas.js";
 import { getDb, flushDb } from "../src/engine/kumaDb.js";
 import { computeScopeHash, computeProjectHash } from "../src/engine/kumaDriftDetector.js";
@@ -32,18 +31,7 @@ describe("Kuma v2.4.8 Architectural Improvements & Edge Cases", () => {
     }
   });
 
-  // 2. Verifier force bypass
-  it("allows verifier execution when options.force is true", async () => {
-    const res = await runAutoVerification({
-      target: "tests/kumaRouter.test.ts",
-      force: true,
-      timeoutMs: 30000,
-    });
-    expect(res).toContain("Verification");
-    expect(res).toContain("tests/kumaRouter.test.ts");
-  }, 40000);
-
-  // 3. Gotchas are not auto-resolved on hash drift (safety preservation)
+  // 2. Gotchas are not auto-resolved on hash drift (safety preservation)
   it("preserves active gotchas instead of auto-resolving on hash drift", async () => {
     const testFile = "src/services/critical_security_auth.ts";
     await addGotcha({

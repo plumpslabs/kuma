@@ -1,42 +1,24 @@
 // ============================================================
-// KUMA CODE SCANNER — Legacy Code Structure Analyzer (DEPRECATED)
+// KUMA CODE SCANNER — AST & Topology Knowledge Graph Engine
 // ============================================================
-// ⚠️ LEGACY: This scanner uses regex to detect AST-level nodes
-// (functions, classes, imports, components). It is INACCURATE for
-// modern TypeScript/JSX code and often returns 0 structural nodes.
-//
-// Kuma's PRIMARY knowledge graph is now DOMAIN FLOW GRAPH —
-// High-level FeatureDomain → Workflow → CrossServiceLink chains
-// recorded via kuma_memory({ action: 'arch_flow' }).
-//
-// WHAT THIS SCANNER STILL DOES (Cold Start Only):
-//   - Detects file existence → file nodes
-//   - Detects imports → basic edges (unreliable)
-//   - Basic function/class detection (low accuracy for modern TS)
-//
-// WHAT TO USE INSTEAD:
-//   - For function/class structure → LSP, grep, or ast-grep
-//   - For architecture flow → kuma_memory arch_flow (recordDomainFlow)
-//   - For bugs/quirks → kuma_memory gotcha
-//   - For decisions → kuma_memory decision
-//
-// DESIGN NOTE:
-//   Scanner output is marked as [STALE-PRONE] — function/class/variable
-//   nodes may become outdated after refactoring. Domain flow nodes
-//   (feature_domain, workflow, cross_service_link) are STABLE because
-//   they record ARCHITECTURE INTENT, not code syntax.
+// Uses TypeScript Compiler API for accurate AST-level extraction:
+//   - File nodes & Module topology
+//   - Exported functions, classes, interfaces, types
+//   - Deterministic import edges (ESM-aware .js/.ts resolution)
+//   - Call graph edges (who calls which function)
+//   - Test associations (connecting tests to tested files)
+//   - Incremental mtime cache invalidation (anti-staleness)
 // ============================================================
 
 import fastGlob from "fast-glob";
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { getProjectRoot } from "../utils/pathValidator.js";
+import { getDb, saveDb } from "./kumaDb.js";
 import { upsertNode, addEdge, nodeId } from "./kumaGraph.js";
 import { DEFAULT_SOURCE_INCLUDES, SOURCE_EXTENSIONS, SOURCE_EXT_GLOB, isTestFile } from "./languageSupport.js";
-
-// ============================================================
-// Types
-// ============================================================
+import { parsePolyglotFile } from "./polyglotScanner.js";
 
 export interface ScanOptions {
   /** Directory scope to scan (relative to project root) */
@@ -56,20 +38,15 @@ export interface ScanResult {
   edgeCount: number;
   filesScanned: number;
   errors: string[];
-  /** Which parser was used per language */
   parserUsed?: string;
 }
 
-// ============================================================
-// Configuration
-// ============================================================
+const DEFAULT_MAX_FILES = 500;
+const DEFAULT_MAX_FILE_SIZE = 250 * 1024; // 250KB
 
-const DEFAULT_MAX_FILES = 200;
-const DEFAULT_MAX_FILE_SIZE = 100 * 1024; // 100KB
+// Cache file mtimes to avoid re-scanning unchanged files
+const fileMtimes = new Map<string, number>();
 
-// Cache of file modification times to avoid re-scanning unchanged files
-const fileCache = new Map<string, number>();
-// Cache getProjectRoot() result to avoid repeated calls
 let _cachedRoot: string | null = null;
 function getRoot(): string {
   if (!_cachedRoot) _cachedRoot = getProjectRoot();
@@ -77,54 +54,482 @@ function getRoot(): string {
 }
 
 // ============================================================
-// Regex Patterns — TypeScript / JavaScript (structural node parsing)
-// NOTE: file discovery, import resolution & test detection are
-// multi-language via languageSupport.ts; the syntax-level regexes
-// below only extract structure from TS/JS-family files.
+// Parsed File Data Structure
 // ============================================================
 
-const FUNCTION_DECL_RE = /(?:export\s+)?(?:async\s+)?function\s*(?:\*\s*)?(\w+)\s*\(/g;
-const ARROW_FN_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*[=:]\s*(?:async\s*)?(?:<[^>]+>\s*)?(?:\([\s\S]*?\)|\w+)\s*(?::\s*\w+(?:<[^>]*>)?)?\s*=>/g;
-const TYPED_ARROW_RE = /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*:\s*(?:\w+(?:<[^>]*>)?)?\s*=\s*(?:async\s*)?(?:<[^>]+>\s*)?\(/g;
-const CLASS_RE = /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/g;
-const IMPORT_RE = /import\s+(?:\{([^}]*)\}\s+from\s+)?(?:\w+\s+from\s+)?(?:\*\s+as\s+\w+\s+from\s+)?['"]([^'"]+)['"]/g;
-const JSX_RETURN_RE = /return\s*\(?\s*</;
-const JSX_ELEMENT_RE = /<([A-Z]\w+)[\s/>]/g;
-const JSX_IMPLICIT_RE = /=>\s*(?:\(\s*)?</;
-const EXPRESS_ROUTE_RE = /\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]\s*,\s*(\w+)/g;
-const HONO_ROUTE_RE = /c\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g;
-const EXPORT_RE = /export\s+(?:default\s+)?(\w+)/g;
-const CALL_RE = /(\w+)\s*\(/g;
-
-// Cross-scan caches
-const knownComponents = new Set<string>();
-const knownFunctions = new Set<string>();
-// Track where each function/component/class is defined: name -> filePath
-const symbolLocations = new Map<string, string>();
-
-// ============================================================
-// Helper
-// ============================================================
-
-function lineAt(content: string, index: number): number {
-  return content.substring(0, index).split("\n").length;
+export interface ParsedSymbol {
+  name: string;
+  kind: "function" | "class" | "interface" | "component" | "route";
+  line: number;
+  isExported: boolean;
+  description?: string;
+  signature?: string;
+  params?: Array<{ name: string; type?: string }>;
+  returnType?: string;
+  methods?: string[];
+  members?: string[];
+  extends?: string;
+  implements?: string[];
+  routeMethod?: string;
+  routePath?: string;
 }
 
-/** Extract directory tree from file paths — returns all ancestor dirs */
-function getDirectoryDirs(filePaths: string[]): string[] {
-  const dirs = new Set<string>();
-  for (const fp of filePaths) {
-    let dir = path.dirname(fp);
-    while (dir && dir !== "." && dir !== "/") {
-      dirs.add(dir);
-      dir = path.dirname(dir);
+export interface ParsedImport {
+  source: string;
+  symbols: string[];
+  isDefault: boolean;
+}
+
+export interface ParsedFile {
+  filePath: string;
+  symbols: ParsedSymbol[];
+  imports: ParsedImport[];
+  calledSymbols: string[];
+  isTest: boolean;
+}
+
+// ============================================================
+// AST Docstring & Signature Extraction Helpers
+// ============================================================
+
+/**
+ * Extract leading JSDoc or block comments from an AST node.
+ */
+function extractLeadingDoc(sourceFile: ts.SourceFile, node: ts.Node): string | undefined {
+  try {
+    const comments = ts.getLeadingCommentRanges(sourceFile.text, node.getFullStart());
+    if (!comments || comments.length === 0) return undefined;
+
+    for (let i = comments.length - 1; i >= 0; i--) {
+      const c = comments[i];
+      const raw = sourceFile.text.substring(c.pos, c.end).trim();
+      if (raw.startsWith("/**")) {
+        const cleaned = raw
+          .replace(/^\/\*\*|\*\/$/g, "")
+          .split("\n")
+          .map((l) => l.replace(/^\s*\*\s?/, "").trim())
+          .filter(Boolean)
+          .join("\n");
+        if (cleaned) return cleaned;
+      } else if (raw.startsWith("//")) {
+        const cleaned = raw.replace(/^\/\/\s?/, "").trim();
+        if (cleaned && !cleaned.startsWith("eslint") && !cleaned.startsWith("@ts-")) {
+          return cleaned;
+        }
+      }
+    }
+  } catch {
+    // Ignore extraction errors
+  }
+  return undefined;
+}
+
+/**
+ * Extract signature, parameters, and return type from a function node.
+ */
+function extractFunctionDetails(
+  fn: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+  sourceFile: ts.SourceFile
+): {
+  signature: string;
+  params: Array<{ name: string; type?: string }>;
+  returnType?: string;
+} {
+  const params: Array<{ name: string; type?: string }> = [];
+  for (const p of fn.parameters) {
+    const paramName = p.name.getText(sourceFile);
+    const paramType = p.type ? p.type.getText(sourceFile) : undefined;
+    params.push({ name: paramName, type: paramType });
+  }
+
+  const returnType = fn.type ? fn.type.getText(sourceFile) : undefined;
+  const paramStr = params
+    .map((p) => (p.type ? `${p.name}: ${p.type}` : p.name))
+    .join(", ");
+  const signature = `(${paramStr})${returnType ? `: ${returnType}` : ""}`;
+
+  return { signature, params, returnType };
+}
+
+/**
+ * Extract public methods from a class node.
+ */
+function extractClassDetails(
+  node: ts.ClassDeclaration,
+  sourceFile: ts.SourceFile
+): { methods?: string[] } {
+  const methods: string[] = [];
+  for (const member of node.members) {
+    if (ts.isMethodDeclaration(member) && member.name) {
+      const mName = member.name.getText(sourceFile);
+      const isPrivate =
+        member.modifiers?.some((m) => m.kind === ts.SyntaxKind.PrivateKeyword) ||
+        mName.startsWith("#") ||
+        mName.startsWith("_");
+      if (!isPrivate) {
+        const pStr = member.parameters
+          .map((p) => p.name.getText(sourceFile))
+          .join(", ");
+        methods.push(`${mName}(${pStr})`);
+      }
     }
   }
-  return [...dirs].sort();
+  return { methods: methods.length > 0 ? methods : undefined };
+}
+
+/**
+ * Extract public members/properties from an interface node.
+ */
+function extractInterfaceDetails(
+  node: ts.InterfaceDeclaration,
+  sourceFile: ts.SourceFile
+): { members?: string[] } {
+  const members: string[] = [];
+  for (const member of node.members) {
+    if (member.name) {
+      const mName = member.name.getText(sourceFile);
+      members.push(mName);
+    }
+  }
+  return { members: members.length > 0 ? members : undefined };
 }
 
 // ============================================================
-// Main Scanner — multi-language discovery
+// AST Parsing Engine (TypeScript Compiler API)
+// ============================================================
+
+export function parseFileAst(filePath: string, content: string): ParsedFile {
+  const result: ParsedFile = {
+    filePath,
+    symbols: [],
+    imports: [],
+    calledSymbols: [],
+    isTest: isTestFile(filePath),
+  };
+
+  const isTsOrJs = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(filePath);
+  if (!isTsOrJs) {
+    // Multi-Language Polyglot Grammar AST Parser (Python, Go, Rust, Java, C#, etc.)
+    return parsePolyglotFile(filePath, content);
+  }
+
+  try {
+    const isJsx = filePath.endsWith(".tsx") || filePath.endsWith(".jsx");
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      content,
+      ts.ScriptTarget.Latest,
+      true,
+      isJsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    );
+
+    function visit(node: ts.Node) {
+      if (!result.isTest) {
+        // 1. Function Declaration
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          const name = node.name.text;
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+          const isExported = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+          const description = extractLeadingDoc(sourceFile, node);
+          const { signature, params, returnType } = extractFunctionDetails(node, sourceFile);
+
+          result.symbols.push({
+            name,
+            kind: "function",
+            line,
+            isExported,
+            description,
+            signature,
+            params,
+            returnType,
+          });
+        }
+
+        // 2. Variable Statements (e.g. export const myHandler = () => ...)
+        else if (ts.isVariableStatement(node)) {
+          const isExported = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+          const varDoc = extractLeadingDoc(sourceFile, node);
+          for (const decl of node.declarationList.declarations) {
+            if (ts.isIdentifier(decl.name) && decl.initializer) {
+              const name = decl.name.text;
+              if (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer)) {
+                const line = sourceFile.getLineAndCharacterOfPosition(decl.getStart(sourceFile)).line + 1;
+                const fnDoc = extractLeadingDoc(sourceFile, decl) || varDoc;
+                const { signature, params, returnType } = extractFunctionDetails(decl.initializer, sourceFile);
+
+                result.symbols.push({
+                  name,
+                  kind: "function",
+                  line,
+                  isExported,
+                  description: fnDoc,
+                  signature,
+                  params,
+                  returnType,
+                });
+              }
+            }
+          }
+        }
+
+        // 3. Class Declaration
+        else if (ts.isClassDeclaration(node) && node.name) {
+          const name = node.name.text;
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+          const isExported = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+          const description = extractLeadingDoc(sourceFile, node);
+          const { methods } = extractClassDetails(node, sourceFile);
+          let extName: string | undefined;
+          const implNames: string[] = [];
+
+          if (node.heritageClauses) {
+            for (const hc of node.heritageClauses) {
+              if (hc.token === ts.SyntaxKind.ExtendsKeyword && hc.types.length > 0) {
+                extName = hc.types[0].expression.getText(sourceFile);
+              } else if (hc.token === ts.SyntaxKind.ImplementsKeyword) {
+                for (const t of hc.types) {
+                  implNames.push(t.expression.getText(sourceFile));
+                }
+              }
+            }
+          }
+
+          result.symbols.push({
+            name,
+            kind: "class",
+            line,
+            isExported,
+            description,
+            extends: extName,
+            implements: implNames.length > 0 ? implNames : undefined,
+            methods,
+          });
+        }
+
+        // 4. Interface Declaration
+        else if (ts.isInterfaceDeclaration(node) && node.name) {
+          const name = node.name.text;
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+          const isExported = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+          const description = extractLeadingDoc(sourceFile, node);
+          const { members } = extractInterfaceDetails(node, sourceFile);
+
+          result.symbols.push({
+            name,
+            kind: "interface",
+            line,
+            isExported,
+            description,
+            members,
+          });
+        }
+      }
+
+      // 5. Imports
+      if (ts.isImportDeclaration(node)) {
+        if (ts.isStringLiteral(node.moduleSpecifier)) {
+          const source = node.moduleSpecifier.text;
+          const symbols: string[] = [];
+          let isDefault = false;
+
+          if (node.importClause) {
+            if (node.importClause.name) {
+              symbols.push(node.importClause.name.text);
+              isDefault = true;
+            }
+            if (node.importClause.namedBindings) {
+              if (ts.isNamedImports(node.importClause.namedBindings)) {
+                for (const elem of node.importClause.namedBindings.elements) {
+                  symbols.push(elem.name.text);
+                }
+              } else if (ts.isNamespaceImport(node.importClause.namedBindings)) {
+                symbols.push(node.importClause.namedBindings.name.text);
+              }
+            }
+          }
+
+          if (source.startsWith(".") || source.startsWith("/")) {
+            result.imports.push({ source, symbols, isDefault });
+          }
+        }
+      }
+
+      // 6. Export Declarations (e.g. export { a, b } from './sub')
+      else if (ts.isExportDeclaration(node)) {
+        if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+          const source = node.moduleSpecifier.text;
+          if (source.startsWith(".") || source.startsWith("/")) {
+            result.imports.push({ source, symbols: [], isDefault: false });
+          }
+        }
+        if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+          for (const elem of node.exportClause.elements) {
+            result.symbols.push({
+              name: elem.name.text,
+              kind: "function",
+              line: 1,
+              isExported: true,
+            });
+          }
+        }
+      }
+
+      // 7. Function Calls
+      else if (ts.isCallExpression(node)) {
+        if (ts.isIdentifier(node.expression)) {
+          const fnName = node.expression.text;
+          if (fnName.length >= 2 && !isJsBuiltin(fnName)) {
+            result.calledSymbols.push(fnName);
+          }
+        } else if (ts.isPropertyAccessExpression(node.expression)) {
+          const propName = node.expression.name.text;
+          if (propName.length >= 2 && !isJsBuiltin(propName)) {
+            result.calledSymbols.push(propName);
+          }
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+  } catch {
+    return parseFallbackRegex(filePath, content);
+  }
+
+  return result;
+}
+
+function isJsBuiltin(name: string): boolean {
+  return [
+    "if", "for", "while", "switch", "catch", "return", "typeof", "delete", "throw",
+    "import", "export", "function", "class", "new", "try", "yield", "await",
+    "this", "super", "undefined", "null", "true", "false", "console", "log", "warn", "error",
+    "describe", "it", "test", "expect", "assert", "beforeEach", "afterEach", "beforeAll", "afterAll",
+    "jest", "require", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+    "Math", "JSON", "Object", "Array", "String", "Number", "Boolean", "Promise",
+    "Error", "Date", "RegExp", "Map", "Set", "Symbol", "push", "slice", "map", "filter",
+    "forEach", "reduce", "find", "join", "split", "trim", "replace", "startsWith", "endsWith",
+    "includes", "indexOf", "has", "get", "set", "add", "delete", "keys", "values", "entries",
+  ].includes(name);
+}
+
+function parseFallbackRegex(filePath: string, content: string): ParsedFile {
+  const result: ParsedFile = {
+    filePath,
+    symbols: [],
+    imports: [],
+    calledSymbols: [],
+    isTest: isTestFile(filePath),
+  };
+
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith("//") || line.startsWith("#")) continue;
+
+    // Functions (Python, Go, Rust, Ruby, PHP)
+    const fnMatch = line.match(/(?:def|func|fn|function)\s+([a-zA-Z0-9_]+)\s*(\([^)]*\))?/);
+    if (fnMatch) {
+      const name = fnMatch[1];
+      const signature = fnMatch[2] ? fnMatch[2] : undefined;
+      let description: string | undefined;
+
+      // Check preceding line for comment
+      if (i > 0) {
+        const prev = lines[i - 1].trim();
+        if (prev.startsWith("#") || prev.startsWith("//")) {
+          description = prev.replace(/^[#\/]+\s*/, "").trim();
+        }
+      }
+
+      // Check Python docstring on next lines
+      if (!description && i + 1 < lines.length) {
+        const nextLine = lines[i + 1].trim();
+        if (nextLine.startsWith('"""') || nextLine.startsWith("'''")) {
+          const quote = nextLine.slice(0, 3);
+          const docLines: string[] = [];
+          const restOfNext = nextLine.slice(3);
+          if (restOfNext.endsWith(quote) && restOfNext.length > 3) {
+            description = restOfNext.slice(0, -3).trim();
+          } else {
+            if (restOfNext) docLines.push(restOfNext);
+            for (let j = i + 2; j < Math.min(lines.length, i + 15); j++) {
+              const cur = lines[j].trim();
+              if (cur.endsWith(quote)) {
+                docLines.push(cur.slice(0, -3).trim());
+                break;
+              }
+              docLines.push(cur);
+            }
+            description = docLines.filter(Boolean).join(" ");
+          }
+        }
+      }
+
+      result.symbols.push({
+        name,
+        kind: "function",
+        line: i + 1,
+        isExported: !name.startsWith("_"),
+        signature,
+        description,
+      });
+    }
+
+    // Classes
+    const clsMatch = line.match(/(?:class|struct|type)\s+([a-zA-Z0-9_]+)/);
+    if (clsMatch) {
+      result.symbols.push({
+        name: clsMatch[1],
+        kind: "class",
+        line: i + 1,
+        isExported: true,
+      });
+    }
+
+    // Imports
+    const impMatch = line.match(/(?:import|from)\s+['"]([^'"]+)['"]/);
+    if (impMatch && (impMatch[1].startsWith(".") || impMatch[1].startsWith("/"))) {
+      result.imports.push({ source: impMatch[1], symbols: [], isDefault: false });
+    }
+  }
+
+  return result;
+}
+
+// ============================================================
+// ESM-Aware Import Path Resolution
+// ============================================================
+
+export function resolveImportPath(fromFile: string, importPath: string, root: string): string | null {
+  if (!importPath.startsWith(".") && !importPath.startsWith("/")) return null;
+
+  const fromDir = path.dirname(path.join(root, fromFile));
+  const cleanPath = importPath.replace(/\.(js|jsx|mjs|cjs|ts|tsx|py|go|rs|java|kt|cs|rb|php)$/, "");
+
+  const candidates = [
+    path.resolve(fromDir, importPath),
+    ...SOURCE_EXTENSIONS.map((ext) => path.resolve(fromDir, cleanPath + ext)),
+    ...SOURCE_EXTENSIONS.map((ext) => path.resolve(fromDir, cleanPath, `index${ext}`)),
+    path.resolve(fromDir, cleanPath, "__init__.py"),
+    path.resolve(fromDir, cleanPath, "mod.rs"),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        const rel = path.relative(root, candidate);
+        return rel.replace(/\\/g, "/");
+      }
+    } catch { /* skip */ }
+  }
+
+  return null;
+}
+
+// ============================================================
+// Main Scanner & Incremental Synchronizer
 // ============================================================
 
 export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResult> {
@@ -132,11 +537,15 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
   const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
   const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
-  const result: ScanResult = { nodeCount: 0, edgeCount: 0, filesScanned: 0, errors: [] };
+  const result: ScanResult = {
+    nodeCount: 0,
+    edgeCount: 0,
+    filesScanned: 0,
+    errors: [],
+    parserUsed: "TypeScript Compiler API (AST)",
+  };
 
-  // 1. Discover source files (multi-language — any supported language)
   const includePatterns = options.include || [...DEFAULT_SOURCE_INCLUDES];
-
   if (options.scope) {
     includePatterns.length = 0;
     if (options.scope.includes("/") || options.scope.includes(".")) {
@@ -148,485 +557,209 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
   }
 
   const ignorePatterns = [
-    "**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**",
-    "**/.next/**", "**/coverage/**", "**/*.d.ts",
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.next/**",
+    "**/coverage/**",
+    "**/*.d.ts",
+    "**/.kuma/**",
   ];
 
-  let files: string[];
+  let files: string[] = [];
   try {
     files = await fastGlob(includePatterns, {
-      cwd: root, ignore: ignorePatterns, onlyFiles: true,
-      deep: options.scope ? 10 : 6, dot: false,
+      cwd: root,
+      ignore: ignorePatterns,
+      onlyFiles: true,
+      deep: options.scope ? 10 : 7,
+      dot: false,
     });
   } catch (err) {
     result.errors.push(`Glob failed: ${err}`);
     return result;
   }
 
-  // Clear cross-scan caches
-  knownComponents.clear();
-  knownFunctions.clear();
-  symbolLocations.clear();
+  const targetCount = Math.min(files.length, maxFiles);
+  const parsedFiles: ParsedFile[] = [];
+  const symbolMap = new Map<string, string>(); // symbolName -> filePath
 
-  // First pass: parse all files + collect names
-  const scannedCount = Math.min(files.length, maxFiles);
-  const allParsed: Array<{ filePath: string; parsed: ParsedFile; content: string }> = [];
-  const scannedFilePaths: string[] = [];
-
-  for (let i = 0; i < scannedCount; i++) {
+  for (let i = 0; i < targetCount; i++) {
     const filePath = files[i];
     const fullPath = path.join(root, filePath);
 
     if (!fs.existsSync(fullPath)) continue;
-    const stat = fs.statSync(fullPath);
-    if (stat.size > maxFileSize) continue;
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(fullPath);
+      if (stat.size > maxFileSize) continue;
+    } catch {
+      continue;
+    }
 
     const mtime = stat.mtimeMs;
-    const cached = fileCache.get(filePath);
-    if (cached === mtime && !options.force) continue;
-    fileCache.set(filePath, mtime);
+    const cachedMtime = fileMtimes.get(filePath);
+    if (!options.force && cachedMtime === mtime) {
+      continue; // Unchanged file
+    }
+    fileMtimes.set(filePath, mtime);
 
     try {
       const content = fs.readFileSync(fullPath, "utf-8");
-      const parsed = parseFile(filePath, content);
-      allParsed.push({ filePath, parsed, content });
-      scannedFilePaths.push(filePath);
+      const parsed = parseFileAst(filePath, content);
+      parsedFiles.push(parsed);
 
-      // Collect names + locations for cross-reference
-      for (const comp of parsed.components) {
-        knownComponents.add(comp.name);
-        if (!symbolLocations.has(comp.name)) symbolLocations.set(comp.name, filePath);
-      }
-      for (const fn of parsed.functions) {
-        knownFunctions.add(fn.name);
-        if (!symbolLocations.has(fn.name)) symbolLocations.set(fn.name, filePath);
-      }
-    } catch (err) {
-      result.errors.push(`Error scanning ${filePath}: ${err}`);
-    }
-  }
-
-  // Also collect function names from classes
-  for (const { parsed } of allParsed) {
-    for (const cls of parsed.classes) {
-      knownFunctions.add(cls.name);
-      if (!symbolLocations.has(cls.name)) symbolLocations.set(cls.name, parsed.filePath);
-    }
-  }
-
-  // Second pass: record graph data
-  for (const { filePath, parsed, content } of allParsed) {
-    try {
-      await recordParsedFile(filePath, parsed, content, result);
-      result.filesScanned++;
-    } catch (err) {
-      result.errors.push(`Error recording ${filePath}: ${err}`);
-    }
-  }
-
-  // Third pass: create module nodes from directory structure
-  if (scannedFilePaths.length > 0) {
-    try {
-      const dirs = getDirectoryDirs(scannedFilePaths);
-      for (const dir of dirs) {
-        const moduleId = nodeId("module", dir);
-        await upsertNode({
-          id: moduleId,
-          type: "module",
-          name: dir,
-          metadata: { path: dir },
-        });
-        result.nodeCount++;
-
-        // Find files in this directory and create owns edges
-        for (const fp of scannedFilePaths) {
-          if (path.dirname(fp) === dir) {
-            const fileId = nodeId("file", fp);
-            try {
-              await addEdge({ sourceId: moduleId, targetId: fileId, type: "owns" });
-              result.edgeCount++;
-            } catch { /* edge may already exist */ }
-          }
+      for (const sym of parsed.symbols) {
+        if (!symbolMap.has(sym.name)) {
+          symbolMap.set(sym.name, filePath);
         }
       }
     } catch (err) {
-      result.errors.push(`Module nodes error: ${err}`);
+      result.errors.push(`Failed to parse ${filePath}: ${err}`);
     }
   }
 
-  return result;
-}
+  // Database operations
+  const db = await getDb();
 
-// ============================================================
-// File Parsing — TS/JS structural regex (other languages: file/test
-// nodes only via languageSupport.ts; structure via kuma_memory)
-// ============================================================
+  for (const parsed of parsedFiles) {
+    const { filePath, symbols, imports, calledSymbols, isTest } = parsed;
+    const fileId = nodeId("file", filePath);
 
-interface ParsedFile {
-  filePath: string;
-  functions: Array<{ name: string; line: number }>;
-  classes: Array<{ name: string; extends?: string; implements?: string[]; line: number }>;
-  components: Array<{ name: string; line: number }>;
-  routes: Array<{ method: string; pathPattern: string; handler: string; line: number }>;
-  imports: Array<{ source: string; symbols: string[]; isDefault: boolean }>;
-  exports: string[];
-  isTest: boolean;
-}
-
-function parseFile(filePath: string, content: string): ParsedFile {
-  const result: ParsedFile = {
-    filePath,
-    functions: [],
-    classes: [],
-    components: [],
-    routes: [],
-    imports: [],
-    exports: [],
-    isTest: isTestFile(filePath),
-  };
-
-  const lines = content.split("\n");
-  const isTsx = /\.(tsx|jsx)$/.test(filePath);
-  const hasJSX = isTsx && content.includes("<") && content.includes(">");
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineNum = i + 1;
-    const trimmed = line.trim();
-
-    // Skip comments
-    if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
-
-    let m: RegExpExecArray | null;
-
-    // 1. Function declarations
-    FUNCTION_DECL_RE.lastIndex = 0;
-    while ((m = FUNCTION_DECL_RE.exec(line)) !== null) {
-      const fnName = m[1];
-      if (fnName) {
-        const prevLine = (lines[i - 1] || "").trim();
-        if (!prevLine.match(/^\s*(?:export\s+)?(?:abstract\s+)?class\s+/)) {
-          result.functions.push({ name: fnName, line: lineNum });
-        }
-      }
-    }
-
-    // 2. Arrow function assignments
-    ARROW_FN_RE.lastIndex = 0;
-    while ((m = ARROW_FN_RE.exec(line)) !== null) {
-      const fnName = m[1];
-      if (fnName && !fnName.startsWith("_")) result.functions.push({ name: fnName, line: lineNum });
-    }
-
-    // 3. Typed arrow functions
-    TYPED_ARROW_RE.lastIndex = 0;
-    while ((m = TYPED_ARROW_RE.exec(line)) !== null) {
-      const fnName = m[1];
-      if (fnName && !fnName.startsWith("_") && /^\s*(?:const|let|var)\s+/.test(line)) {
-        if (line.includes("=>") || line.includes("function(") || line.includes("async")) {
-          result.functions.push({ name: fnName, line: lineNum });
-        }
-      }
-    }
-
-    // 4. Class declarations
-    CLASS_RE.lastIndex = 0;
-    while ((m = CLASS_RE.exec(line)) !== null) {
-      const cls: ParsedFile["classes"][0] = { name: m[1], line: lineNum };
-      if (m[2]) cls.extends = m[2];
-      if (m[3]) cls.implements = m[3].split(",").map((s) => s.trim());
-      result.classes.push(cls);
-    }
-
-    // 5. Imports
-    IMPORT_RE.lastIndex = 0;
-    while ((m = IMPORT_RE.exec(line)) !== null) {
-      const symbols = m[1] ? m[1].split(",").map((s) => s.trim().split(" as ")[0].trim()) : [];
-      const source = m[2] || "";
-      if (source.startsWith(".") || source.startsWith("/")) {
-        result.imports.push({ source, symbols, isDefault: false });
-      }
-    }
-
-    // 6. Exports
-    EXPORT_RE.lastIndex = 0;
-    while ((m = EXPORT_RE.exec(line)) !== null) {
-      const exportName = m[1];
-      if (exportName && !["const", "let", "var", "function", "class", "interface", "type", "default"].includes(exportName)) {
-        result.exports.push(exportName);
-      }
-    }
-  }
-
-  // React components detection (only for TSX/JSX files)
-  if (hasJSX) {
-    for (const fn of [...result.functions]) {
-      const fnStartLine = fn.line - 1;
-      const endLine = Math.min(fnStartLine + 50, lines.length);
-      let isComponent = false;
-      for (let i = fnStartLine; i < endLine; i++) {
-        if (JSX_RETURN_RE.test(lines[i])) { isComponent = true; break; }
-      }
-      if (!isComponent && JSX_IMPLICIT_RE.test(lines[fnStartLine])) isComponent = true;
-      if (!isComponent && (fnStartLine + 1) < endLine) {
-        const nextLine = lines[fnStartLine + 1].trim();
-        if (nextLine.startsWith('<') || nextLine.startsWith('(') || nextLine.startsWith('<>')) isComponent = true;
-      }
-      if (isComponent) {
-        result.components.push({ name: fn.name, line: fn.line });
-        result.functions = result.functions.filter((f) => f.name !== fn.name);
-      }
-    }
-  }
-
-  // Route handlers (Express + Hono)
-  let rm: RegExpExecArray | null;
-  EXPRESS_ROUTE_RE.lastIndex = 0;
-  while ((rm = EXPRESS_ROUTE_RE.exec(content)) !== null) {
-    result.routes.push({
-      method: rm[1].toUpperCase(), pathPattern: rm[2], handler: rm[3],
-      line: lineAt(content, rm.index),
-    });
-  }
-  HONO_ROUTE_RE.lastIndex = 0;
-  while ((rm = HONO_ROUTE_RE.exec(content)) !== null) {
-    result.routes.push({
-      method: rm[1].toUpperCase(), pathPattern: rm[2], handler: "",
-      line: lineAt(content, rm.index),
-    });
-  }
-
-  return result;
-}
-
-// ============================================================
-// Graph Recording
-// ============================================================
-
-async function recordParsedFile(
-  filePath: string,
-  parsed: ParsedFile,
-  content: string,
-  result: ScanResult,
-): Promise<void> {
-  const { functions, classes, components, routes, imports } = parsed;
-  const root = getRoot();
-
-  // File node
-  const fileNodeId = nodeId("file", filePath);
-  await upsertNode({ id: fileNodeId, type: "file", name: filePath });
-  result.nodeCount++;
-
-  // Test node
-  if (parsed.isTest) {
-    const testNodeId = nodeId("test", filePath);
-    await upsertNode({ id: testNodeId, type: "test", name: filePath, filePath });
-    result.nodeCount++;
-    try { await addEdge({ sourceId: fileNodeId, targetId: testNodeId, type: "contains" }); result.edgeCount++; } catch {}
-  }
-
-  // 1. Imports
-  for (const imp of imports) {
-    const resolved = resolveImportPath(filePath, imp.source, root);
-    if (resolved) {
-      const targetId = nodeId("file", resolved);
-      await upsertNode({ id: targetId, type: "file", name: resolved });
-      result.nodeCount++;
-      try { await addEdge({ sourceId: fileNodeId, targetId, type: "imports" }); result.edgeCount++; } catch {}
-    }
-  }
-
-  // Helper: scoped node ID for file-specific symbols
-  function scopedId(type: string, name: string, fp: string): string {
-    return `${type}::${fp}::${name}`;
-  }
-
-  // 2. Functions
-  for (const fn of functions) {
-    const fnNodeId = scopedId("function", fn.name, filePath);
-    await upsertNode({ id: fnNodeId, type: "function", name: fn.name, filePath });
-    result.nodeCount++;
-    try { await addEdge({ sourceId: fileNodeId, targetId: fnNodeId, type: "contains" }); result.edgeCount++; } catch {}
-  }
-
-  // 3. Components
-  for (const comp of components) {
-    const compNodeId = scopedId("component", comp.name, filePath);
-    await upsertNode({ id: compNodeId, type: "component", name: comp.name, filePath });
-    result.nodeCount++;
-    try { await addEdge({ sourceId: fileNodeId, targetId: compNodeId, type: "contains" }); result.edgeCount++; } catch {}
-  }
-
-  // 4. Classes + extends/implements
-  for (const cls of classes) {
-    const clsNodeId = scopedId("class", cls.name, filePath);
-    await upsertNode({ id: clsNodeId, type: "class", name: cls.name, filePath });
-    result.nodeCount++;
-    try { await addEdge({ sourceId: fileNodeId, targetId: clsNodeId, type: "contains" }); result.edgeCount++; } catch {}
-
-    if (cls.extends) {
-      const parentFile = symbolLocations.get(cls.extends) || filePath;
-      const parentId = scopedId("class", cls.extends, parentFile);
-      await upsertNode({ id: parentId, type: "class", name: cls.extends, filePath: parentFile });
-      result.nodeCount++;
-      try { await addEdge({ sourceId: clsNodeId, targetId: parentId, type: "extends" }); result.edgeCount++; } catch {}
-    }
-    if (cls.implements) {
-      for (const iface of cls.implements) {
-        const ifaceId = nodeId("interface", iface);
-        await upsertNode({ id: ifaceId, type: "interface", name: iface });
-        result.nodeCount++;
-        try { await addEdge({ sourceId: clsNodeId, targetId: ifaceId, type: "implements" }); result.edgeCount++; } catch {}
-      }
-    }
-  }
-
-  // 5. Routes
-  for (const route of routes) {
-    const routeName = `${route.method} ${route.pathPattern}`;
-    const routeNodeId = nodeId("api_route", routeName);
+    // 1. Upsert file node
     await upsertNode({
-      id: routeNodeId, type: "api_route", name: routeName, filePath,
-      metadata: { method: route.method, path: route.pathPattern },
+      id: fileId,
+      type: "file",
+      name: filePath,
+      filePath,
+      metadata: { symbolCount: symbols.length, isTest },
     });
     result.nodeCount++;
-    try { await addEdge({ sourceId: fileNodeId, targetId: routeNodeId, type: "contains" }); result.edgeCount++; } catch {}
-    if (route.handler) {
-      const handlerPath = symbolLocations.get(route.handler) || filePath;
-      const handlerId = scopedId("function", route.handler, handlerPath);
-      await upsertNode({ id: handlerId, type: "function", name: route.handler, filePath: handlerPath });
-      result.nodeCount++;
-      try { await addEdge({ sourceId: routeNodeId, targetId: handlerId, type: "routes" }); result.edgeCount++; } catch {}
-    }
-  }
 
-  // 6. Component composition (composes edges)
-  if (content.includes("<")) {
-    JSX_ELEMENT_RE.lastIndex = 0;
-    let jm: RegExpExecArray | null;
-    while ((jm = JSX_ELEMENT_RE.exec(content)) !== null) {
-      const subComp = jm[1];
-      if (knownComponents.has(subComp) && components.some((c) => c.name === subComp) === false) {
-        const tagLine = lineAt(content, jm.index);
-        const parentComp = components.find((c) => {
-          const endLine = c.line + 80;
-          return tagLine >= c.line && tagLine <= endLine;
+    // 2. If test file, upsert test node and link
+    if (isTest) {
+      const testId = nodeId("test", filePath);
+      await upsertNode({
+        id: testId,
+        type: "test",
+        name: filePath,
+        filePath,
+      });
+      result.nodeCount++;
+      await addEdge({ sourceId: fileId, targetId: testId, type: "contains" });
+      result.edgeCount++;
+    }
+
+    // 3. Upsert symbols (functions, classes, interfaces)
+    // High-Signal Filter: Only index public API contracts (exported symbols)
+    // to keep knowledge graph clean, impactful, and noise-free for agents.
+    let highSignalSymbols = symbols.filter((s) => s.isExported);
+    if (highSignalSymbols.length === 0 && symbols.length > 0 && !isTest) {
+      // If file has no exports (e.g. CLI entrypoint script), index only main entrypoints
+      highSignalSymbols = symbols.filter((s) => s.name === "main" || !s.name.startsWith("_")).slice(0, 3);
+    }
+
+    for (const sym of highSignalSymbols) {
+      const symId = `${sym.kind}::${filePath}::${sym.name}`;
+      await upsertNode({
+        id: symId,
+        type: sym.kind as any,
+        name: sym.name,
+        filePath,
+        metadata: {
+          line: sym.line,
+          isExported: sym.isExported,
+          description: sym.description,
+          signature: sym.signature,
+          params: sym.params,
+          returnType: sym.returnType,
+          methods: sym.methods,
+          members: sym.members,
+        },
+      });
+      result.nodeCount++;
+
+      // Edge: File -> defines -> Symbol
+      await addEdge({
+        sourceId: fileId,
+        targetId: symId,
+        type: "defines",
+      });
+      result.edgeCount++;
+
+      // Class extends / implements
+      if (sym.extends) {
+        const parentFile = symbolMap.get(sym.extends) || filePath;
+        const parentId = `class::${parentFile}::${sym.extends}`;
+        await addEdge({ sourceId: symId, targetId: parentId, type: "extends" });
+        result.edgeCount++;
+      }
+    }
+
+    // 4. Resolve & link imports
+    for (const imp of imports) {
+      const resolved = resolveImportPath(filePath, imp.source, root);
+      if (resolved) {
+        const targetFileId = nodeId("file", resolved);
+        // Edge: file -> imports -> targetFile
+        await addEdge({
+          sourceId: fileId,
+          targetId: targetFileId,
+          type: "imports",
         });
-        if (parentComp) {
-          const childFile = symbolLocations.get(subComp) || filePath;
-          const parentId = scopedId("component", parentComp.name, filePath);
-          const childId = scopedId("component", subComp, childFile);
-          try { await addEdge({ sourceId: parentId, targetId: childId, type: "composes" }); result.edgeCount++; } catch {}
+        result.edgeCount++;
+
+        // If this file is a test, link to tested target
+        if (isTest) {
+          const testId = nodeId("test", filePath);
+          await addEdge({
+            sourceId: testId,
+            targetId: targetFileId,
+            type: "tests",
+          });
+          result.edgeCount++;
         }
       }
     }
-  }
 
-  // 7. Function calls detection (calls edges)
-  const callContent = content
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // multi-line comments
-    .replace(/\/\/.*$/gm, ' ')            // single-line comments
-    .replace(/\/[^\n\s][^\n]*?\/[gimsuy]*/g, ' ') // regex literals
-    .replace(/['"`][^'"`]*['"`]/g, ' ');   // string literals
-  CALL_RE.lastIndex = 0;
-  const fileCalls = new Set<string>();
-  let cm: RegExpExecArray | null;
-  while ((cm = CALL_RE.exec(callContent)) !== null) {
-    const callee = cm[1];
-    if (!callee || callee.length < 2) continue;
-    if (["if", "for", "while", "switch", "catch", "return", "typeof", "delete", "throw",
-         "import", "export", "function", "class", "new", "try", "yield", "await",
-         "this", "super", "undefined", "null", "true", "false", "console",
-         "describe", "it", "test", "expect", "assert", "beforeEach", "afterEach",
-         "beforeAll", "afterAll", "jest", "process", "require", "setTimeout",
-         "setInterval", "clearTimeout", "clearInterval", "Math", "JSON",
-         "Object", "Array", "String", "Number", "Boolean", "Promise",
-         "Error", "Date", "RegExp", "Map", "Set", "Symbol",
-         "fetch", "localStorage", "sessionStorage", "exports",
-         "call", "apply", "bind", "then", "finally",
-         "resolve", "reject", "next", "value", "done",
-    ].includes(callee)) continue;
-
-    if (knownFunctions.has(callee)) {
-      const isSelf = functions.some((f) => f.name === callee) ||
-                     components.some((c) => c.name === callee);
-      if (!isSelf && !fileCalls.has(callee)) {
-        fileCalls.add(callee);
-        const calleeFile = symbolLocations.get(callee) || filePath;
-        const fnId = `function::${calleeFile}::${callee}`;
-        try {
-          await addEdge({ sourceId: fileNodeId, targetId: fnId, type: "calls" });
-          result.edgeCount++;
-        } catch {}
+    // 5. Connect function calls
+    for (const callee of calledSymbols) {
+      const calleeFile = symbolMap.get(callee);
+      if (calleeFile && calleeFile !== filePath) {
+        const calleeId = `function::${calleeFile}::${callee}`;
+        await addEdge({
+          sourceId: fileId,
+          targetId: calleeId,
+          type: "calls",
+        });
+        result.edgeCount++;
       }
     }
+
+    result.filesScanned++;
   }
+
+  saveDb(db);
+  return result;
 }
 
-// ============================================================
-// Import Path Resolution
-// ============================================================
-
-function resolveImportPath(fromFile: string, importPath: string, root: string): string | null {
-  if (!importPath.startsWith(".") && !importPath.startsWith("/")) return null;
-
-  const fromDir = path.dirname(path.join(root, fromFile));
-  const exts = [
-    ...SOURCE_EXTENSIONS,
-    ...SOURCE_EXTENSIONS.map((e) => `/index${e}`),
-  ];
-
-  for (const ext of exts) {
-    const resolved = path.resolve(fromDir, importPath + ext);
-    if (fs.existsSync(resolved)) return path.relative(root, resolved);
-  }
-
-  const dirPath = path.resolve(fromDir, importPath);
-  if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
-    for (const ext of SOURCE_EXTENSIONS) {
-      const indexPath = path.join(dirPath, `index${ext}`);
-      if (fs.existsSync(indexPath)) return path.relative(root, indexPath);
-    }
-  }
-
-  return null;
+/**
+ * Fast incremental sync: check if any files were touched and update their AST.
+ */
+export async function syncModifiedFiles(limit: number = 20): Promise<ScanResult> {
+  return await scanCodebase({ maxFiles: limit, force: false });
 }
-
-// ============================================================
-// Format Results
-// ============================================================
 
 export function formatScanResult(result: ScanResult): string {
-  const lines: string[] = [
-    "🔬 **Kuma Code Scan Complete**",
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    "",
-    `📁 **${result.filesScanned}** files scanned`,
-    `📊 **${result.nodeCount}** nodes added to knowledge graph`,
-    `🔗 **${result.edgeCount}** edges added to knowledge graph`,
+  const lines = [
+    `📊 **Scan Result (${result.parserUsed || "AST"})**`,
+    `   Files scanned: ${result.filesScanned}`,
+    `   Nodes indexed: ${result.nodeCount}`,
+    `   Edges created: ${result.edgeCount}`,
   ];
-
   if (result.errors.length > 0) {
-    lines.push("");
-    lines.push(`⚠️ **${result.errors.length}** warning(s):`);
-    for (const err of result.errors.slice(0, 5)) {
-      lines.push(`  • ${err.substring(0, 120)}`);
-    }
-    if (result.errors.length > 5) {
-      lines.push(`  • ... and ${result.errors.length - 5} more`);
-    }
+    lines.push(`   ⚠️ Warnings: ${result.errors.length}`);
   }
-
-  lines.push(
-    "",
-    "💡 The knowledge graph now has richer code structure data.",
-    "💡 Use kuma_context({ action: 'research', scope: '<area>' }) to see the graph overview.",
-  );
-
   return lines.join("\n");
-}
-
-export async function scanAndFormat(options: ScanOptions = {}): Promise<string> {
-  const result = await scanCodebase(options);
-  return formatScanResult(result);
 }

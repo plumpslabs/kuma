@@ -16,7 +16,8 @@ export type NodeType = "function" | "file" | "api_route" | "db_table" | "test" |
   | "feature" | "arch_flow" | "flow_explanation";
 export type EdgeType = "calls" | "imports" | "defines" | "tests" | "routes" | "implements" | "extends" | "depends_on" | "owns" | "modified_by" | "contains" | "composes"
   | "flows_through" | "triggers" | "syncs_with"
-  | "affects" | "explains";
+  | "affects" | "explains"
+  | "uses" | "produces" | "validates" | "routes_to" | "configures";
 
 interface GraphNode {
   id: string;
@@ -41,16 +42,16 @@ interface GraphQuery {
 }
 
 /**
- * Generate a stable node ID from type and name.
+ * Generate a stable, deterministic node ID from type and name.
+ * Every entity has a unique, reproducible identity (zero random UUIDs).
  */
-export function nodeId(type: NodeType, name: string): string {
-  // File nodes use deterministic ID (same file = same node, no duplicates)
-  if (type === "file") {
-    const normalized = normalizeScope(name) || name;
-    return `file::${normalized}`;
+export function nodeId(type: NodeType | string, name: string): string {
+  const cleanName = (name || "").trim();
+  if (type === "file" || type === "test" || type === "module") {
+    const normalized = normalizeScope(cleanName) || cleanName;
+    return `${type}::${normalized}`;
   }
-  // All other types use UUID (no mutable-ID duplicates)
-  return generateNodeId(type, name);
+  return generateNodeId(type, cleanName);
 }
 
 // ============================================================
@@ -158,11 +159,19 @@ export async function upsertNode(node: GraphNode): Promise<void> {
         updated_at = strftime('%s','now')
     `, [id, node.type, normName, normFilePath || null, metadata, severity, confidence]);
 
-    // Update FTS index
+    // Maintain token inverted index for fast search
     try {
-      db.run(`INSERT INTO nodes_fts (rowid, name, metadata) VALUES (last_insert_rowid(), ?, ?)`, [normName, metadata]);
+      const terms = `${normName} ${normFilePath || ""} ${metadata}`
+        .toLowerCase()
+        .split(/[\s,.;:!?()\[\]{}"'\/\\|@#$%^&*+=<>~`_-]+/)
+        .filter(t => t.length > 2 && t.length < 40);
+      const uniqueTerms = Array.from(new Set(terms));
+      db.run(`DELETE FROM node_tokens WHERE node_id = ?`, [id]);
+      for (const term of uniqueTerms.slice(0, 30)) {
+        db.run(`INSERT OR IGNORE INTO node_tokens (token, node_id) VALUES (?, ?)`, [term, id]);
+      }
     } catch {
-      // FTS5 might not be enabled, fallback to LIKE queries
+      // Non-critical
     }
 
     // Auto-link to file node if filePath is specified to prevent orphan nodes
@@ -178,7 +187,7 @@ export async function upsertNode(node: GraphNode): Promise<void> {
         db.run(`
           INSERT INTO edges (source_id, target_id, type, weight, metadata, created_at)
           VALUES (?, ?, 'contains', 1.0, '{}', strftime('%s','now'))
-          ON CONFLICT DO NOTHING
+          ON CONFLICT(source_id, target_id, type) DO NOTHING
         `, [fileNodeId, id]);
       } catch {
         // Non-critical
@@ -1098,32 +1107,41 @@ export async function searchGraph(query: string, limit: number = 20): Promise<st
   try {
     const db = await getDb();
 
-    // Try FTS5 search first
+    // Try node_tokens inverted index first (instant token lookup)
     try {
-      const stmt = db.prepare(`
-        SELECT n.id, n.type, n.name, n.file_path
-        FROM nodes_fts f
-        JOIN nodes n ON n.rowid = f.rowid
-        WHERE nodes_fts MATCH ?
-        LIMIT ?
-      `);
-      stmt.bind([query, limit]);
-      const results: Array<Record<string, unknown>> = [];
-      while (stmt.step()) {
-        results.push(stmt.getAsObject());
-      }
-      stmt.free();
+      const cleanTokens = query
+        .toLowerCase()
+        .split(/[\s,.;:!?()\[\]{}"'\/\\|@#$%^&*+=<>~`_-]+/)
+        .filter((t) => t.length >= 2);
+      if (cleanTokens.length > 0) {
+        const placeholders = cleanTokens.map(() => "?").join(",");
+        const stmt = db.prepare(`
+          SELECT n.id, n.type, n.name, n.file_path, n.metadata, COUNT(*) as match_count
+          FROM node_tokens t
+          JOIN nodes n ON n.id = t.node_id
+          WHERE t.token IN (${placeholders}) OR t.token LIKE ? || '%'
+          GROUP BY n.id
+          ORDER BY match_count DESC, n.updated_at DESC
+          LIMIT ?
+        `);
+        stmt.bind([...cleanTokens, cleanTokens[0], limit]);
+        const results: Array<Record<string, unknown>> = [];
+        while (stmt.step()) {
+          results.push(stmt.getAsObject());
+        }
+        stmt.free();
 
-      if (results.length > 0) {
-        return formatSearchResults(results, query, db);
+        if (results.length > 0) {
+          return formatSearchResults(results, query, db);
+        }
       }
     } catch {
-      // FTS might not be available, fall through to LIKE query
+      // Fall through to LIKE query
     }
 
     // Fallback: LIKE search
     const stmt = db.prepare(`
-      SELECT id, type, name, file_path FROM nodes
+      SELECT id, type, name, file_path, metadata FROM nodes
       WHERE name LIKE ? OR file_path LIKE ?
       ORDER BY updated_at DESC
       LIMIT ?
@@ -1159,8 +1177,34 @@ function formatSearchResults(results: Array<Record<string, unknown>>, query: str
   const topResults = results.slice(0, 10);
   for (const r of topResults) {
     const nodeType = r.type as string;
-    const icon = nodeType === "gotcha" ? "⚠️" : nodeType === "decision" ? "📌" : nodeType === "arch_flow" ? "🏛️" : nodeType === "flow_explanation" ? "📝" : nodeType === "research" ? "🔬" : "📄";
+    const icon = nodeType === "gotcha" ? "⚠️"
+      : nodeType === "decision" ? "📌"
+      : nodeType === "arch_flow" ? "🏛️"
+      : nodeType === "flow_explanation" ? "📝"
+      : nodeType === "research" ? "🔬"
+      : nodeType === "function" ? "⚡"
+      : nodeType === "class" ? "📦"
+      : nodeType === "interface" ? "📐"
+      : "📄";
     lines.push(`${icon} **${r.name}** (${r.type})${r.file_path ? ` — ${r.file_path}` : ""}`);
+
+    // Parse metadata for rich description and signature
+    let meta: Record<string, any> = {};
+    try {
+      meta = typeof r.metadata === "string" ? JSON.parse(r.metadata) : (r.metadata as Record<string, any> || {});
+    } catch {}
+
+    if (meta.description) {
+      const firstLine = String(meta.description).split("\n")[0].slice(0, 140);
+      lines.push(`  📖 ${firstLine}`);
+    }
+    if (meta.signature) {
+      lines.push(`  ⚙️ \`${meta.signature}\``);
+    } else if (meta.methods && Array.isArray(meta.methods) && meta.methods.length > 0) {
+      lines.push(`  ⚙️ methods: ${meta.methods.slice(0, 4).join(", ")}${meta.methods.length > 4 ? "..." : ""}`);
+    } else if (meta.members && Array.isArray(meta.members) && meta.members.length > 0) {
+      lines.push(`  ⚙️ members: ${meta.members.slice(0, 6).join(", ")}${meta.members.length > 6 ? "..." : ""}`);
+    }
 
     // Subgraph expansion: get connected nodes (1 hop out)
     try {
@@ -1394,6 +1438,7 @@ export interface ImpactResult {
   affectedTests?: string[];
   riskFlags?: string[];
   summary?: string;
+  centrality?: { score: number; rank: number; isHub: boolean; hubBadge?: string };
 }
 
 /**
@@ -1413,7 +1458,7 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
       nodeStmt.bind([`%${target}%`, target, target]);
       if (nodeStmt.step()) {
         const row = nodeStmt.getAsObject() as { id: string };
-        const entryStmt = db.prepare(`SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.target_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`);
+        const entryStmt = db.prepare(`SELECT n.name, COUNT(*) as cnt FROM edges e JOIN nodes n ON n.id = e.source_id WHERE e.target_id = ? GROUP BY n.name ORDER BY cnt DESC LIMIT 5`);
         entryStmt.bind([row.id]);
         while (entryStmt.step()) {
           const erow = entryStmt.getAsObject() as { name: string; cnt: number };
@@ -1426,6 +1471,25 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
 
     const allEntryPoints = graphEntryPoints.length > 0 ? graphEntryPoints : blast.directDependents.slice(0, 5);
 
+    let riskFlags = [...blast.riskFlags];
+    let summary = blast.summary;
+    let centralityData: { score: number; rank: number; isHub: boolean; hubBadge?: string } | undefined;
+
+    try {
+      const { getNodeCentrality, formatCentralityWarning } = await import("./graphCentrality.js");
+      const c = await getNodeCentrality(target);
+      if (c) {
+        centralityData = { score: c.score, rank: c.rank, isHub: c.isHub, hubBadge: c.hubBadge };
+        if (c.isHub) {
+          riskFlags.unshift("CRITICAL_CORE_HUB");
+          const warning = await formatCentralityWarning(target);
+          if (warning) {
+            summary = `${warning}\n\n${summary}`;
+          }
+        }
+      }
+    } catch {}
+
     return {
       symbol: target,
       references: blast.directDependents.length,
@@ -1436,8 +1500,9 @@ export async function analyzeImpact(target: string): Promise<ImpactResult> {
       packageName: blast.owningPackage?.name,
       downstreamPackages: blast.downstreamPackages,
       affectedTests: blast.affectedTests,
-      riskFlags: blast.riskFlags,
-      summary: blast.summary,
+      riskFlags,
+      summary,
+      centrality: centralityData,
     };
   } catch (err) {
     console.error(`[KumaGraph] Impact analysis failed: ${err}`);

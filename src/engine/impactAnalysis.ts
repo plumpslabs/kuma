@@ -12,7 +12,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import fastGlob from "fast-glob";
-import { getProjectRoot } from "../utils/pathValidator.js";
+import { getProjectRoot, normalizeScope } from "../utils/pathValidator.js";
+import { getDb } from "./kumaDb.js";
 import {
   getWorkspaceInfo,
   findPackageForFile,
@@ -36,10 +37,60 @@ export interface DetailedImpactResult {
 }
 
 /**
- * Find files in the repository that import a given file or package
+ * Find files in the repository that import or call a given file/symbol.
+ * Graph-First: queries SQLite edges in <1ms, falls back to disk scan if graph is empty.
  */
 async function findImportingFiles(targetFile: string, root: string): Promise<string[]> {
-  const normTarget = path.normalize(targetFile);
+  const normTarget = normalizeScope(path.normalize(targetFile)) || path.normalize(targetFile);
+
+  // 1. Try Knowledge Graph edges first (blazing fast)
+  try {
+    const db = await getDb();
+    const targetFileId = `file::${normTarget}`;
+
+    const dependents: string[] = [];
+
+    // Direct importing files (imports & depends_on edges)
+    const importStmt = db.prepare(`
+      SELECT DISTINCT n.file_path, n.name
+      FROM edges e
+      JOIN nodes n ON n.id = e.source_id
+      WHERE (e.target_id = ? OR e.target_id LIKE ?)
+        AND e.type IN ('imports', 'depends_on')
+    `);
+    importStmt.bind([targetFileId, `%::${normTarget}%`]);
+    while (importStmt.step()) {
+      const row = importStmt.getAsObject() as { file_path: string; name: string };
+      const f = row.file_path || row.name;
+      if (f && f !== normTarget && !dependents.includes(f)) dependents.push(f);
+    }
+    importStmt.free();
+
+    // Callers of symbols defined in this file
+    const callStmt = db.prepare(`
+      SELECT DISTINCT n_src.file_path, n_src.name
+      FROM nodes n_tgt
+      JOIN edges e ON e.target_id = n_tgt.id
+      JOIN nodes n_src ON n_src.id = e.source_id
+      WHERE (n_tgt.file_path = ? OR n_tgt.name = ? OR n_tgt.id LIKE ?)
+        AND e.type = 'calls'
+    `);
+    callStmt.bind([normTarget, normTarget, `%::${normTarget}::%`]);
+    while (callStmt.step()) {
+      const row = callStmt.getAsObject() as { file_path: string; name: string };
+      const f = row.file_path || row.name;
+      if (f && f !== normTarget && !dependents.includes(f)) dependents.push(f);
+    }
+    callStmt.free();
+
+    if (dependents.length > 0) {
+      return dependents;
+    }
+  } catch {
+    // Fall back to disk scan
+  }
+
+  // 2. Fallback: disk scan via glob & regex
   const baseName = path.basename(normTarget, path.extname(normTarget));
   const relTarget = path.isAbsolute(normTarget) ? path.relative(root, normTarget) : normTarget;
 
@@ -77,15 +128,45 @@ async function findImportingFiles(targetFile: string, root: string): Promise<str
 }
 
 /**
- * Find related test files for a target file or package
+ * Find related test files for a target file or package.
+ * Graph-First: queries 'tests' edges in SQLite first, falls back to naming patterns.
  */
 async function findRelatedTests(
   targetFile: string,
   root: string,
   owningPackage: WorkspacePackage | null
 ): Promise<string[]> {
-  const norm = path.normalize(targetFile);
-  const baseName = path.basename(norm, path.extname(norm));
+  const normTarget = normalizeScope(path.normalize(targetFile)) || path.normalize(targetFile);
+
+  // 1. Try Knowledge Graph 'tests' edges first
+  try {
+    const db = await getDb();
+    const targetFileId = `file::${normTarget}`;
+    const testStmt = db.prepare(`
+      SELECT DISTINCT n.file_path, n.name
+      FROM edges e
+      JOIN nodes n ON n.id = e.source_id
+      WHERE (e.target_id = ? OR e.target_id LIKE ?)
+        AND e.type = 'tests'
+    `);
+    testStmt.bind([targetFileId, `%::${normTarget}%`]);
+    const graphTests: string[] = [];
+    while (testStmt.step()) {
+      const row = testStmt.getAsObject() as { file_path: string; name: string };
+      const t = row.file_path || row.name;
+      if (t && !graphTests.includes(t)) graphTests.push(t);
+    }
+    testStmt.free();
+
+    if (graphTests.length > 0) {
+      return graphTests;
+    }
+  } catch {
+    // Fall back to pattern search
+  }
+
+  // 2. Pattern search fallback
+  const baseName = path.basename(normTarget, path.extname(normTarget));
   const testFiles: string[] = [];
 
   const testPatterns = [

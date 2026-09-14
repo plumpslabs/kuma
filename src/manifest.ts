@@ -50,14 +50,14 @@ export function registerAllTools(server: McpServer): void {
   const contextDesc =
     "Context & memory recall. Call FIRST each session. Lean — each call returns only what you need." +
     CORE_NOTE +
-    "`init` (start of session: project brief + session state), `research` (before editing unfamiliar code), `history` (why is this file written this way), `flow` (read a recorded architecture flow), `map` (repository topology), `impact` (blast radius analysis).";
+    "`init` (start of session: project brief + session state), `research` (before editing unfamiliar code), `history` (why is this file written this way), `flow` (read a recorded architecture flow), `map` (repository topology), `impact` (blast radius analysis), `cluster` (concept-level subsystem nodes), `skeleton` (compressed AST outline omitting bodies), `reuse` (discover existing helpers before writing duplicate code).";
 
   const contextSchema = {
-    action: z.enum(["init", "research", "history", "flow", "map", "impact"]).describe(
-      "init=project brief + session restore, research=research pipeline, history=file rationale + fresh gotchas, flow=read recorded domain flow, map=repo topology, impact=blast radius"
+    action: z.enum(["init", "research", "history", "flow", "map", "impact", "cluster", "skeleton", "reuse"]).describe(
+      "init=project brief + session restore, research=research pipeline, history=file rationale + fresh gotchas, flow=read recorded domain flow, map=repo topology, impact=blast radius, cluster=concept subsystem architecture, skeleton=compressed AST outline, reuse=discover existing helpers"
     ),
-    scope: z.string().optional().describe("Research scope or target for impact"),
-    target: z.string().optional().describe("Target symbol/file for history/flow/impact"),
+    scope: z.string().optional().describe("Research scope or target for impact/skeleton/reuse"),
+    target: z.string().optional().describe("Target symbol/file for history/flow/impact/skeleton/reuse"),
     goal: z.string().optional().describe("Current goal (for init)"),
   };
 

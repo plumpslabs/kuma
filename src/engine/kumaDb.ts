@@ -19,12 +19,12 @@ let initPromise: Promise<SqlJsDatabase> | null = null;
 // ============================================================
 
 /**
- * Generate a unique node ID.
- * New nodes get UUID-based IDs. Legacy text IDs are still supported.
+ * Generate a deterministic, canonical node ID.
+ * Idempotent: same type and name always produce the same ID (zero random UUIDs).
  */
 export function generateNodeId(type: string, name: string): string {
-  const uuid = crypto.randomUUID().slice(0, 8);
-  return `${type}::${uuid}::${name}`;
+  const cleanName = (name || "").trim();
+  return `${type}::${cleanName}`;
 }
 
 let lastLoadedMtime = 0;
@@ -182,7 +182,7 @@ function createSchema(db: SqlJsDatabase): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL REFERENCES nodes(id),
     target_id TEXT NOT NULL REFERENCES nodes(id),
-    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects','explains')),
+    type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects','explains','uses','produces','validates','routes_to','configures')),
     weight REAL DEFAULT 1.0,
     metadata TEXT DEFAULT '{}',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -193,14 +193,14 @@ function createSchema(db: SqlJsDatabase): void {
   try {
     const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='edges'`);
     const edgeSql = schema[0]?.values?.[0]?.[0] as string || '';
-    if (edgeSql.includes('explains') === false) {
+    if (edgeSql.includes('routes_to') === false) {
       // Need migration — recreate edges table with new types
       db.run(`ALTER TABLE edges RENAME TO edges_old`);
       db.run(`CREATE TABLE IF NOT EXISTS edges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_id TEXT NOT NULL REFERENCES nodes(id),
         target_id TEXT NOT NULL REFERENCES nodes(id),
-        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects','explains')),
+        type TEXT NOT NULL CHECK(type IN ('calls','imports','defines','tests','routes','implements','extends','depends_on','owns','modified_by','contains','composes','flows_through','triggers','syncs_with','affects','explains','uses','produces','validates','routes_to','configures')),
         weight REAL DEFAULT 1.0,
         metadata TEXT DEFAULT '{}',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -604,6 +604,30 @@ function createSchema(db: SqlJsDatabase): void {
   )`);
 
   // ============================================================
+  // Fast Token Inverted Index (works in all SQLite/sql.js without FTS5)
+  // ============================================================
+  db.run(`CREATE TABLE IF NOT EXISTS node_tokens (
+    token TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    PRIMARY KEY (token, node_id)
+  )`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_node_tokens_token ON node_tokens(token)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_node_tokens_node ON node_tokens(node_id)`);
+
+  // ============================================================
+  // Migration: Purge legacy non-deterministic random UUID nodes
+  // ============================================================
+  try {
+    db.run(`
+      DELETE FROM edges WHERE 
+        source_id GLOB '*::[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]::*'
+        OR target_id GLOB '*::[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]::*';
+      DELETE FROM nodes WHERE 
+        id GLOB '*::[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]::*';
+    `);
+  } catch { /* skip */ }
+
+  // ============================================================
   // Full-text search index on node names and metadata
   // ============================================================
   try {
@@ -611,7 +635,7 @@ function createSchema(db: SqlJsDatabase): void {
       name, metadata, content='nodes', content_rowid='rowid'
     )`);
   } catch {
-    console.warn("[KumaDB] FTS5 not available, full-text search disabled");
+    // FTS5 not available in standard sql.js wasm; node_tokens handles fast lookup
   }
 
   // ============================================================
