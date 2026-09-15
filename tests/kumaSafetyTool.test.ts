@@ -14,6 +14,8 @@ describe("kumaSafetyTool — Decoupled from Test Execution", () => {
     });
     expect(res).toContain("Post-Edit Blast Radius & Dependency Impact");
     expect(res).toContain("Test execution is outside Kuma's scope");
+    expect(res).not.toContain("[object Object]");
+    expect(res).toContain("Recommended Scoped Test Command");
   });
 
   it("returns help for unknown action", async () => {

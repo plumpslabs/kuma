@@ -1523,10 +1523,14 @@ async function codebaseImpactFallback(target: string): Promise<ImpactResult> {
     // 🔴 SAFETY: 5s timeout + 256KB maxBuffer to prevent resource exhaustion
     const grepResult = execSync(
       `grep -rn ${grepIncludeFlags()} --include="*.json" --include="*.md" -l "${target.replace(/"/g, '\\"')}" . 2>/dev/null | grep -v node_modules | grep -v .git | grep -v dist | grep -v .kuma | head -50`,
-      { cwd: root, encoding: "utf-8", timeout: 5000, maxBuffer: 256 * 1024 },
+      { cwd: root, encoding: "utf-8", timeout: 5000, maxBuffer: 256 * 1024 }
     ).trim();
-
-    const files = grepResult ? grepResult.split("\n").filter(Boolean).filter(f => !f.startsWith("./")) : [];
+    const files = grepResult
+      ? grepResult
+          .split("\n")
+          .map((f) => f.replace(/^\.\//, "").trim())
+          .filter(Boolean)
+      : [];
 
     if (files.length === 0) {
       return { symbol: target, references: 0, files: 0, testFiles: 0, entryPoints: [], risk: "low" };

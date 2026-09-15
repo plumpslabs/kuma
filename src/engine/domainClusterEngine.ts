@@ -287,39 +287,75 @@ function determineSubsystemKey(filePath: string): string {
   const norm = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
   const parts = norm.split("/").filter(Boolean);
 
-  // Monorepo package: packages/ide/studio/src/... -> studio_dashboard
-  if (parts.length >= 3 && (parts[0] === "packages" || parts[0] === "apps" || parts[0] === "services")) {
-    return `${parts[1]}_${parts[2]}`.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+  let pkgPrefix = "";
+  let domainParts: string[] = [];
+
+  // Monorepo containers: packages/ide/studio/src/... or apps/web/src/...
+  if (parts.length >= 3 && ["packages", "apps", "services", "libs", "crates", "modules"].includes(parts[0])) {
+    pkgPrefix = parts[1];
+    domainParts = parts.slice(2);
+  } else if (parts.length >= 2 && !["src", "lib", "pkg", "test", "tests", "docs", "scripts"].includes(parts[0])) {
+    // Custom monorepo / multi-service: backend/src/auth/... or fennec/src/browser/...
+    pkgPrefix = parts[0];
+    domainParts = parts.slice(1);
+  } else {
+    // Single package: src/engine/... or lib/utils/...
+    pkgPrefix = "";
+    domainParts = parts;
   }
 
-  // Standard src/<domain>/... structure
-  if (parts.length >= 2 && (parts[0] === "src" || parts[0] === "lib" || parts[0] === "pkg")) {
-    const domain = parts[1].replace(/\.[a-zA-Z0-9]+$/, "").toLowerCase();
-    // Sub-classify common architectural buckets
-    if (domain === "engine") {
-      if (parts[2]) {
-        if (/graph|db|scan/i.test(parts[2])) return "knowledge_graph_engine";
-        if (/memory|session/i.test(parts[2])) return "session_memory";
-        if (/safety|guard|drift|heal/i.test(parts[2])) return "safety_guards";
-      }
-      return "core_engine";
+  // Strip leading 'src', 'lib', 'pkg', 'app' from domainParts
+  if (domainParts.length > 0 && ["src", "lib", "pkg", "app"].includes(domainParts[0])) {
+    domainParts = domainParts.slice(1);
+  }
+
+  if (domainParts.length === 0) {
+    return pkgPrefix ? `${pkgPrefix}_entrypoints` : "root_entrypoints";
+  }
+
+  // First domain directory or filename base
+  const rawDomain = domainParts[0].replace(/\.[a-zA-Z0-9]+$/, "").toLowerCase();
+  const sub = domainParts.length > 1 ? domainParts[1].replace(/\.[a-zA-Z0-9]+$/, "").toLowerCase() : "";
+
+  let domainCategory = rawDomain;
+
+  // Granular domain classification
+  if (/^(auth|security|session|rbac|permission)/i.test(rawDomain)) {
+    domainCategory = "auth_security";
+  } else if (/^(route|routes|api|controller|controllers|endpoint)/i.test(rawDomain)) {
+    domainCategory = "api_routing";
+  } else if (/^(middleware|middlewares|interceptor|interceptors)/i.test(rawDomain)) {
+    domainCategory = "middleware_pipeline";
+  } else if (/^(model|models|schema|schemas|entity|entities|db|database|prisma|migration)/i.test(rawDomain)) {
+    domainCategory = "data_models";
+  } else if (/^(service|services)/i.test(rawDomain)) {
+    domainCategory = sub ? `${sub}_services` : "domain_services";
+  } else if (/^(browser|dom|page|tab)/i.test(rawDomain)) {
+    domainCategory = "browser_automation";
+  } else if (/^(devtools|console|network|storage|inspect)/i.test(rawDomain)) {
+    domainCategory = "devtools_inspection";
+  } else if (/^(process|spawn|worker)/i.test(rawDomain)) {
+    domainCategory = "process_supervision";
+  } else if (rawDomain === "engine") {
+    if (sub) {
+      if (/graph|db|scan/i.test(sub)) domainCategory = "knowledge_graph_engine";
+      else if (/memory|session/i.test(sub)) domainCategory = "session_memory";
+      else if (/safety|guard|drift|heal/i.test(sub)) domainCategory = "safety_guards";
+      else domainCategory = "core_engine";
+    } else {
+      domainCategory = "core_engine";
     }
-    if (domain === "tools") return "agent_mcp_tools";
-    if (domain === "guards") return "safety_guards";
-    if (domain === "utils") return "common_utilities";
-    if (domain === "routes" || domain === "api" || domain === "controllers") return "api_routing";
-    if (domain === "models" || domain === "schema" || domain === "entities") return "data_models";
-    if (domain === "auth" || domain === "security") return "auth_security";
-    if (domain === "billing" || domain === "payment") return "billing_payments";
-    return domain;
+  } else if (/^(tool|tools|mcp)/i.test(rawDomain)) {
+    domainCategory = "agent_mcp_tools";
+  } else if (/^(util|utils|common|helper|helpers)/i.test(rawDomain)) {
+    domainCategory = "common_utilities";
   }
 
-  // Top-level root directory grouping
-  if (parts.length > 1) {
-    return parts[0].toLowerCase();
+  if (pkgPrefix) {
+    return `${pkgPrefix}_${domainCategory}`.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
   }
 
-  return "root_entrypoints";
+  return domainCategory.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
 }
 
 function formatClusterName(key: string): string {
@@ -331,6 +367,30 @@ function formatClusterName(key: string): string {
 
 function inferSubsystemRole(key: string, files: string[]): string {
   const k = key.toLowerCase();
+  if (k.includes("auth") || k.includes("security")) {
+    return "User authentication, access control policies, token validation, and security middleware.";
+  }
+  if (k.includes("route") || k.includes("api")) {
+    return "HTTP / RPC endpoint routing, request validation, controller handlers, and route contracts.";
+  }
+  if (k.includes("middleware")) {
+    return "Request pipeline filtering, authentication guards, error handling, and rate limiting.";
+  }
+  if (k.includes("model") || k.includes("data") || k.includes("db") || k.includes("schema")) {
+    return "Database schemas, entity persistence, migrations, and data access models.";
+  }
+  if (k.includes("browser")) {
+    return "Headless browser automation, DOM interaction, page navigation, and tab management.";
+  }
+  if (k.includes("devtools")) {
+    return "Network request interception, console telemetry, DOM counters, and runtime profiling.";
+  }
+  if (k.includes("process")) {
+    return "Background process spawning, PID tracking, process health supervisor, and process logs.";
+  }
+  if (k.includes("service")) {
+    return "Core domain business logic, service orchestration, and external integrations.";
+  }
   if (k.includes("graph") || k.includes("scan")) {
     return "AST parsing, code topology mapping, SQLite inverted indexing, and blast radius traversal.";
   }
@@ -348,15 +408,6 @@ function inferSubsystemRole(key: string, files: string[]): string {
   }
   if (k.includes("util") || k.includes("common")) {
     return "Shared path validation, configuration loading, and platform detection helpers.";
-  }
-  if (k.includes("auth") || k.includes("security")) {
-    return "User authentication, access control policies, token validation, and security boundaries.";
-  }
-  if (k.includes("billing") || k.includes("payment")) {
-    return "Payment gateway processing, invoice calculations, and ledger transactions.";
-  }
-  if (k.includes("api") || k.includes("route")) {
-    return "HTTP / RPC endpoint routing, request validation, and response serialization.";
   }
   return `Core subsystem handling ${files.slice(0, 3).map((f) => path.basename(f)).join(", ")}.`;
 }

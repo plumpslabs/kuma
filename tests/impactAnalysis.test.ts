@@ -22,4 +22,16 @@ describe("Impact & Blast Radius Analysis", () => {
     const result = await calculateBlastRadius("src/engine/kumaSafetyLayer.ts");
     expect(result.riskFlags.some((f) => f.includes("Critical") || f.includes("Security"))).toBe(true);
   });
+
+  it("elevates risk to critical and detects destructive flag for semantic 'user deletion' queries", async () => {
+    const result = await calculateBlastRadius("user deletion");
+    expect(result.risk).toBe("critical");
+    expect(result.riskFlags).toContain("Destructive user data/identity operation");
+  });
+
+  it("elevates risk to critical for auth queries and resolves test suites", async () => {
+    const result = await calculateBlastRadius("auth");
+    expect(result.risk).toBe("critical");
+    expect(result.riskFlags.some((f) => f.includes("Security") || f.includes("Critical"))).toBe(true);
+  });
 });

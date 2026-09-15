@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.4.12] — 2026-09-15
+
+### 🛡️ Monorepo Integrity Hardening & Semantic Blast Radius
+
+- **Zero-False-Positive Staleness Detector (`studio/db.ts` & `kumaSelfHeal.ts`)**:
+  - Filtered out non-file tokens (strings with whitespace, missing file extensions, and virtual node types `decision`, `arch_flow`, `feature_domain`, `workflow`, `cross_service_link`).
+  - Added recursive monorepo subpackage file resolution (`findFileInMonorepo` and `findSourceFilePath`) before declaring files missing, completely eliminating false positives for sub-package files and virtual nodes.
+- **Granular Monorepo Subsystem Clustering (`domainClusterEngine.ts`)**:
+  - Multi-tier classification for custom monorepo containers and sub-services, organizing code into granular functional domains (`auth_security`, `api_routing`, `middleware_pipeline`, `data_models`, `domain_services`, `browser_automation`, `devtools_inspection`, etc.) instead of collapsing them into monolithic package buckets.
+- **Semantic Intent & Pipeline Tracing (`impactAnalysis.ts`)**:
+  - Added intent-based risk analysis for destructive user identity mutations (`isUserDestructive`) and security-critical operations.
+  - Automatically traces inbound middleware pipelines (e.g. `auth-middleware`) protecting endpoints, automatically including them in blast radius and elevating overall risk level to `CRITICAL`.
+  - Multi-stem test discovery for natural-language queries and multi-word symbols.
+- **Monorepo-Scoped Test Runner Guidance (`kumaSafetyTool.ts`)**:
+  - Fixed `[object Object]` bug by formatting impact results via `formatImpact()`.
+  - Generates exact, copy-pasteable monorepo-scoped test runner commands (`pnpm --filter <pkg> test -- "<testPath>"` or `pnpm --prefix <pkg> test`) based on resolved package ownership.
+- **Zero-Orphan ADR Architecture Linking (`kumaMemory.ts` & `kumaDb.ts`)**:
+  - Auto-connects all architectural decisions (ADRs) to `feature_domain::architecture_decisions` via `explains` edges, ensuring complete graph connectivity without isolated orphan nodes.
+  - Added automated reconciliation in database garbage collection to link legacy unattached decision nodes.
+
 ## [2.4.11] — 2026-09-14
 
 ### 🌐 Polyglot AST Engine & Concept-Level Subsystem Architecture

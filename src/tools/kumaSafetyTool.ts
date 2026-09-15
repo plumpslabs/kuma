@@ -72,13 +72,50 @@ async function handleVerify(params: SafetyParams): Promise<string> {
   const target = params.target || params.scope;
 
   if (target) {
-    const { analyzeImpact } = await import("../engine/kumaGraph.js");
+    const { analyzeImpact, formatImpact } = await import("../engine/kumaGraph.js");
     const impact = await analyzeImpact(target);
+    const formattedImpact = formatImpact(impact);
+
+    let recommendedCmd = "";
+    try {
+      const { getWorkspaceInfo, findPackageForFile } = await import("../engine/workspaceIntelligence.js");
+      const wsInfo = await getWorkspaceInfo();
+      const testFile = impact.affectedTests && impact.affectedTests.length > 0 ? impact.affectedTests[0] : "";
+      const targetPkg = findPackageForFile(testFile || target, wsInfo);
+      const pkgName = targetPkg?.name;
+      const pkgPath = targetPkg?.path;
+      const isMonorepo = wsInfo.isWorkspace && pkgName && !targetPkg?.isRoot;
+
+      if (isMonorepo) {
+        const relTest = testFile && pkgPath && testFile.startsWith(pkgPath + "/")
+          ? testFile.slice(pkgPath.length + 1)
+          : testFile || target;
+
+        if (wsInfo.type === "pnpm") {
+          recommendedCmd = `pnpm --filter ${pkgName} test${relTest ? ` -- "${relTest}"` : ""}\n   (or \`pnpm --prefix ${pkgPath} test\`)`;
+        } else if (wsInfo.type === "npm") {
+          recommendedCmd = `npm test --workspace=${pkgName}${relTest ? ` -- "${relTest}"` : ""}`;
+        } else if (wsInfo.type === "yarn") {
+          recommendedCmd = `yarn workspace ${pkgName} test${relTest ? ` "${relTest}"` : ""}`;
+        } else {
+          recommendedCmd = `cd ${pkgPath} && npm test${relTest ? ` -- "${relTest}"` : ""}`;
+        }
+      } else {
+        const testPattern = testFile ? `"${testFile}"` : `"${target}"`;
+        recommendedCmd = wsInfo.type === "pnpm" ? `pnpm test -- ${testPattern}` : `npm test -- ${testPattern}`;
+      }
+    } catch {
+      recommendedCmd = `npm test -- "${target}"`;
+    }
+
     return [
-      `ℹ️ **Kuma Scope Notice**: Test execution is outside Kuma's scope. Please execute your native test runner directly (e.g. \`pnpm test\`, \`npm test\`, \`pytest\`).`,
+      `ℹ️ **Kuma Scope Notice**: Test execution is outside Kuma's scope. Please execute your native test runner directly.`,
       "",
       `🎯 **Post-Edit Blast Radius & Dependency Impact for \`${target}\`:**`,
-      impact,
+      formattedImpact,
+      "",
+      `📋 **Recommended Scoped Test Command:**`,
+      `   \`${recommendedCmd}\``,
     ].join("\n");
   }
 

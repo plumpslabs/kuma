@@ -131,7 +131,7 @@ export function recordDecision(decision: DecisionRecord): string {
  * Record a decision as a node + edges in the knowledge graph.
  * This enables decisions to be searchable via kuma_memory search and visible in impact analysis.
  */
-async function recordDecisionToGraph(decision: DecisionRecord): Promise<void> {
+export async function recordDecisionToGraph(decision: DecisionRecord): Promise<void> {
   try {
     const { upsertNode, addEdge } = await import("./kumaGraph.js");
 
@@ -151,8 +151,26 @@ async function recordDecisionToGraph(decision: DecisionRecord): Promise<void> {
       },
     });
 
-    // 2. Link decision to context files (extract file paths from context text)
-    const filePathMatches = decision.context.matchAll(/["']?([\w./-]+\.\w+)["']?/g);
+    // 2. Always link to Architecture Decisions domain to guarantee zero orphan ADR nodes
+    const rootDomainId = "feature_domain::architecture_decisions";
+    try {
+      await upsertNode({
+        id: rootDomainId,
+        type: "feature_domain",
+        name: "Architecture Decisions",
+        metadata: { description: "High-level architectural decisions and ADR registry" },
+      });
+      await addEdge({
+        sourceId: decisionId,
+        targetId: rootDomainId,
+        type: "explains",
+        metadata: { reason: "adr-domain" },
+      });
+    } catch {}
+
+    // 3. Link decision to context & rationale files (extract file paths from text)
+    const combinedText = `${decision.context} ${decision.rationale}`;
+    const filePathMatches = combinedText.matchAll(/["']?([\w./-]+\.\w+)["']?/g);
     for (const match of filePathMatches) {
       const possiblePath = match[1];
       if (possiblePath.includes("/") && (possiblePath.endsWith(".ts") || possiblePath.endsWith(".js") || possiblePath.endsWith(".json") || possiblePath.endsWith(".md"))) {

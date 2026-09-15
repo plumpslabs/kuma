@@ -318,6 +318,60 @@ export function findPackageForFile(filePath: string, wsInfo: WorkspaceInfo): Wor
 
   if (bestMatch) return bestMatch;
 
+  // 2. If the file exists directly relative to project root, it belongs to the root package
+  const rootDirect = path.join(wsInfo.root, relFile);
+  if (fs.existsSync(rootDirect) && fs.statSync(rootDirect).isFile()) {
+    const rootPkg = wsInfo.packages.find((p) => p.isRoot);
+    if (rootPkg) return rootPkg;
+  }
+
+  // 3. Try locating file or keyword inside subpackages before falling back to root
+  const baseName = path.basename(relFile);
+  for (const pkg of wsInfo.packages) {
+    if (pkg.isRoot) continue;
+    const pkgDir = path.join(wsInfo.root, pkg.path);
+    // Check if file exists directly or in src/ inside package
+    const candidate1 = path.join(pkgDir, relFile);
+    if (fs.existsSync(candidate1) && fs.statSync(candidate1).isFile()) {
+      return pkg;
+    }
+    const candidate2 = path.join(pkgDir, "src", relFile);
+    if (fs.existsSync(candidate2) && fs.statSync(candidate2).isFile()) {
+      return pkg;
+    }
+    // Check by basename if file has extension
+    if (path.extname(baseName)) {
+      try {
+        const matches = fastGlob.sync([`**/${baseName}`], {
+          cwd: pkgDir,
+          ignore: ["**/node_modules/**", "**/dist/**", "**/build/**"],
+          onlyFiles: true,
+          deep: 4,
+        });
+        if (matches.length > 0) {
+          return pkg;
+        }
+      } catch {}
+    } else {
+      // If keyword like 'auth', check if package path or package name matches
+      if (pkg.name.toLowerCase().includes(baseName.toLowerCase()) || pkg.path.toLowerCase().includes(baseName.toLowerCase())) {
+        return pkg;
+      }
+      // Or check if package has files matching the keyword
+      try {
+        const matches = fastGlob.sync([`**/*${baseName}*.*`], {
+          cwd: pkgDir,
+          ignore: ["**/node_modules/**", "**/dist/**", "**/build/**"],
+          onlyFiles: true,
+          deep: 3,
+        });
+        if (matches.length > 0) {
+          return pkg;
+        }
+      } catch {}
+    }
+  }
+
   // Fallback to root package if present
   const rootPkg = wsInfo.packages.find((p) => p.isRoot);
   return rootPkg || null;

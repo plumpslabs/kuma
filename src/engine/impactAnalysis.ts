@@ -134,7 +134,8 @@ async function findImportingFiles(targetFile: string, root: string): Promise<str
 async function findRelatedTests(
   targetFile: string,
   root: string,
-  owningPackage: WorkspacePackage | null
+  owningPackage: WorkspacePackage | null,
+  additionalDependents: string[] = []
 ): Promise<string[]> {
   const normTarget = normalizeScope(path.normalize(targetFile)) || path.normalize(targetFile);
 
@@ -169,14 +170,31 @@ async function findRelatedTests(
   const baseName = path.basename(normTarget, path.extname(normTarget));
   const testFiles: string[] = [];
 
-  const testPatterns = [
-    `**/*${baseName}*.test.*`,
-    `**/*${baseName}*.spec.*`,
-    `**/*${baseName}*_test.*`,
-    `**/tests/**/*${baseName}*.*`,
-    `**/test/**/*${baseName}*.*`,
-    `**/__tests__/**/*${baseName}*.*`,
-  ];
+  // Candidate query stems (e.g. "auth-middleware" -> ["auth-middleware", "auth"])
+  const stems = new Set<string>();
+  if (baseName) stems.add(baseName);
+  for (const part of baseName.split(/[-_.\s]+/).filter((p) => p.length >= 3)) {
+    stems.add(part);
+  }
+  for (const dep of additionalDependents.slice(0, 3)) {
+    const depBase = path.basename(dep, path.extname(dep));
+    if (depBase) stems.add(depBase);
+    for (const part of depBase.split(/[-_.\s]+/).filter((p) => p.length >= 3)) {
+      stems.add(part);
+    }
+  }
+
+  const testPatterns: string[] = [];
+  for (const stem of stems) {
+    testPatterns.push(
+      `**/*${stem}*.test.*`,
+      `**/*${stem}*.spec.*`,
+      `**/*${stem}*_test.*`,
+      `**/tests/**/*${stem}*.*`,
+      `**/test/**/*${stem}*.*`,
+      `**/__tests__/**/*${stem}*.*`
+    );
+  }
 
   try {
     const matches = await fastGlob(testPatterns, {
@@ -190,7 +208,16 @@ async function findRelatedTests(
   // If owning package has its own test directory, check tests in that package
   if (owningPackage && owningPackage.path !== ".") {
     try {
-      const pkgTests = await fastGlob(["**/*.{test,spec}.*"], {
+      const pkgPatterns: string[] = [];
+      for (const stem of stems) {
+        pkgPatterns.push(
+          `**/*${stem}*.{test,spec}.*`,
+          `**/tests/**/*${stem}*.*`,
+          `**/test/**/*${stem}*.*`,
+          `**/__tests__/**/*${stem}*.*`
+        );
+      }
+      const pkgTests = await fastGlob(pkgPatterns, {
         cwd: path.join(root, owningPackage.path),
         ignore: ["**/node_modules/**", "**/dist/**"],
         onlyFiles: true,
@@ -221,8 +248,18 @@ function assessRisk(
   const riskFlags: string[] = [];
 
   // 1. Critical path indicators
-  if (/(database|schema|migration|auth|security|safety|guard|policy|payment|secret|billing)/i.test(target)) {
+  const isSecurityOrCritical = /(database|schema|migration|auth|security|safety|guard|policy|payment|secret|billing)/i.test(target);
+  const isUserDestructive = /(user|account|member|customer|profile).*(delet|destro|remov|wipe|terminat)|(delet|destro|remov|wipe|terminat).*(user|account|member|customer|profile)/i.test(target);
+  const hasAuthMiddleware = directDependents.some((d) => /auth.*middleware|auth|security|jwt/i.test(d));
+
+  if (isSecurityOrCritical) {
     riskFlags.push("Security/Critical domain file");
+  }
+  if (isUserDestructive) {
+    riskFlags.push("Destructive user data/identity operation");
+  }
+  if (hasAuthMiddleware) {
+    riskFlags.push("Protected by critical security middleware (auth-middleware in pipeline)");
   }
 
   // 2. Public entrypoint
@@ -252,7 +289,12 @@ function assessRisk(
 
   let risk: ImpactRisk = "low";
   if (
+    isSecurityOrCritical ||
+    isUserDestructive ||
+    hasAuthMiddleware ||
     riskFlags.includes("Security/Critical domain file") ||
+    riskFlags.includes("Destructive user data/identity operation") ||
+    riskFlags.includes("Protected by critical security middleware (auth-middleware in pipeline)") ||
     (downstreamPackages.length > 2 && riskFlags.includes("Public package entrypoint/export"))
   ) {
     risk = "critical";
@@ -312,8 +354,57 @@ export async function calculateBlastRadius(
     directDependents = await findImportingFiles(target, root);
   }
 
+  // Semantic intent and pipeline resolution
+  const normLower = target.toLowerCase();
+  const isUserDestructive = /(user|account|member|customer|profile).*(delet|destro|remov|wipe|terminat)|(delet|destro|remov|wipe|terminat).*(user|account|member|customer|profile)/i.test(target);
+  const isSecurityTopic = /(auth|security|session|permission|jwt|token|middleware)/i.test(target);
+
+  if (isUserDestructive || isSecurityTopic || directDependents.length === 0) {
+    try {
+      const db = await getDb();
+      // Look for candidate nodes in graph matching tokens
+      const tokens = normLower.split(/[\s_-]+/).filter((t) => t.length >= 3);
+      for (const token of tokens) {
+        const stmt = db.prepare(`SELECT DISTINCT file_path, name FROM nodes WHERE (name LIKE ? OR file_path LIKE ?) LIMIT 5`);
+        stmt.bind([`%${token}%`, `%${token}%`]);
+        while (stmt.step()) {
+          const row = stmt.getAsObject() as { file_path: string; name: string };
+          const fp = row.file_path || row.name;
+          if (fp && !directDependents.includes(fp) && fp !== target) {
+            directDependents.push(fp);
+          }
+        }
+        stmt.free();
+      }
+
+      // Check for security/auth middleware in repository
+      const authMiddlewareMatches = await fastGlob(
+        [
+          "**/*auth-middleware*.*",
+          "**/*auth_middleware*.*",
+          "**/*auth.middleware*.*",
+          "**/middleware/*auth*.*",
+          "**/middlewares/*auth*.*",
+          "**/guards/*auth*.*",
+          "**/security/*auth*.*",
+          "**/lib/*auth*.*",
+        ],
+        {
+          cwd: root,
+          ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/.kuma/**"],
+          onlyFiles: true,
+        }
+      );
+      for (const am of authMiddlewareMatches) {
+        if (!directDependents.includes(am) && am !== target) {
+          directDependents.push(am);
+        }
+      }
+    } catch {}
+  }
+
   // 5. Find affected tests
-  const affectedTests = await findRelatedTests(target, root, owningPackage);
+  const affectedTests = await findRelatedTests(target, root, owningPackage, directDependents);
 
   // 6. Risk assessment
   const { risk, riskFlags } = assessRisk(

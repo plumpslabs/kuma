@@ -995,8 +995,24 @@ export async function runGarbageCollection(): Promise<string> {
       } catch { return 0; }
     };
 
-    // 1. Orphan nodes (no edges, no file_path, older than 30 days)
-    const orphanResult = db.exec(`DELETE FROM nodes WHERE id NOT IN (SELECT source_id FROM edges UNION SELECT target_id FROM edges) AND file_path IS NULL AND updated_at < strftime('%s','now','-30 days')`);
+    // 1. Reconcile unlinked decision (ADR) nodes to architecture decisions domain
+    try {
+      db.run(`
+        INSERT INTO nodes (id, type, name, file_path, metadata, updated_at)
+        VALUES ('feature_domain::architecture_decisions', 'feature_domain', 'Architecture Decisions', '', '{"description":"High-level architectural decisions and ADR registry"}', strftime('%s','now'))
+        ON CONFLICT(id) DO NOTHING
+      `);
+      db.run(`
+        INSERT OR IGNORE INTO edges (source_id, target_id, type, weight, metadata, created_at)
+        SELECT id, 'feature_domain::architecture_decisions', 'explains', 1.0, '{"reason":"adr-domain"}', strftime('%s','now')
+        FROM nodes
+        WHERE type = 'decision'
+          AND id NOT IN (SELECT source_id FROM edges UNION SELECT target_id FROM edges)
+      `);
+    } catch {}
+
+    // 2. Orphan nodes (no edges, no file_path, older than 30 days, not decisions)
+    const orphanResult = db.exec(`DELETE FROM nodes WHERE id NOT IN (SELECT source_id FROM edges UNION SELECT target_id FROM edges) AND file_path IS NULL AND type != 'decision' AND updated_at < strftime('%s','now','-30 days')`);
     removed += orphanResult[0]?.values?.length || 0;
 
     // 2. Stale edges (weight < 0.1, older than 30 days)

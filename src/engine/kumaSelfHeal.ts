@@ -130,10 +130,28 @@ export async function verifyGotchaStaleness(): Promise<Array<{
       let metadata: Record<string, unknown> = {};
       try { metadata = JSON.parse(row[filePathIdx] as string); } catch {}
 
-      const filePath = metadata.file_path as string;
-      if (!filePath || filePath.startsWith("search::") || filePath.startsWith("api_route::")) continue;
+      const rawPath = metadata.file_path as string;
+      if (!rawPath) continue;
+      const filePath = rawPath.trim();
+      if (
+        filePath.startsWith("search::") ||
+        filePath.startsWith("api_route::") ||
+        filePath.includes("::") ||
+        /\s/.test(filePath) ||
+        !path.extname(filePath)
+      ) {
+        continue;
+      }
 
-      const fullPath = path.join(getProjectRoot(), filePath);
+      let fullPath = path.join(getProjectRoot(), filePath);
+      if (!fs.existsSync(fullPath)) {
+        try {
+          const { findSourceFilePath } = await import("./astSkeletonEngine.js");
+          const found = findSourceFilePath(filePath);
+          if (found) fullPath = found;
+        } catch {}
+      }
+
       if (!fs.existsSync(fullPath)) {
         stale.push({ gotchaId: nodeId, file_path: filePath, issue: "file_missing" });
       } else {

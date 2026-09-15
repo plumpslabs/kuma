@@ -122,6 +122,47 @@ function readSessionMetrics(dbPath: string): {
 // STALENESS — nodes whose file_path no longer exists on disk
 // ============================================================
 
+function searchByBasename(dir: string, baseName: string, maxDepth: number): string | null {
+  if (maxDepth < 0) return null;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "dist") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase() === baseName.toLowerCase()) return full;
+      if (entry.isDirectory()) {
+        const found = searchByBasename(full, baseName, maxDepth - 1);
+        if (found) return found;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function findFileInMonorepo(root: string, targetPath: string): string | null {
+  const direct = path.join(root, targetPath);
+  if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return direct;
+
+  const targetBase = path.basename(targetPath);
+
+  try {
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    for (const ent of entries) {
+      if (ent.isDirectory() && !ent.name.startsWith(".") && ent.name !== "node_modules" && ent.name !== "dist" && ent.name !== "build") {
+        const dirPath = path.join(root, ent.name);
+        const relCand = path.join(dirPath, targetPath);
+        if (fs.existsSync(relCand) && fs.statSync(relCand).isFile()) return relCand;
+        const relSrcCand = path.join(dirPath, "src", targetPath);
+        if (fs.existsSync(relSrcCand) && fs.statSync(relSrcCand).isFile()) return relSrcCand;
+        const found = searchByBasename(dirPath, targetBase, 3);
+        if (found) return found;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 function detectStaleNodes(db: any, dbPath: string): {
   checked: number;
   staleNodes: number;
@@ -130,8 +171,9 @@ function detectStaleNodes(db: any, dbPath: string): {
   try {
     const root = projectRootFromDb(dbPath);
     const stmt = db.prepare(
-      `SELECT id, file_path, metadata, COUNT(*) as cnt FROM nodes
+      `SELECT id, file_path, type, metadata, COUNT(*) as cnt FROM nodes
        WHERE file_path IS NOT NULL AND file_path != '' AND file_path NOT LIKE '%::%'
+         AND type NOT IN ('decision', 'arch_flow', 'feature_domain', 'feature', 'workflow', 'cross_service_link', 'research')
        GROUP BY file_path ORDER BY cnt DESC LIMIT 500`
     );
     const missing: Array<{ filePath: string; nodeCount: number; reason: string }> = [];
@@ -139,13 +181,28 @@ function detectStaleNodes(db: any, dbPath: string): {
     let staleNodes = 0;
     while (stmt.step()) {
       const row = stmt.getAsObject();
-      const fp = row.file_path as string;
+      const fp = (row.file_path as string || "").trim();
       const metadata = row.metadata as string || '{}';
+
+      // Skip virtual / non-file tokens:
+      // 1. Strings with spaces (e.g. "jest config")
+      // 2. Strings without a valid file extension (e.g. "ApiDocsPage")
+      // 3. Virtual scheme prefixes
+      if (!fp || /\s/.test(fp) || !path.extname(fp) || fp.includes("::")) {
+        continue;
+      }
+
       checked++;
-      const fullPath = path.join(root, fp);
+      let fullPath = path.join(root, fp);
+      if (!fs.existsSync(fullPath)) {
+        const monorepoPath = findFileInMonorepo(root, fp);
+        if (monorepoPath) {
+          fullPath = monorepoPath;
+        }
+      }
       
       if (!fs.existsSync(fullPath)) {
-        // File doesn't exist = STALE
+        // File truly doesn't exist = STALE
         const count = Number(row.cnt ?? 1);
         missing.push({ filePath: fp, nodeCount: count, reason: 'file_missing' });
         staleNodes += count;

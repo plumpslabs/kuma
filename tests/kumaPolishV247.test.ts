@@ -6,7 +6,7 @@ import { getActiveGotchas } from "../src/engine/domainRules.js";
 import { recordDomainFlow } from "../src/engine/kumaGraph.js";
 import { getFreshDomainFlow } from "../src/engine/kumaFlowCache.js";
 import { handleContext } from "../src/tools/kumaContextTool.js";
-import { recordDecision } from "../src/engine/kumaMemory.js";
+import { recordDecision, recordDecisionToGraph } from "../src/engine/kumaMemory.js";
 import { createCheckpoint, listCheckpoints } from "../src/engine/kumaCheckpoint.js";
 import { sessionMemory } from "../src/engine/sessionMemory.js";
 
@@ -119,5 +119,30 @@ describe("Kuma v2.4.7 Polish & Real-World Edge Cases", () => {
     expect(typeof metrics.sessionDuration).toBe("string");
     // Should not show ancient hours like 700h
     expect(metrics.sessionDuration).not.toMatch(/\b[5-9]\d{2}h/);
+  });
+
+  // ============================================================
+  // 5. ADR decisions auto-link to architecture domain (zero orphan nodes)
+  // ============================================================
+  it("auto-links decisions to architecture domain node so they are never orphan", async () => {
+    const title = `ADR Zero Orphan Test ${Date.now()}`;
+    await recordDecisionToGraph({
+      title,
+      context: "Pure abstract architectural decision without file paths",
+      options: ["opt1", "opt2"],
+      rationale: "Ensuring zero orphan nodes in knowledge graph",
+      outcome: "implemented",
+      timestamp: new Date().toISOString(),
+    });
+
+    const { getDb } = await import("../src/engine/kumaDb.js");
+    const db = await getDb();
+    const decisionId = `decision::${title.replace(/[^a-zA-Z0-9_\-\s]/g, "").trim().replace(/\s+/g, "-")}`;
+
+    const stmt = db.prepare(`SELECT * FROM edges WHERE source_id = ? AND target_id = 'feature_domain::architecture_decisions'`);
+    stmt.bind([decisionId]);
+    const hasEdge = stmt.step();
+    stmt.free();
+    expect(hasEdge).toBe(true);
   });
 });
