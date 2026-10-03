@@ -58,10 +58,43 @@ describe("Multi-Provider Agent Compliance & Init", () => {
     const pluginContent = fs.readFileSync(path.join(tmpDir, ".opencode/plugins/kuma.js"), "utf-8");
     expect(pluginContent).toContain("KumaPlugin");
     expect(pluginContent).toContain("tool.execute.before");
+    // Risk-sensitive: throws only on critical/high (no console.warn spam path)
+    expect(pluginContent).toContain("critical");
+    expect(pluginContent).toContain("file.edited");
 
     const agentsContent = fs.readFileSync(path.join(tmpDir, "AGENTS.md"), "utf-8");
     expect(agentsContent).toContain("kuma_kuma_context");
     expect(agentsContent).toContain("kuma_context");
+  });
+
+  test("cursor init generates native hooks.json (afterFileEdit + beforeShellExecution)", () => {
+    const results = runInit({ types: ["cursor"], projectRoot: tmpDir });
+    expect(results.map(r => r.filePath)).toContain(".cursor/hooks.json");
+    expect(fs.existsSync(path.join(tmpDir, ".cursor/hooks.json"))).toBe(true);
+    const hooks = JSON.parse(fs.readFileSync(path.join(tmpDir, ".cursor/hooks.json"), "utf-8"));
+    expect(hooks.version).toBe(1);
+    expect(JSON.stringify(hooks.hooks.afterFileEdit)).toContain("kuma hook pre-edit");
+    expect(JSON.stringify(hooks.hooks.beforeShellExecution)).toContain("kuma hook pre-bash");
+    // Idempotent: second run skips (no duplicates)
+    const again = runInit({ types: ["cursor"], projectRoot: tmpDir });
+    const hookRes = again.find(r => r.filePath === ".cursor/hooks.json");
+    expect(hookRes?.action).toBe("skipped");
+    const hooks2 = JSON.parse(fs.readFileSync(path.join(tmpDir, ".cursor/hooks.json"), "utf-8"));
+    expect(hooks2.hooks.afterFileEdit.length).toBe(1);
+  });
+
+  test("windsurf/copilot/codex init generate native hook configs", () => {
+    const results = runInit({ types: ["windsurf", "copilot", "codex"], projectRoot: tmpDir });
+    const files = results.map(r => r.filePath);
+    expect(files).toContain(".windsurf/hooks.json");
+    expect(files).toContain(".vscode/settings.json");
+    expect(files).toContain(".codex/hooks.json");
+    const windsurf = JSON.parse(fs.readFileSync(path.join(tmpDir, ".windsurf/hooks.json"), "utf-8"));
+    expect(JSON.stringify(windsurf.hooks)).toContain("kuma hook pre-edit");
+    const copilot = JSON.parse(fs.readFileSync(path.join(tmpDir, ".vscode/settings.json"), "utf-8"));
+    expect(JSON.stringify(copilot.hooks.PreToolUse)).toContain("kuma hook pre-edit");
+    const codex = JSON.parse(fs.readFileSync(path.join(tmpDir, ".codex/hooks.json"), "utf-8"));
+    expect(JSON.stringify(codex.hooks.PreToolUse)).toContain("kuma hook pre-edit");
   });
 
   test("claude init generates CLAUDE.md, settings with hooks, and skill", () => {

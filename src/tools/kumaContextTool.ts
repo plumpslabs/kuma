@@ -41,16 +41,25 @@ export async function handleContext(params: ContextParams): Promise<string> {
   const resolvedAction = CONTEXT_ALIASES[rawAction.toLowerCase()] || rawAction;
   const action = resolvedAction as ContextAction;
 
+  // Issue #32 P1 — obedience nudge (non-blocking): any non-init action
+  // without a prior init gets a reminder prefix.
+  let obediencePrefix = "";
+  if (action !== "init" && !sessionMemory.hasToolCall("kuma_context_init")) {
+    obediencePrefix =
+      `⚠️ **Obedience nudge**: \`kuma_context({ action: "init" })\` was not called yet this session. ` +
+      `Run it first so project brief + fresh gotchas are loaded. Continuing anyway…\n\n`;
+  }
+
   switch (action) {
     case "init": return handleInit(params);
-    case "research": return handleResearch(params);
-    case "history": return handleHistory(params);
-    case "flow": return handleFlow(params);
-    case "map": return handleMap(params);
-    case "impact": return handleImpact(params);
-    case "cluster": return handleCluster(params);
-    case "skeleton": return handleSkeleton(params);
-    case "reuse": return handleReuse(params);
+    case "research": return obediencePrefix + await handleResearch(params);
+    case "history": return obediencePrefix + await handleHistory(params);
+    case "flow": return obediencePrefix + await handleFlow(params);
+    case "map": return obediencePrefix + await handleMap(params);
+    case "impact": return obediencePrefix + await handleImpact(params);
+    case "cluster": return obediencePrefix + await handleCluster(params);
+    case "skeleton": return obediencePrefix + await handleSkeleton(params);
+    case "reuse": return obediencePrefix + await handleReuse(params);
     default: return `Unknown action "${action}". Use: init, research, history, flow, map, impact, cluster, skeleton, reuse`;
   }
 }

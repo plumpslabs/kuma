@@ -285,6 +285,17 @@ async function main(): Promise<void> {
       // Runs BEFORE dedupe so every edit counts toward the loop signal.
       await trackFileEditLoop(target);
 
+      // Issue #32 P2 — auto-checkpoint before the first risky edit
+      // (migrations/drizzle/schema). Hook-safe single-file copy; null when N/A.
+      try {
+        const { maybeAutoCheckpoint } = await import("./engine/kumaCheckpoint.js");
+        const autoCp = maybeAutoCheckpoint(target);
+        if (autoCp) {
+          const { recordInjection } = await import("./engine/kumaGotchas.js");
+          await recordInjection({ filePath: target, kind: "edit" });
+        }
+      } catch { /* non-critical */ }
+
       // I5: don't re-inject the same file within the dedupe window
       if (!checkInjectDedupe(target)) {
         process.stdout.write("{}");
@@ -314,12 +325,12 @@ async function main(): Promise<void> {
   if (args[0] === "hook" && args[1] === "pre-bash") {
     try {
       const stdin = await readStdin();
-      const { getCommandContext, buildHookResponse } = await import("./engine/kumaInject.js");
-      const data = JSON.parse(stdin || "{}");
-      const command =
-        (data && typeof data === "object" && data.tool_input && typeof data.tool_input.command === "string")
-          ? data.tool_input.command
-          : "";
+      const { getCommandContext, buildHookResponse, parseHookInput } = await import("./engine/kumaInject.js");
+      // Unified parser: Claude {tool_input.command} + Cursor/Windsurf/OpenCode shapes
+      let command = "";
+      try {
+        command = parseHookInput(stdin).command || "";
+      } catch { /* fall through */ }
       if (!command.trim()) {
         process.stdout.write("{}");
         process.exit(0);

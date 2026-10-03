@@ -392,13 +392,24 @@ function geminiTemplate(): string {
   ].join("\n");
 }
 
-/** OpenCode native auto-loaded plugin: .opencode/plugins/kuma.js */
+/** OpenCode native auto-loaded plugin: .opencode/plugins/kuma.js
+ *
+ * MATURE RISK-SENSITIVE design (RSCB-MC pattern):
+ * - `tool.execute.before` is NOT model-visible in OpenCode except via throw.
+ *   So we throw ONLY for critical/high gotchas (blocks the edit and shows the
+ *   message to the agent). Medium/low stay silent (zero tokens) — the agent
+ *   still has MCP tools + rules for those.
+ * - Severity is parsed from `.kuma/KNOWN_GOTCHAS.md` (`**Severity**: x` lines).
+ */
 function opencodePluginTemplate(): string {
   return [
     "/**",
-    " * 🐻 Kuma MCP — OpenCode Plugin",
-    " * Auto-injects gotcha warnings and safety guidance before file edits and commands in OpenCode.",
+    " * 🐻 Kuma MCP — OpenCode Plugin (risk-sensitive, token-efficient)",
     " * OpenCode loads all plugins from .opencode/plugins/*.js automatically.",
+    " *",
+    " * - tool.execute.before: throws ONLY on critical/high gotchas for the",
+    " *   file being edited (thrown message IS shown to the agent).",
+    " *   Medium/low gotchas stay silent (0 tokens) — use MCP tools for those.",
     " */",
     'import fs from "node:fs";',
     'import path from "node:path";',
@@ -414,24 +425,26 @@ function opencodePluginTemplate(): string {
     "  return process.cwd();",
     "}",
     "",
-    "function getActiveGotchasForFile(filePath) {",
+    "function getBlockingGotchasForFile(filePath) {",
     "  try {",
     "    const root = getProjectRoot();",
     '    const gotchasPath = path.join(root, ".kuma", "KNOWN_GOTCHAS.md");',
     "    if (!fs.existsSync(gotchasPath)) return [];",
     '    const content = fs.readFileSync(gotchasPath, "utf-8");',
-    "    const gotchas = [];",
-    '    const normalizedTarget = filePath.replace(/^[./]+/, "");',
+    "    const blocking = [];",
+    '    const normalizedTarget = String(filePath).replace(/^[./]+/, "");',
     '    const sections = content.split(/###\\s+/);',
     "    for (const section of sections) {",
     "      if (!section.trim()) continue;",
     '      const lines = section.split("\\n");',
     '      const title = lines[0] || "";',
-    "      if (title.includes(normalizedTarget) || section.includes(normalizedTarget)) {",
-    "        gotchas.push(title.trim());",
-    "      }",
+    "      if (!title.includes(normalizedTarget) && !section.includes(normalizedTarget)) continue;",
+    '      const sevMatch = section.match(/\\*\\*Severity\\*\\*:\\s*(critical|high|medium|low)/i);',
+    '      const severity = (sevMatch ? sevMatch[1] : "medium").toLowerCase();',
+    '      if (severity !== "critical" && severity !== "high") continue;',
+    "      blocking.push(`[${severity}] ${title.trim()}`);",
     "    }",
-    "    return gotchas;",
+    "    return blocking.slice(0, 3);",
     "  } catch {",
     "    return [];",
     "  }",
@@ -440,19 +453,24 @@ function opencodePluginTemplate(): string {
     "export const KumaPlugin = async () => {",
     "  return {",
     '    "tool.execute.before": async (input, output) => {',
-    '      const tool = (input.tool || "").toLowerCase();',
+    '      const tool = String(input.tool || "").toLowerCase();',
     "      const args = output.args || {};",
     '      const targetPath = args.filePath || args.targetFile || args.path || args.file || "";',
-    '      if (targetPath && (tool.includes("edit") || tool.includes("write") || tool.includes("patch"))) {',
-    "        const gotchas = getActiveGotchasForFile(String(targetPath));",
-    "        if (gotchas.length > 0) {",
-    "          console.warn(",
-    "            `\\n🐻 [Kuma Alert] Active gotchas found for ${targetPath}:\\n` +",
-    '            gotchas.map((g) => `  ⚠️ ${g}`).join("\\n") +',
-    '            `\\n👉 Remember to record any new gotchas via kuma_memory({ action: "gotcha" })\\n`',
-    "          );",
-    "        }",
+    '      if (!targetPath) return;',
+    '      if (!(tool.includes("edit") || tool.includes("write") || tool.includes("patch"))) return;',
+    "      const blocking = getBlockingGotchasForFile(String(targetPath));",
+    "      if (blocking.length > 0) {",
+    "        throw new Error(",
+    "          `🐻 [Kuma] ${blocking.length} critical/high gotcha(s) for ${targetPath}:\\n` +",
+    '          blocking.map((g) => `  🔴 ${g}`).join("\\n") +',
+    '          `\\nRead .kuma/KNOWN_GOTCHAS.md for workarounds, or run kuma_memory({ action: "gotcha" }) to list.`',
+    "        );",
     "      }",
+    "    },",
+    '    "file.edited": async (input) => {',
+    "      // Post-edit verify nudge (log channel only — never blocks).",
+    "      const fp = input.filePath || input.path || (input.file && input.file.path) || \"\";",
+    '      if (fp) console.warn(`🐻 [Kuma] ${fp} edited — consider kuma_safety({ action: "verify", scope: "${fp}" })`);',
     "    },",
     "  };",
     "};",
@@ -1545,6 +1563,131 @@ function handleClaudeSecondary(root: string, results: InitResult[]): void {
 }
 
 /**
+ * Generic idempotent JSON hooks-file writer for providers.
+ * Creates or merges (never clobbers user hooks). Best-effort native shapes:
+ * - Cursor: .cursor/hooks.json {version:1, hooks:{afterFileEdit, beforeShellExecution}}
+ *   (ref: cursor.com/docs/hooks)
+ * - Windsurf: .windsurf/hooks.json {hooks:{pre_write_code, pre_run_command}}
+ *   (user-level alt: ~/.codeium/windsurf/hooks.json)
+ * - Copilot (VS Code): .vscode/settings.json {hooks:{PreToolUse}}
+ *   (ref: code.visualstudio.com/docs/agents/reference/hooks-reference)
+ * - Codex CLI: .codex/hooks.json (requires codex_hooks=true; PascalCase events)
+ */
+function writeHooksFile(
+  root: string,
+  relPath: string,
+  type: ConfigType,
+  results: InitResult[],
+  build: (existing: Record<string, unknown>) => { doc: Record<string, unknown>; changed: boolean },
+): void {
+  const fullPath = path.resolve(root, relPath);
+  try {
+    let existing: Record<string, unknown> = {};
+    let existed = false;
+    if (fs.existsSync(fullPath)) {
+      existed = true;
+      try { existing = JSON.parse(fs.readFileSync(fullPath, "utf-8")); }
+      catch { existing = {}; }
+    } else {
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    }
+    const { doc, changed } = build(existing);
+    if (!changed) {
+      results.push({ type, filePath: relPath, action: "skipped" });
+      return;
+    }
+    fs.writeFileSync(fullPath, JSON.stringify(doc, null, 2) + "\n", "utf-8");
+    results.push({ type, filePath: relPath, action: existed ? "appended" : "created" });
+  } catch (err) {
+    results.push({ type, filePath: relPath, action: "error", error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function dedupeCommands(list: Array<Record<string, unknown>>, entry: Record<string, unknown>): boolean {
+  const cmd = String(entry.command || "");
+  if (list.some((e) => String(e.command || "") === cmd)) return false;
+  list.push(entry);
+  return true;
+}
+
+/** Cursor native hooks: afterFileEdit + beforeShellExecution → kuma hook (ref: cursor.com/docs/hooks). */
+function handleCursorHooks(root: string, results: InitResult[]): void {
+  writeHooksFile(root, ".cursor/hooks.json", "cursor", results, (existing) => {
+    const doc: Record<string, unknown> = { version: 1, ...existing };
+    const hooks = (doc.hooks && typeof doc.hooks === "object" ? doc.hooks : {}) as Record<string, unknown>;
+    let changed = false;
+    const after = Array.isArray(hooks.afterFileEdit) ? [...hooks.afterFileEdit as Array<Record<string, unknown>>] : [];
+    changed = dedupeCommands(after, { command: "kuma hook pre-edit" }) || changed;
+    const before = Array.isArray(hooks.beforeShellExecution) ? [...hooks.beforeShellExecution as Array<Record<string, unknown>>] : [];
+    changed = dedupeCommands(before, { command: "kuma hook pre-bash" }) || changed;
+    hooks.afterFileEdit = after;
+    hooks.beforeShellExecution = before;
+    doc.version = 1;
+    doc.hooks = hooks;
+    return { doc, changed };
+  });
+}
+
+/** Windsurf native hooks (project-level best-effort; user-level alt ~/.codeium/windsurf/hooks.json). */
+function handleWindsurfHooks(root: string, results: InitResult[]): void {
+  writeHooksFile(root, ".windsurf/hooks.json", "windsurf", results, (existing) => {
+    const doc: Record<string, unknown> = { ...existing };
+    const hooks = (doc.hooks && typeof doc.hooks === "object" ? doc.hooks : {}) as Record<string, unknown>;
+    let changed = false;
+    const preWrite = Array.isArray(hooks.pre_write_code) ? [...hooks.pre_write_code as Array<Record<string, unknown>>] : [];
+    changed = dedupeCommands(preWrite, { command: "kuma hook pre-edit", show_output: false }) || changed;
+    const preRun = Array.isArray(hooks.pre_run_command) ? [...hooks.pre_run_command as Array<Record<string, unknown>>] : [];
+    changed = dedupeCommands(preRun, { command: "kuma hook pre-bash", show_output: false }) || changed;
+    hooks.pre_write_code = preWrite;
+    hooks.pre_run_command = preRun;
+    doc.hooks = hooks;
+    return { doc, changed };
+  });
+}
+
+/** Copilot (VS Code) hooks: PreToolUse additionalContext-compatible stdout (ref: VS Code hooks-reference). */
+function handleCopilotHooks(root: string, results: InitResult[]): void {
+  writeHooksFile(root, ".vscode/settings.json", "copilot", results, (existing) => {
+    const doc: Record<string, unknown> = { ...existing };
+    const hooks = (doc.hooks && typeof doc.hooks === "object" ? doc.hooks : {}) as Record<string, unknown>;
+    let changed = false;
+    const pre = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse as Array<Record<string, unknown>>] : [];
+    const hasEdit = pre.some((e) => String((e as Record<string, unknown>).command || "") === "kuma hook pre-edit");
+    if (!hasEdit) {
+      pre.push({ matcher: "Edit|Write|MultiEdit", type: "command", command: "kuma hook pre-edit", timeout: 15 });
+      changed = true;
+    }
+    const hasBash = pre.some((e) => String((e as Record<string, unknown>).command || "") === "kuma hook pre-bash");
+    if (!hasBash) {
+      pre.push({ matcher: "Bash", type: "command", command: "kuma hook pre-bash", timeout: 15 });
+      changed = true;
+    }
+    hooks.PreToolUse = pre;
+    doc.hooks = hooks;
+    return { doc, changed };
+  });
+}
+
+/** Codex CLI hooks (experimental — requires codex_hooks=true; PascalCase events). */
+function handleCodexHooks(root: string, results: InitResult[]): void {
+  writeHooksFile(root, ".codex/hooks.json", "codex", results, (existing) => {
+    const doc: Record<string, unknown> = { ...existing };
+    const hooks = (doc.hooks && typeof doc.hooks === "object" ? doc.hooks : {}) as Record<string, unknown>;
+    let changed = false;
+    const pre = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse as Array<Record<string, unknown>>] : [];
+    const hasEdit = pre.some((e) => String((e as Record<string, unknown>).command || "") === "kuma hook pre-edit");
+    if (!hasEdit) {
+      pre.push({ matcher: "Edit|Write", type: "command", command: "kuma hook pre-edit" });
+      changed = true;
+    }
+    hooks.PreToolUse = pre;
+    doc.hooks = hooks;
+    return { doc, changed };
+  });
+}
+
+/**
  * I7 (Roadmap): generate Cursor globs-based rules for active high/critical
  * gotchas. Cursor auto-applies a .mdc rule when a matching file is opened,
  * giving gotcha injection on Cursor without PreToolUse hooks.
@@ -1742,6 +1885,18 @@ export function runInit(options: InitOptions): InitResult[] {
   // I7: Cursor globs-based gotcha rules — auto-apply when a gotcha file is open
   if (selectedSet.has("cursor")) {
     handleCursorGotchaRules(root, results);
+    handleCursorHooks(root, results);
+  }
+
+  // Native hooks per provider (best-effort, idempotent merge — never clobbers)
+  if (selectedSet.has("windsurf")) {
+    handleWindsurfHooks(root, results);
+  }
+  if (selectedSet.has("copilot")) {
+    handleCopilotHooks(root, results);
+  }
+  if (selectedSet.has("codex")) {
+    handleCodexHooks(root, results);
   }
 
   return results;

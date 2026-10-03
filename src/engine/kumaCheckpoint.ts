@@ -368,3 +368,73 @@ function simpleHash(str: string): string {
   }
   return Math.abs(hash).toString(36);
 }
+
+// ============================================================
+// AUTO-CHECKPOINT (Issue #32 P2)
+// ============================================================
+
+const RISKY_EDIT_PATTERN = /(migrations?|drizzle|schema|prisma|\.sql$|\.db$)/i;
+const AUTO_CP_STATE = ".kuma/hook-state.json";
+
+/** True when the file path looks risky (migration/schema/DB area). */
+export function isRiskyEditPath(filePath: string): boolean {
+  return RISKY_EDIT_PATTERN.test(filePath);
+}
+
+function loadAutoCpDone(root: string): Record<string, boolean> {
+  try {
+    const fp = path.join(root, AUTO_CP_STATE);
+    if (fs.existsSync(fp)) {
+      const parsed = JSON.parse(fs.readFileSync(fp, "utf-8"));
+      return (parsed?.autoCheckpoints as Record<string, boolean>) ?? {};
+    }
+  } catch { /* fresh */ }
+  return {};
+}
+
+function saveAutoCpDone(root: string, done: Record<string, boolean>): void {
+  try {
+    const fp = path.join(root, AUTO_CP_STATE);
+    const parsed = fs.existsSync(fp) ? JSON.parse(fs.readFileSync(fp, "utf-8")) : {};
+    parsed.autoCheckpoints = done;
+    fs.writeFileSync(fp, JSON.stringify(parsed), "utf-8");
+  } catch { /* non-critical */ }
+}
+
+/**
+ * Issue #32 P2 — auto-checkpoint before the first risky edit.
+ * Hook-safe: single-file copy only (no DB read-modify-write, so no
+ * race with the MCP server). Runs once per file per session window.
+ * Returns the checkpoint label when created, null otherwise.
+ */
+export function maybeAutoCheckpoint(filePath: string): string | null {
+  try {
+    if (!isRiskyEditPath(filePath)) return null;
+    const root = getProjectRoot();
+    const done = loadAutoCpDone(root);
+    if (done[filePath]) return null;
+    const abs = path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return null;
+    const label = `auto-pre-${sanitizeLabel(path.basename(filePath))}`;
+    const cpDir = path.join(root, CHECKPOINT_DIR, label);
+    if (!fs.existsSync(cpDir)) fs.mkdirSync(cpDir, { recursive: true });
+    fs.copyFileSync(abs, path.join(cpDir, path.basename(abs)));
+    fs.writeFileSync(
+      path.join(cpDir, "manifest.json"),
+      JSON.stringify({
+        label,
+        timestamp: Date.now(),
+        files: [{ path: filePath, hash: "" }],
+        dbSnapshot: false,
+        description: `Auto-checkpoint before risky edit of ${filePath} (issue #32)`,
+        auto: true,
+      } as CheckpointManifest),
+      "utf-8",
+    );
+    done[filePath] = true;
+    saveAutoCpDone(root, done);
+    return label;
+  } catch {
+    return null;
+  }
+}

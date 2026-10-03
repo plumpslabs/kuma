@@ -463,8 +463,7 @@ class SessionMemory {
     }
   }
 
-  recordToolCall(toolName: string, params: Record<string, unknown>): void {
-    this.ensureInit();
+  recordToolCall(toolName: string, params: Record<string, unknown>): void {    this.ensureInit();
     const timestamp = Date.now();
     this.state.toolCalls.push({
       toolName,
@@ -480,6 +479,20 @@ class SessionMemory {
 
     // Auto-track to DB tables (fire-and-forget)
     this.autoTrackToDb(toolName, params, timestamp).catch(() => {});
+  }
+
+  /**
+   * Issue #32 P1 — obedience enforcement helper (non-blocking).
+   * Returns true when a tool call with the given prefix was recorded
+   * in this session (checks in-memory toolCalls, last 100).
+   */
+  hasToolCall(prefix: string): boolean {
+    try {
+      this.ensureInit();
+      return this.state.toolCalls.some((t) => t.toolName.startsWith(prefix));
+    } catch {
+      return false;
+    }
   }
 
   /**

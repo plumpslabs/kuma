@@ -236,7 +236,7 @@ export async function listGotchas(params: {
       sql += " AND status IN ('active', 'verified')";
     }
 
-    sql += " ORDER BY severity DESC, created_at DESC LIMIT 50";
+    sql += " ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, updated_at DESC LIMIT 51";
 
     const stmt = db.prepare(sql);
     stmt.bind(bind);
@@ -248,17 +248,38 @@ export async function listGotchas(params: {
       return "✅ **No gotchas recorded** — legacy codebase looks clean.";
     }
 
+    // Total count for truncated notice (issue #32 P1)
+    let total = results.length;
+    try {
+      let countSql = "SELECT COUNT(*) as cnt FROM known_gotchas WHERE 1=1";
+      const countBind: unknown[] = [];
+      if (params.filePath) { countSql += " AND file_path LIKE ?"; countBind.push(`%${params.filePath}%`); }
+      if (params.severity) { countSql += " AND severity = ?"; countBind.push(params.severity); }
+      if (params.status && params.status !== "all") { countSql += " AND status = ?"; countBind.push(params.status); }
+      else if (!params.status) { countSql += " AND status IN ('active', 'verified')"; }
+      const cs = db.prepare(countSql);
+      cs.bind(countBind);
+      if (cs.step()) total = (cs.getAsObject() as { cnt: number }).cnt || results.length;
+      cs.free();
+    } catch {}
+    const truncated = total > results.length;
+    const shown = truncated ? results.slice(0, 50) : results;
+    const nowSec = Math.floor(Date.now() / 1000);
+
     const lines: string[] = [
-      `⚠️ **Known Gotchas** — ${results.length} recorded`,
+      `⚠️ **Known Gotchas** — showing ${shown.length} of ${total}${truncated ? " (truncated: true — narrow with filePath/severity)" : ""}`,
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
       "",
     ];
 
-    for (const g of results) {
+    for (const g of shown) {
       const icon = g.severity === "critical" ? "🔴"
         : g.severity === "high" ? "🟠"
           : g.severity === "medium" ? "🟡" : "🟢";
-      lines.push(`${icon} [${g.severity}] ${g.file_path}`);
+      const ageSec = nowSec - (Number(g.created_at) || nowSec);
+      const isNew = ageSec < 24 * 3600 ? " 🆕" : "";
+      const updated = g.updated_at ? ` · lastSeen ${new Date(Number(g.updated_at) * 1000).toISOString().split("T")[0]}` : "";
+      lines.push(`${icon} [${g.severity}]${isNew} ${g.file_path}${updated}`);
       lines.push(`   📝 ${g.description?.toString().substring(0, 100)}`);
       if (g.trigger_command) lines.push(`   ⌨️ when running: \`${(g.trigger_command as string).substring(0, 80)}\``);
       if (g.workaround) lines.push(`   💡 ${(g.workaround as string).substring(0, 100)}`);

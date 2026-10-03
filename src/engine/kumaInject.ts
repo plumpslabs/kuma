@@ -432,28 +432,61 @@ export async function getFileSummary(filePath: string): Promise<string | null> {
 export interface HookInput {
   filePaths: string[];
   goal?: string;
+  /** Shell command being run (pre-bash providers). Empty when N/A. */
+  command?: string;
 }
 
 /**
- * Parses the Claude Code hook stdin payload:
- * { tool_name, tool_input: { file_path?, new_file_path?, notebook_path?, ... } }
+ * Parses a hook stdin payload from MULTIPLE providers into a unified shape.
+ * Accepted shapes (best-effort, mature-unified):
+ * - Claude Code: { tool_name, tool_input: { file_path?, file_paths?, command? } }
+ * - Cursor / Windsurf / generic: { file_path?, file_paths?, path?, file?, command?, commandline? }
+ * - OpenCode plugin / Bash: { command?, tool?, args? }
  */
 export function parseHookInput(raw: string): HookInput {
   try {
     const data = JSON.parse(raw);
-    const ti = (data && typeof data === "object" ? data.tool_input : {}) || {};
+    const root = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+    const ti = (root.tool_input && typeof root.tool_input === "object"
+      ? root.tool_input as Record<string, unknown>
+      : {}) as Record<string, unknown>;
+    const args = (root.args && typeof root.args === "object"
+      ? root.args as Record<string, unknown>
+      : {}) as Record<string, unknown>;
     const paths = new Set<string>();
     const add = (p: unknown): void => {
       if (typeof p === "string" && p.trim()) paths.add(p.trim());
     };
+    // Claude nested
     add(ti.file_path);
     add(ti.new_file_path);
     add(ti.notebook_path);
     if (Array.isArray(ti.file_paths)) ti.file_paths.forEach(add);
-    return {
-      filePaths: [...paths],
-      goal: typeof ti.goal === "string" ? ti.goal : undefined,
-    };
+    // Generic top-level (Cursor / Windsurf / Codex / Gemini / OpenCode)
+    add(root.file_path);
+    add(root.file);
+    add(root.path);
+    add(root.targetFile);
+    if (Array.isArray(root.file_paths)) (root.file_paths as unknown[]).forEach(add);
+    if (Array.isArray(root.files)) (root.files as unknown[]).forEach(add);
+    // OpenCode plugin style
+    add(args.filePath);
+    add(args.targetFile);
+    add(args.path);
+    add(args.file);
+    const cmd =
+      (typeof ti.command === "string" ? ti.command : undefined) ??
+      (typeof root.command === "string" ? root.command : undefined) ??
+      (typeof root.commandline === "string" ? root.commandline : undefined) ??
+      (typeof args.command === "string" ? args.command : undefined);
+    // `kuma hook pre-bash` callers may pass the command as goal
+    const goal =
+      (typeof ti.goal === "string" ? ti.goal : undefined) ??
+      (typeof root.goal === "string" ? root.goal : undefined);
+    const out: HookInput = { filePaths: [...paths] };
+    if (goal) out.goal = goal;
+    if (cmd) out.command = cmd;
+    return out;
   } catch {
     return { filePaths: [] };
   }

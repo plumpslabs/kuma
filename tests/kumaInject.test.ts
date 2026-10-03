@@ -191,6 +191,19 @@ describe("parseHookInput (F2)", () => {
     expect(parseHookInput("not json").filePaths).toEqual([]);
     expect(parseHookInput("{}").filePaths).toEqual([]);
   });
+
+  test("unified: Cursor/Windsurf top-level shape → filePaths", () => {
+    const input = JSON.stringify({ file_path: "src/c.ts", command: "npm test" });
+    const parsed = parseHookInput(input);
+    expect(parsed.filePaths).toEqual(["src/c.ts"]);
+    expect(parsed.command).toBe("npm test");
+  });
+
+  test("unified: OpenCode args shape + generic command → command", () => {
+    const input = JSON.stringify({ tool: "bash", args: { command: "npm run seed" } });
+    const parsed = parseHookInput(input);
+    expect(parsed.command).toBe("npm run seed");
+  });
 });
 
 describe("buildHookResponse (F2)", () => {

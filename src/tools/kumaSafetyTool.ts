@@ -21,11 +21,20 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
   const { action } = params;
   sessionMemory.recordToolCall("kuma_safety", { action });
 
+  // Issue #32 P1 — obedience nudge (non-blocking): safety actions
+  // without a prior init get a reminder prefix.
+  let prefix = "";
+  if (!sessionMemory.hasToolCall("kuma_context_init")) {
+    prefix =
+      `⚠️ **Obedience nudge**: \`kuma_context({ action: "init" })\` was not called yet this session. ` +
+      `Run it first so project brief + fresh gotchas are loaded. Continuing anyway…\n\n`;
+  }
+
   switch (action) {
-    case "guard": return handleGuard(params);
-    case "verify": return handleVerify(params);
-    case "checkpoint": return handleCheckpoint(params);
-    case "rollback_label": return handleRollbackLabel(params);
+    case "guard": return prefix + await handleGuard(params);
+    case "verify": return prefix + await handleVerify(params);
+    case "checkpoint": return prefix + await handleCheckpoint(params);
+    case "rollback_label": return prefix + await handleRollbackLabel(params);
     default: return `Unknown action "${action}". Use: guard, verify, checkpoint, rollback_label`;
   }
 }
@@ -35,10 +44,20 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
 // ============================================================
 
 async function handleGuard(params: SafetyParams): Promise<string> {
-  return await handleKumaGuard({
+  const base = await handleKumaGuard({
     goal: params.guardGoal,
     check: (params.guardCheck as "all" | "anti-pattern" | "loop" | "drift" | "context" | "architecture") || "all",
   });
+  // Issue #32 P1 — post-edit nudge (non-blocking): files were modified
+  // but verify was never called → remind, don't block.
+  try {
+    const summary = sessionMemory.getSummary();
+    const modified = (summary.modifiedFiles as unknown[])?.length || 0;
+    if (modified > 0 && !sessionMemory.hasToolCall("kuma_safety_verify")) {
+      return base + `\n\n⚠️ **Post-edit nudge**: ${modified} file(s) modified but \`kuma_safety({ action: "verify" })\` not called yet. Run verify to close the edit→verify loop.`;
+    }
+  } catch {}
+  return base;
 }
 
 // ============================================================
@@ -75,6 +94,20 @@ async function handleVerify(params: SafetyParams): Promise<string> {
     const { analyzeImpact, formatImpact } = await import("../engine/kumaGraph.js");
     const impact = await analyzeImpact(target);
     const formattedImpact = formatImpact(impact);
+
+    // Issue #32 P2 — gotcha-scan on diff/scope as part of verification
+    let gotchaScan = "";
+    try {
+      const { getFreshGotchasForFile } = await import("../engine/kumaInject.js");
+      const gotchas = await getFreshGotchasForFile(target, 5, true);
+      if (gotchas.length > 0) {
+        gotchaScan = "\n\n⚠️ **Gotcha-scan** — this scope touches file(s) with known gotchas:\n" +
+          gotchas.map((g) => `  ${g.stale ? "⚪(stale)" : "🟡"} [${g.severity}] ${g.filePath} — ${g.description.substring(0, 120)}`).join("\n") +
+          "\n  → Confirm the fix does not reintroduce them.";
+      } else {
+        gotchaScan = "\n\n✅ **Gotcha-scan**: no known gotchas for this scope.";
+      }
+    } catch {}
 
     let recommendedCmd = "";
     try {
@@ -116,6 +149,7 @@ async function handleVerify(params: SafetyParams): Promise<string> {
       "",
       `📋 **Recommended Scoped Test Command:**`,
       `   \`${recommendedCmd}\``,
+      gotchaScan,
     ].join("\n");
   }
 
