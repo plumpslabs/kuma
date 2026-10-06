@@ -1,6 +1,6 @@
 // ============================================================
-// EFFICIENCY ADVANCE — briefs, cost ledger, predictor, compaction,
-// microcompact (industry-level instrumentation)
+// EFFICIENCY — briefs, cost ledger, predictor, compaction,
+// microcompact (usage instrumentation)
 // ============================================================
 
 import { briefFreshness, readBrief } from "../src/engine/packageBriefs.js";

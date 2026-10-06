@@ -87,8 +87,11 @@ describe("Deterministic AST Scanner & Blast Radius", () => {
   });
 
   test("calculateBlastRadius leverages graph-first analysis", async () => {
-    const blast = await calculateBlastRadius("src/engine/kumaDb.ts");
-    expect(blast.target).toContain("kumaDb");
+    // NOTE (#33 semantics): the target must have NO working-tree diff, else a
+    // comment-only diff correctly caps it at LOW with cleared dependents.
+    // kumaGraph.ts is committed-clean with heavy graph fan-in.
+    const blast = await calculateBlastRadius("src/engine/kumaGraph.ts");
+    expect(blast.target).toContain("kumaGraph");
     expect(blast.confidence).toBeGreaterThan(0.5);
     expect(blast.directDependents.length).toBeGreaterThan(0);
     expect(blast.summary).toContain("Impact");

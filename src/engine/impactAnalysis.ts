@@ -182,8 +182,9 @@ async function findImportingFiles(
 
     const dependents: string[] = [];
     const evidence: string[] = [];
+    // Alias-tolerant: `import gmath "pkg/x"`, `import {a} from 'x'`, `from x import y`.
     const importRegex = new RegExp(
-      `(?:import|from|require\\s*\\(|export\\s+.*from)\\s*['"][^'"]*\\b${baseName}(?:\\.[a-zA-Z0-9]+)?['"]`,
+      `(?:import|from|require\\s*\\()[\\w{}*,.\\s]*['"][^'"]*\\b${baseName}(?:\\.[a-zA-Z0-9]+)?['"]`,
       "i"
     );
 
@@ -479,6 +480,20 @@ export async function getIndexerStatus(): Promise<IndexerStatus> {
 
   // 5b. Predictive ranking (issue: Meta PTS lite) — history beats static order.
   let testReasons = new Map<string, string>();
+  // Issue #35 phase 2: symbol targets get reachability-grounded tests too.
+  if (targetType === "symbol") {
+    try {
+      const { symbolReachability } = await import("./symbolReach.js");
+      const reach = await symbolReachability(target, 10, root);
+      for (const r of reach.rows) {
+        if (!affectedTests.includes(r.test)) {
+          affectedTests.push(r.test);
+          testReasons.set(r.test, `reachability tier ${reach.tier}: ${r.evidence.substring(0, 80)}`);
+        }
+        evidence.push(r.evidence);
+      }
+    } catch {}
+  }
   try {
     const { rankTestsByHistory } = await import("./testHistory.js");
     const ranked = await rankTestsByHistory(target, affectedTests);

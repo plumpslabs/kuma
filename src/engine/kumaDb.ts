@@ -414,7 +414,7 @@ function createSchema(db: SqlJsDatabase): void {
 
   // ============================================================
   // ============================================================
-  // Issue #11: Enterprise — OTel config, cost tracking, sync config
+  // Issue #11: OTel config, cost tracking, sync config
   // ============================================================
   db.run(`CREATE TABLE IF NOT EXISTS otel_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

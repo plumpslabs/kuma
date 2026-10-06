@@ -493,6 +493,21 @@ function parseFallbackRegex(filePath: string, content: string): ParsedFile {
     if (impMatch && (impMatch[1].startsWith(".") || impMatch[1].startsWith("/"))) {
       result.imports.push({ source: impMatch[1], symbols: [], isDefault: false });
     }
+
+    // Calls (issue #35 phase 1: symbol-level reachability for non-TS files).
+    // Bounded: identifier(...) per line, minus keywords and declarations.
+    if (!fnMatch && !clsMatch) {
+      const callRe = /([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+      let m: RegExpExecArray | null;
+      let count = 0;
+      while ((m = callRe.exec(line)) !== null && count < 5) {
+        const name = m[1];
+        if (!isJsBuiltin(name) && !result.calledSymbols.includes(name)) {
+          result.calledSymbols.push(name);
+          count++;
+        }
+      }
+    }
   }
 
   return result;

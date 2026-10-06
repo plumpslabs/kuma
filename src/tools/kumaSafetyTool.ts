@@ -42,7 +42,7 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
 }
 
 // ============================================================
-// COST — Cost-per-tool ledger (industry instrumentation)
+// COST — Cost-per-tool ledger (usage instrumentation)
 // ============================================================
 
 async function handleCost(): Promise<string> {

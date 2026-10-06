@@ -42,6 +42,7 @@ Usage:
   npx @plumpslabs/kuma hook pre-compact    PreCompact hook — survival set (goal + critical gotchas + dirty)
   npx @plumpslabs/kuma hook post-commit    Git post-commit — periodic incremental map sync (no rebuild)
   npx @plumpslabs/kuma hook install-git    Install the git post-commit hook (idempotent)
+  npx @plumpslabs/kuma daemon start|stop|status  Background sensors (map + briefs + drift) every 5m
 
 Available config files:
   --claude     CLAUDE.md                    (Claude Code)
@@ -423,15 +424,40 @@ async function main(): Promise<void> {
         if (existing.includes("kuma hook post-commit")) {
           process.stdout.write("🐻 [Kuma] git post-commit hook already installed.");
         } else {
-          fsMod.appendFileSync(hookPath, `\n# Kuma periodic mapping (industry auto-map)\n${line}\n`, "utf-8");
+          fsMod.appendFileSync(hookPath, `\n# Kuma periodic mapping\n${line}\n`, "utf-8");
           process.stdout.write("🐻 [Kuma] appended to existing git post-commit hook.");
         }
       } else {
-        fsMod.writeFileSync(hookPath, `#!/bin/sh\n# Kuma periodic mapping (industry auto-map)\n${line}\n`, { mode: 0o755 });
+        fsMod.writeFileSync(hookPath, `#!/bin/sh\n# Kuma periodic mapping\n${line}\n`, { mode: 0o755 });
         process.stdout.write("🐻 [Kuma] git post-commit hook installed.");
       }
     } catch (err) {
       process.stdout.write(`🐻 [Kuma] install-git failed: ${err}`);
+    }
+    process.exit(0);
+  }
+
+  // ============================================================
+  // CLI MODE: kuma daemon start|stop|status|run — Issue #38 daemon mode.
+  // `run` is internal (the detached child); users want start/stop/status.
+  // ============================================================
+  if (args[0] === "daemon") {
+    const sub = args[1] || "status";
+    try {
+      const { daemonStart, daemonStop, daemonStatus, daemonRunChild, DEFAULT_INTERVAL_MS } = await import("./engine/kumaDaemon.js");
+      if (sub === "start") {
+        const ms = Number(args[2]) > 0 ? Number(args[2]) : DEFAULT_INTERVAL_MS;
+        process.stdout.write(await daemonStart(ms));
+      } else if (sub === "stop") {
+        process.stdout.write(await daemonStop());
+      } else if (sub === "run") {
+        await daemonRunChild(Number(args[2]));
+        return;
+      } else {
+        process.stdout.write(await daemonStatus());
+      }
+    } catch (err) {
+      process.stdout.write(`🐻 Daemon error: ${err}`);
     }
     process.exit(0);
   }
