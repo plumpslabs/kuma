@@ -185,6 +185,10 @@ describe("handleKumaGuard", () => {
     });
 
     test("detects no-test-after-edit drift", async () => {
+      // Issue #34: only UNCOMMITTED working-tree edits count as drift —
+      // simulate `git status --porcelain` showing src/auth.ts uncommitted.
+      mockExecSync.mockImplementation(((cmd: string) =>
+        String(cmd).includes("status --porcelain") ? " M src/auth.ts" : "") as any);
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
         {
           filePath: "src/auth.ts",
@@ -458,6 +462,9 @@ describe("handleKumaGuard", () => {
     });
 
     test("reports edits without tests", async () => {
+      // Issue #34: drift counts uncommitted files (porcelain), not all modified.
+      mockExecSync.mockImplementation(((cmd: string) =>
+        String(cmd).includes("status --porcelain") ? " M src/auth.ts\n M src/user.ts" : "") as any);
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
         { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
         { filePath: "src/user.ts", modifiedAt: Date.now(), status: "modified" },
@@ -474,8 +481,7 @@ describe("handleKumaGuard", () => {
       expect(report.drifts).toContain("2 file(s) edited but no test run");
     });
 
-    test("does not report drift when tests have been run", async () => {
-      jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
+    test("does not report drift when tests have been run", async () => {      jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
         {
           filePath: "src/auth.ts",
           modifiedAt: Date.now(),
@@ -498,6 +504,21 @@ describe("handleKumaGuard", () => {
         expect.stringContaining("edited but no test"),
       );
       expect(report.stats).toMatchObject({ hasRunTests: true });
+    });
+
+    test("issue #34: committed-only branch state is info, not drift (stays onTrack)", async () => {
+      // Modified files exist but working tree is clean (all committed).
+      mockExecSync.mockReturnValue("");
+      jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
+        { filePath: "src/auth.ts", modifiedAt: Date.now(), status: "modified" },
+      ] as any);
+
+      const result = await handleKumaGuard({ check: "drift", goal: "feature" } as any);
+      const report = parseReport(result);
+
+      expect(report.drifts).toEqual([]);
+      expect(report.onTrack).toBe(true);
+      expect(JSON.stringify((report as any).info)).toContain("legitimate feature state");
     });
 
     test("reports unresolved failures", async () => {
@@ -659,6 +680,9 @@ describe("handleKumaGuard", () => {
     });
 
     test("no-test-after-edit suggestion when edits without tests", async () => {
+      // Issue #34: suggestion fires for uncommitted edits (porcelain).
+      mockExecSync.mockImplementation(((cmd: string) =>
+        String(cmd).includes("status --porcelain") ? " M src/auth.ts" : "") as any);
       jest.spyOn(sessionMemory, "getModifiedFiles").mockReturnValue([
         {
           filePath: "src/auth.ts",

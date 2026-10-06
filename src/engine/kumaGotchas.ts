@@ -37,7 +37,11 @@ async function ensureGotchasSchema(): Promise<void> {
         CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
       last_verified_at INTEGER,
       scope_package TEXT,
-      verified_by TEXT
+      verified_by TEXT,
+      provenance TEXT,
+      tier TEXT NOT NULL DEFAULT 'single'
+        CHECK(tier IN ('human-confirmed','corroborated','single','external')),
+      quarantined INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_gotchas_file ON known_gotchas(file_path);
     CREATE INDEX IF NOT EXISTS idx_gotchas_severity ON known_gotchas(severity);
@@ -65,6 +69,15 @@ async function ensureGotchasSchema(): Promise<void> {
     if (!cols.includes("verified_by")) {
       db.run(`ALTER TABLE known_gotchas ADD COLUMN verified_by TEXT`);
     }
+    if (!cols.includes("provenance")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN provenance TEXT`);
+    }
+    if (!cols.includes("tier")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN tier TEXT NOT NULL DEFAULT 'single'`);
+    }
+    if (!cols.includes("quarantined")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN quarantined INTEGER NOT NULL DEFAULT 0`);
+    }
 
     // Check if status constraint needs expansion
     const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='known_gotchas'`);
@@ -87,7 +100,11 @@ async function ensureGotchasSchema(): Promise<void> {
           CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
         last_verified_at INTEGER,
         scope_package TEXT,
-        verified_by TEXT
+        verified_by TEXT,
+        provenance TEXT,
+        tier TEXT NOT NULL DEFAULT 'single'
+          CHECK(tier IN ('human-confirmed','corroborated','single','external')),
+        quarantined INTEGER NOT NULL DEFAULT 0
       )`);
       db.run(`INSERT OR IGNORE INTO known_gotchas (id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at) SELECT id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at FROM known_gotchas_old`);
       db.run(`DROP TABLE known_gotchas_old`);
@@ -111,12 +128,43 @@ export interface GotchaEntry {
   status?: "candidate" | "active" | "verified" | "resolved" | "deprecated";
   scopePackage?: string;
   verifiedBy?: string;
+  /**
+   * Issue #37 — provenance: where did this observation come from
+   * (e.g. "tool-output:jest", "session:manual", "external:webhook").
+   * External-content-derived records enter at tier 'external'.
+   */
+  provenance?: string;
+  tier?: "human-confirmed" | "corroborated" | "single" | "external";
+}
+
+/**
+ * Issue #37 — quarantine screen: tool-output-derived text carrying
+ * agent-directed instructions ("ignore previous instructions", "disregard
+ * system prompt", "reveal secrets", …) is a prompt-injection carrier until
+ * proven otherwise. Returns the quarantine reason or null.
+ */
+export function screenForInjection(text: string): string | null {
+  const t = text.toLowerCase();
+  const patterns: Array<[RegExp, string]> = [
+    [/ignore\s+(all\s+)?previous\s+instructions?/, "directive to ignore previous instructions"],
+    [/disregard\s+(the\s+)?(system|prior)\s+(prompt|instructions?)/, "directive to disregard system prompt"],
+    [/(reveal|exfiltrate|leak|send|upload).{0,40}(secret|api[_\s-]?key|token|password|credential)/, "directive to reveal secrets"],
+    [/execute\s+(the\s+)?following\s+(command|code|payload)/, "directive to execute embedded payload"],
+    [/you\s+are\s+now\s+(a|an|in)\s/, "identity-reassignment attempt"],
+  ];
+  for (const [re, reason] of patterns) {
+    if (re.test(t)) return reason;
+  }
+  return null;
 }
 
 /**
  * Add a known gotcha to the structured table (single source of truth).
  * Graph nodes are derived — sync via syncGotchasGraph() when needed.
  * Automatically links to related arch_flow and decision nodes via causes edges.
+ * Issue #40: near-duplicate merge — a new write whose description is
+ * token-similar (Jaccard ≥ 0.6) to an existing gotcha on the same file
+ * MERGES (refresh + keep strongest severity) instead of appending.
  */
 export async function addGotcha(entry: GotchaEntry): Promise<string> {
   try {
@@ -125,6 +173,14 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
 
     const severity: "low" | "medium" | "high" | "critical" = entry.severity || "medium";
     const status = entry.status || "active";
+
+    // Issue #37 — provenance + quarantine screen at write time.
+    const provenance = entry.provenance || "session:agent";
+    const quarantineReason = screenForInjection(`${entry.description} ${entry.workaround || ""}`);
+    const quarantined = quarantineReason ? 1 : 0;
+    const tier = quarantined
+      ? "external"
+      : entry.tier || (status === "verified" ? "human-confirmed" : "single");
 
     // F3: hash the file content when the gotcha is recorded, so freshness can be verified later
     const contentHash = hashFileContent(entry.filePath);
@@ -143,6 +199,7 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     ].filter(Boolean).join("\n");
 
     // Upsert: update if same file_path + description exists, otherwise insert
+    // Issue #40: exact-prefix match first, then token-similarity merge.
     const checkStmt = db.prepare(
       `SELECT id FROM known_gotchas WHERE file_path = ? AND description LIKE ?`
     );
@@ -155,17 +212,27 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     }
     checkStmt.free();
 
+    let mergedNote = "";
+    if (existingId === null) {
+      const similarId = await findSimilarGotchaId(entry.filePath, entry.description);
+      if (similarId !== null) {
+        existingId = similarId;
+        mergedNote = " (merged: near-duplicate of an existing gotcha — refreshed instead of appended)";
+      }
+    }
+
     if (existingId !== null) {
-      // Update existing gotcha — also refresh the hash (the file may have changed/fixed)
+      // Update existing gotcha — also refresh the hash (the file may have changed/fixed).
+      // Issue #37/#40: a merge is corroboration → promote tier (unless quarantined).
       db.run(
-        `UPDATE known_gotchas SET severity = ?, workaround = ?, content_hash = ?, trigger_command = ?, status = ?, scope_package = coalesce(?, scope_package), verified_by = coalesce(?, verified_by), updated_at = strftime('%s','now') WHERE id = ?`,
-        [severity, entry.workaround || null, contentHash, entry.triggerCommand || null, status, entry.scopePackage || null, entry.verifiedBy || null, existingId]
+        `UPDATE known_gotchas SET severity = ?, workaround = ?, content_hash = ?, trigger_command = ?, status = ?, scope_package = coalesce(?, scope_package), verified_by = coalesce(?, verified_by), provenance = coalesce(?, provenance), tier = CASE WHEN quarantined = 1 THEN tier WHEN ? = 'human-confirmed' THEN 'human-confirmed' ELSE 'corroborated' END, updated_at = strftime('%s','now') WHERE id = ?`,
+        [severity, entry.workaround || null, contentHash, entry.triggerCommand || null, status, entry.scopePackage || null, entry.verifiedBy || null, provenance, tier, existingId]
       );
     } else {
       // Insert new gotcha
       db.run(
-        `INSERT INTO known_gotchas (file_path, description, severity, workaround, content_hash, trigger_command, status, scope_package, verified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [entry.filePath, entry.description, severity, entry.workaround || null, contentHash, entry.triggerCommand || null, status, entry.scopePackage || null, entry.verifiedBy || null]
+        `INSERT INTO known_gotchas (file_path, description, severity, workaround, content_hash, trigger_command, status, scope_package, verified_by, provenance, tier, quarantined) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [entry.filePath, entry.description, severity, entry.workaround || null, contentHash, entry.triggerCommand || null, status, entry.scopePackage || null, entry.verifiedBy || null, provenance, tier, quarantined]
       );
     }
 
@@ -199,9 +266,59 @@ export async function addGotcha(entry: GotchaEntry): Promise<string> {
     } catch {}
 
     const action = existingId !== null ? "updated" : "recorded";
-    return `✅ **Gotcha ${action}**: ${entry.filePath} — ${entry.description}${linkedCount > 0 ? ` (linked to ${linkedCount} flow(s))` : ""}\n${mdResult}`;
+    const quarantineNote = quarantined
+      ? `\n🔒 **Quarantined** (${quarantineReason}) — excluded from auto-inject until human-confirmed. Promote via verify + resolve/re-record.`
+      : "";
+    return `✅ **Gotcha ${action}**: ${entry.filePath} — ${entry.description}${mergedNote}${quarantineNote}${linkedCount > 0 ? ` (linked to ${linkedCount} flow(s))` : ""} [tier: ${tier}]\n${mdResult}`;
   } catch (err) {
     return `❌ Failed to add gotcha: ${err}`;
+  }
+}
+
+/** Issue #40 — tokenize for Jaccard similarity (lowercased alnum tokens). */
+export function tokenizeForSimilarity(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3),
+  );
+}
+
+/** Issue #40 — Jaccard similarity between two token sets (0–1). */
+export function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const t of a) if (b.has(t)) intersection++;
+  return intersection / (a.size + b.size - intersection);
+}
+
+const GOTCHA_MERGE_THRESHOLD = 0.6;
+
+/**
+ * Issue #40 — find a near-duplicate gotcha on the same file.
+ * Returns the existing id when Jaccard(description tokens) ≥ 0.6.
+ */
+export async function findSimilarGotchaId(filePath: string, description: string): Promise<number | null> {
+  try {
+    const db = await getDb();
+    const stmt = db.prepare(
+      `SELECT id, description FROM known_gotchas WHERE file_path = ? AND status IN ('active','verified','candidate') LIMIT 50`
+    );
+    stmt.bind([filePath]);
+    const rows: Array<{ id: number; description: string }> = [];
+    while (stmt.step()) rows.push(stmt.getAsObject() as { id: number; description: string });
+    stmt.free();
+    const incoming = tokenizeForSimilarity(description);
+    let best: number | null = null;
+    let bestScore = 0;
+    for (const r of rows) {
+      const score = jaccardSimilarity(incoming, tokenizeForSimilarity(r.description));
+      if (score >= GOTCHA_MERGE_THRESHOLD && score > bestScore) {
+        bestScore = score;
+        best = r.id;
+      }
+    }
+    return best;
+  } catch {
+    return null;
   }
 }
 
@@ -278,8 +395,15 @@ export async function listGotchas(params: {
           : g.severity === "medium" ? "🟡" : "🟢";
       const ageSec = nowSec - (Number(g.created_at) || nowSec);
       const isNew = ageSec < 24 * 3600 ? " 🆕" : "";
+      // Issue #40 — TTL demote (not delete): >90d without re-verification
+      // gets a visible expired badge so agents discount folklore.
+      const ageDays = Math.floor(ageSec / 86400);
+      const expired = ageDays > 90 ? " ⏳expired" : "";
+      // Issue #37 — tier + quarantine always visible so agents discount properly.
+      const tier = String(g.tier || "single");
+      const quar = Number(g.quarantined) === 1 ? " 🔒quarantined" : "";
       const updated = g.updated_at ? ` · lastSeen ${new Date(Number(g.updated_at) * 1000).toISOString().split("T")[0]}` : "";
-      lines.push(`${icon} [${g.severity}]${isNew} ${g.file_path}${updated}`);
+      lines.push(`${icon} [${g.severity}]${isNew}${expired}${quar} ${g.file_path}${updated} (${ageDays}d old, tier: ${tier})`);
       lines.push(`   📝 ${g.description?.toString().substring(0, 100)}`);
       if (g.trigger_command) lines.push(`   ⌨️ when running: \`${(g.trigger_command as string).substring(0, 80)}\``);
       if (g.workaround) lines.push(`   💡 ${(g.workaround as string).substring(0, 100)}`);
@@ -440,7 +564,7 @@ export async function getActiveGotchasForCommand(command: string): Promise<Array
     const stmt = db.prepare(
       `SELECT file_path, description, severity, workaround, trigger_command
        FROM known_gotchas
-       WHERE status IN ('active', 'verified') AND trigger_command IS NOT NULL AND length(trigger_command) > 0
+       WHERE status IN ('active', 'verified') AND (quarantined IS NULL OR quarantined = 0) AND trigger_command IS NOT NULL AND length(trigger_command) > 0
        ORDER BY
          CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
        LIMIT 30`
@@ -523,6 +647,8 @@ export function getInjectionStats(hours = 24): { count: number; savedMs: number 
 
 /**
  * Update gotcha lifecycle status (candidate -> active -> verified -> resolved -> deprecated)
+ * Issue #37: verifying also clears quarantine + sets human-confirmed tier
+ * (human confirm is the only promotion path out of quarantine).
  */
 export async function setGotchaStatus(
   id: number,
@@ -531,10 +657,17 @@ export async function setGotchaStatus(
 ): Promise<boolean> {
   try {
     const db = await getDb();
-    db.run(
-      `UPDATE known_gotchas SET status = ?, verified_by = coalesce(?, verified_by), last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ?`,
-      [status, verifiedBy || null, id]
-    );
+    if (status === "verified") {
+      db.run(
+        `UPDATE known_gotchas SET status = ?, verified_by = coalesce(?, verified_by), tier = 'human-confirmed', quarantined = 0, last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ?`,
+        [status, verifiedBy || null, id]
+      );
+    } else {
+      db.run(
+        `UPDATE known_gotchas SET status = ?, verified_by = coalesce(?, verified_by), last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE id = ?`,
+        [status, verifiedBy || null, id]
+      );
+    }
     saveDb();
     return true;
   } catch {

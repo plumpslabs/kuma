@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "../utils/pathValidator.js";
 
-type MemoryAction = "decision" | "research_save" | "arch_flow" | "gotcha" | "search" | "gotcha_resolve";
+type MemoryAction = "decision" | "research_save" | "arch_flow" | "gotcha" | "search" | "gotcha_resolve" | "test_outcome";
 
 const MEMORY_ALIASES: Record<string, string> = {
   "decision": "decision", "adr": "decision",
@@ -17,6 +17,7 @@ const MEMORY_ALIASES: Record<string, string> = {
   "resolve_gotcha": "gotcha", "resolve-gotcha": "gotcha", "resolve": "gotcha",
   "gotcha_resolve": "gotcha", "gotcha-resolve": "gotcha",
   "deprecate_gotcha": "gotcha", "deprecate-gotcha": "gotcha", "deprecate": "gotcha",
+  "test_outcome": "test_outcome", "test-outcome": "test_outcome", "testoutcome": "test_outcome", "test-record": "test_outcome",
 };
 
 interface MemoryParams {
@@ -52,8 +53,34 @@ export async function handleMemory(params: MemoryParams): Promise<string> {
     case "search": return handleSearch(params);
     case "arch_flow": return handleArchFlow(params);
     case "gotcha": return handleGotchaAction(params);
-    default: return `Unknown action "${action}". Use: gotcha, decision, arch_flow, research_save, search`;
+    case "test_outcome": return handleTestOutcome(params);
+    default: return `Unknown action "${action}". Use: gotcha, decision, arch_flow, research_save, search, test_outcome`;
   }
+}
+
+// ============================================================
+// TEST_OUTCOME — Predictive test selection signal (Meta PTS lite)
+// ============================================================
+
+async function handleTestOutcome(params: MemoryParams): Promise<string> {
+  const changedRaw = params.scope || params.target || "";
+  const failedRaw = params.content || params.description || "";
+  if (!changedRaw.trim()) {
+    return (
+      "❌ **Test outcome NOT saved** — missing `scope` (changed file(s), comma-separated).\n" +
+      "✅ Use: kuma_memory({ action: \"test_outcome\", scope: \"<changed files>\", content: \"<failed tests, empty when green>\" })\n" +
+      "Future impact queries rank history-backed tests first (🔥) and flaky ones last."
+    );
+  }
+  const changed = changedRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  const failed = failedRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  const { recordTestOutcome } = await import("../engine/testHistory.js");
+  const { recorded } = await recordTestOutcome(changed, failed);
+  // Note: test outcomes feed the predictor, not the knowledge-recording
+  // counters (guard's no-recordings check stays about prose knowledge).
+  return failed.length === 0
+    ? `✅ Green run recorded for ${changed.length} file(s) (${recorded} row(s)). Future impact queries trust these areas more.`
+    : `✅ Recorded ${failed.length} failing test(s) for ${changed.length} file(s). Future impact queries rank them first (🔥). If a retry flips one to green, re-record with it absent from content and it stays signal; use flaky marking via retry instead.`;
 }
 
 // ============================================================

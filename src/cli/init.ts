@@ -82,11 +82,10 @@ const BOOTSTRAP_LINES = [
   "Record what matters, skip what doesn't.",
   "",
   "<kuma_obedience>",
-  "## 🔒 Obedience (non-negotiable)",
-  "- MUST call `kuma_context({ action: \"init\" })` at session start.",
-  "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
-  "- MUST call `kuma_safety({ action: \"verify\" })` after edits.",
-  "- MUST NOT call actions outside the core actions.",
+  "## 🔒 Obedience — honest model (issue #39)",
+  "- HARNESS-ENFORCED (no choice): MCP schema rejects unknown actions; hooks inject gotchas pre-edit (`kuma hook pre-edit`); SessionStart serves the brief; dirty-flags patch the map post-edit.",
+  "- AGENT-EXPECTED (best-effort ~70%): call `kuma_context({ action: \"init\" })` first; record gotchas IMMEDIATELY; `kuma_safety({ action: \"verify\" })` after edits.",
+  "- FALLBACKS: init skipped → lazy brief on first unfamiliar edit; gotcha skipped → auto-gotcha on repeated failures; verify skipped → CI is the backstop (never treat as verified).",
   "</kuma_obedience>",
   "",
   "<kuma_workflow>",
@@ -190,11 +189,10 @@ function opencodeAgentsMdTemplate(): string {
     "Record what matters, skip what doesn't.",
     "",
     "<kuma_obedience>",
-    "## 🔒 Obedience (non-negotiable)",
-    "- MUST call `kuma_kuma_context({ action: \"init\" })` (or `kuma_context({ action: \"init\" })`) at session start.",
-    "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
-    "- MUST call `kuma_kuma_safety({ action: \"verify\" })` (or `kuma_safety({ action: \"verify\" })`) after edits.",
-    "- MUST NOT call actions outside the core actions.",
+    "## 🔒 Obedience — honest model (issue #39)",
+    "- HARNESS-ENFORCED: MCP schema rejects unknown actions; hooks inject gotchas pre-edit; SessionStart serves the brief; dirty-flags patch the map.",
+    "- AGENT-EXPECTED (~70%): call `kuma_kuma_context({ action: \"init\" })` (or `kuma_context`) first; record gotchas IMMEDIATELY; verify after edits.",
+    "- FALLBACKS: init skipped → lazy brief; gotcha skipped → auto-gotcha on repeated failures; verify skipped → CI is the backstop.",
     "</kuma_obedience>",
     "",
     "<kuma_workflow>",
@@ -383,6 +381,7 @@ function geminiTemplate(): string {
     "- **Gotchas:** Call `kuma_memory({ action: \"gotcha\", scope: \"<file>\", content: \"<description>\" })` IMMEDIATELY when any quirk/bug is discovered.",
     "- **Decisions:** Call `kuma_memory({ action: \"decision\", title: \"...\", rationale: \"...\" })` when choosing between options.",
     "- **Post-Edits:** Call `kuma_safety({ action: \"verify\" })` after modifying code to run affected package/unit tests.",
+    "- **Enforcement (honest model, issue #39):** schema + hooks enforce what they can; the rest is best-effort — see `.kuma/init.md` for mechanisms and fallbacks.",
     "</kuma_obedience>",
     "",
     "### 🍵 Matcha & Kuma Harmony",
@@ -472,6 +471,16 @@ function opencodePluginTemplate(): string {
     "      const fp = input.filePath || input.path || (input.file && input.file.path) || \"\";",
     '      if (fp) console.warn(`🐻 [Kuma] ${fp} edited — consider kuma_safety({ action: "verify", scope: "${fp}" })`);',
     "    },",
+    '    "experimental.session.compacting": async (input, output) => {',
+    "      // Compaction survival set via the native channel (docs: plugins#compaction).",
+    "      try {",
+    '        const { execSync } = await import("node:child_process");',
+    '        const ctx = execSync("kuma hook pre-compact", { encoding: "utf-8", timeout: 8000 });',
+    '        const parsed = JSON.parse(ctx || "{}");',
+    "        const add = parsed?.hookSpecificOutput?.hookSpecificOutput?.additionalContext || \"\";",
+    "        if (add && output && Array.isArray(output.context)) output.context.push(add);",
+    "      } catch { /* compacting must never fail the session */ }",
+    "    },",
     "  };",
     "};",
     "",
@@ -549,15 +558,26 @@ export function generateInitMdContent(): string {
     "---",
     "",
     "<kuma_obedience>",
-    "## 🔒 OBEDIENCE (non-negotiable)",
+    "## 🔒 OBEDIENCE — honest model (issue #39)",
     "",
-    "1. **MUST call `kuma_context({ action: \"init\" })`** at session start — before any code edit.",
-    "2. **MUST record gotchas IMMEDIATELY** when a bug/quirk is found (`kuma_memory({ action: \"gotcha\" })`).",
-    "3. **MUST call `kuma_safety({ action: \"verify\" })`** after code edits.",
-    "4. **MUST NOT call actions outside the core actions** in this file — anything else is rejected by the MCP schema.",
+    "Rules are split by what actually guarantees them. A rule written as",
+    "mandatory but silently skippable is worse than an explicit best-effort —",
+    "so every rule below names its mechanism or its fallback.",
+    "",
+    "### HARNESS-ENFORCED (guaranteed by mechanism, zero agent choice)",
+    "",
+    "- **Unknown actions rejected** — enforced by the MCP schema (invalid action = error, not silence).",
+    "- **Pre-edit gotcha inject** — enforced by hooks: Claude `PreToolUse` (`kuma hook pre-edit`), OpenCode `tool.execute.before`, Cursor/Windsurf/Copilot/Codex native hooks from `kuma init`. Fallback if hooks missing: call `kuma_context({ action: \"history\", target: \"<file>\" })` before editing.",
+    "- **Session brief** — enforced by `SessionStart` hook (`kuma hook session-start`). Fallback if skipped: the brief lazy-loads on the first unfamiliar edit (history/research include it).",
+    "- **Post-edit map patch** — enforced by dirty-flags: the pre-edit hook marks files dirty, the next context call syncs + clears. Fallback: `kuma_context({ action: \"map\" })` rebuilds on demand.",
+    "",
+    "### AGENT-EXPECTED (best-effort, designed for ~70% compliance)",
+    "",
+    "1. **Call `kuma_context({ action: \"init\" })` at session start.** Nudged (non-blocking warning) on any other call first. Fallback if skipped: lazy brief on first unfamiliar edit.",
+    "2. **Record gotchas IMMEDIATELY** (`kuma_memory({ action: \"gotcha\" })`). Nudged by guard (`error-without-gotcha`). Fallback if skipped: auto-gotcha records after repeated verify failures; CI/evals catch the rest.",
+    "3. **Call `kuma_safety({ action: \"verify\" })` after edits.** Nudged post-edit by guard + hooks. Fallback if skipped: CI gate is the backstop — never treat skipped verify as verified.",
+    "4. **Record decisions/arch_flows/research_saves as you go.** No enforcement; value compounds with compliance. Fallback: grep/glob still work — memory is acceleration, not a gate.",
     "5. If a Kuma call fails or returns an error, **re-read this file and retry** — do not silently continue.",
-    "",
-    "> These rules are enforced: the MCP schema rejects unknown actions, and Claude Code hooks inject gotchas before every edit.",
     "</kuma_obedience>",
     "",
     "---",
@@ -765,11 +785,10 @@ function handleOpencodeSecondary(root: string, results: InitResult[]): void {
     "Record what matters, skip what doesn't.",
     "",
     "<kuma_obedience>",
-    "## 🔒 Obedience (non-negotiable)",
-    "- MUST call `kuma_kuma_context({ action: \"init\" })` at session start.",
-    "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
-    "- MUST call `kuma_kuma_safety({ action: \"verify\" })` after edits.",
-    "- MUST NOT call actions outside the core actions.",
+    "## 🔒 Obedience — honest model (issue #39)",
+    "- HARNESS-ENFORCED: MCP schema rejects unknown actions; hooks inject gotchas pre-edit; SessionStart serves the brief; dirty-flags patch the map.",
+    "- AGENT-EXPECTED (~70%): call `kuma_kuma_context({ action: \"init\" })` first; record gotchas IMMEDIATELY; verify after edits.",
+    "- FALLBACKS: init skipped → lazy brief; gotcha skipped → auto-gotcha on repeated failures; verify skipped → CI is the backstop.",
     "</kuma_obedience>",
     "",
     "<kuma_workflow>",
@@ -973,11 +992,10 @@ function getCombinedAgentsMd(selectedTypes: Set<ConfigType>): string {
     "## SESSION WORKFLOW",
     "",
     "<kuma_obedience>",
-    "## 🔒 Obedience (non-negotiable)",
-    "- MUST call `[kuma_]context({ action: \"init\" })` at session start.",
-    "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
-    "- MUST call `[kuma_]safety({ action: \"verify\" })` after edits.",
-    "- MUST NOT call actions outside the 13 core actions.",
+    "## 🔒 Obedience — honest model (issue #39)",
+    "- HARNESS-ENFORCED: MCP schema rejects unknown actions; hooks inject gotchas pre-edit; SessionStart serves the brief; dirty-flags patch the map.",
+    "- AGENT-EXPECTED (~70%): call `[kuma_]context({ action: \"init\" })` first; record gotchas IMMEDIATELY; verify after edits.",
+    "- FALLBACKS: init skipped → lazy brief; gotcha skipped → auto-gotcha on repeated failures; verify skipped → CI is the backstop.",
     "</kuma_obedience>",
     "",
     "<kuma_workflow>",
@@ -1483,27 +1501,50 @@ function handleClaudeSecondary(root: string, results: InitResult[]): void {
           hooks: [{ type: "command", command: "kuma hook pre-bash" }],
         },
       ],
+      // Issue #38: SessionStart serves the cached repo brief before the
+      // first agent turn — zero agent choice involved.
+      SessionStart: [
+        {
+          matcher: "startup",
+          hooks: [{ type: "command", command: "kuma hook session-start" }],
+        },
+      ],
+      // Compaction survival set (goal + critical gotchas + dirty files).
+      PreCompact: [
+        {
+          matcher: "",
+          hooks: [{ type: "command", command: "kuma hook pre-compact" }],
+        },
+      ],
     },
   };
 
   try {
     if (fs.existsSync(settingsPath)) {
       const existing = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      const existingHooks = (existing.hooks || {}) as Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>>;
+      const mergedPre = [...(existingHooks.PreToolUse || [])];
+      for (const entry of hookBlock.hooks.PreToolUse) {
+        if (!mergedPre.some((h) => h.matcher === entry.matcher)) mergedPre.push(entry);
+      }
+      const mergedStart = [...(existingHooks.SessionStart || [])];
+      for (const entry of hookBlock.hooks.SessionStart as Array<{ matcher?: string }>) {
+        const hasKuma = mergedStart.some((h) =>
+          JSON.stringify(h.hooks || []).includes("kuma hook session-start"),
+        );
+        if (!hasKuma) mergedStart.push(entry as never);
+      }
+      const mergedCompact = [...(existingHooks.PreCompact || [])];
+      const hasPreCompact = mergedCompact.some((h) =>
+        JSON.stringify(h.hooks || []).includes("kuma hook pre-compact"),
+      );
+      if (!hasPreCompact) {
+        mergedCompact.push(...(hookBlock.hooks.PreCompact as never[]));
+      }
       const merged = {
         ...existing,
-        hooks: {
-          ...(existing.hooks || {}),
-          ...hookBlock.hooks,
-        },
+        hooks: { ...existingHooks, PreToolUse: mergedPre, SessionStart: mergedStart, PreCompact: mergedCompact },
       };
-      // Avoid duplicate matchers — replace existing hooks with the same matcher
-      const matchers = new Set((merged.hooks.PreToolUse || []).map((h: { matcher: string }) => h.matcher));
-      for (const entry of hookBlock.hooks.PreToolUse) {
-        if (!matchers.has(entry.matcher)) {
-          merged.hooks.PreToolUse = [...(merged.hooks.PreToolUse || []), entry];
-          matchers.add(entry.matcher);
-        }
-      }
       fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
       results.push({ type: "claude", filePath: ".claude/settings.json", action: "appended" });
     } else {

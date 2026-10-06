@@ -961,6 +961,27 @@ class SessionMemory {
     this.save();
   }
 
+  // ============================================================
+  // MICROCOMPACT — session-scoped shown-set (in-memory only)
+  // ============================================================
+  // Hook processes are separate OS processes, so cross-hook dedupe lives
+  // in hook-state.json (15min window). THIS set covers the MCP server
+  // process: same gotcha/decision text is never injected twice in one
+  // server run — repeats collapse to zero tokens.
+
+  private shownKeys: Set<string> = new Set();
+
+  /** True when this exact payload was already injected this server run. */
+  wasShown(kind: string, key: string): boolean {
+    return this.shownKeys.has(`${kind}::${key}`);
+  }
+
+  /** Mark payloads as injected. Bounded at 500 keys (FIFO-ish reset). */
+  markShown(kind: string, keys: string[]): void {
+    for (const k of keys) this.shownKeys.add(`${kind}::${k}`);
+    if (this.shownKeys.size > 500) this.shownKeys = new Set([...this.shownKeys].slice(-500));
+  }
+
   /**
    * Get metrics summary for session.
    */

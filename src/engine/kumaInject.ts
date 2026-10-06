@@ -92,6 +92,7 @@ export async function getFreshGotchasForFile(
         SELECT id, file_path, description, severity, workaround, content_hash
         FROM known_gotchas
         WHERE status IN ('active', 'verified')
+          AND (quarantined IS NULL OR quarantined = 0)
           AND (
             file_path = ?
             OR file_path LIKE ?
@@ -321,8 +322,19 @@ export async function getRelevantContext(
 ): Promise<string> {
   const parts: string[] = [];
 
-  // 1. Fresh gotchas (F3 + F4)
-  const gotchas = await getFreshGotchasForFile(filePath, 4);
+  // 1. Fresh gotchas (F3 + F4) — microcompact: skip payloads already shown
+  //    this server run (zero tokens on repeat).
+  const { sessionMemory } = await import("./sessionMemory.js");
+  const gotchaPool = await getFreshGotchasForFile(filePath, 4);
+  const gotchas = gotchaPool.filter((g) => {
+    const key = `${g.filePath}::${g.description.substring(0, 60)}`;
+    if (sessionMemory.wasShown("gotcha", key)) return false;
+    return true;
+  });
+  sessionMemory.markShown(
+    "gotcha",
+    gotchaPool.map((g) => `${g.filePath}::${g.description.substring(0, 60)}`),
+  );
   if (gotchas.length > 0) {
     const lines = ["⚠️ ACTIVE GOTCHAS (fresh):"];
     for (const g of gotchas) {
@@ -334,8 +346,13 @@ export async function getRelevantContext(
     parts.push(lines.join("\n"));
   }
 
-  // 2. Relevant decisions (F4 — goal keywords + file name)
-  const decisions = await getDecisionsForFile(filePath, goal ? 3 : 2);
+  // 2. Relevant decisions (F4 — goal keywords + file name), microcompacted.
+  const decisionPool = await getDecisionsForFile(filePath, goal ? 3 : 2);
+  const decisions = decisionPool.filter((d) => {
+    if (sessionMemory.wasShown("decision", d.substring(0, 80))) return false;
+    return true;
+  });
+  sessionMemory.markShown("decision", decisionPool.map((d) => d.substring(0, 80)));
   if (decisions.length > 0) {
     parts.push("📌 RELEVANT DECISIONS:\n  " + decisions.join("\n  "));
   }

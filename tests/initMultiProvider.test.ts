@@ -110,6 +110,8 @@ describe("Multi-Provider Agent Compliance & Init", () => {
 
     const settings = JSON.parse(fs.readFileSync(path.join(tmpDir, ".claude/settings.json"), "utf-8"));
     expect(settings.hooks.PreToolUse.length).toBeGreaterThanOrEqual(2);
+    // Issue #38: SessionStart hook serves the cached brief
+    expect(JSON.stringify(settings.hooks.SessionStart)).toContain("kuma hook session-start");
   });
 
   test("agent detector accurately identifies opencode directory", () => {

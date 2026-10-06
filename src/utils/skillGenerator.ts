@@ -13,11 +13,10 @@ import type { AgentType } from "./agentDetector.js";
 // between instruction and data, which measurably raises compliance.
 const CORE_ACTIONS = [
   "<kuma_obedience>",
-  "## 🔒 Obedience (non-negotiable)",
-  "- MUST call `kuma_context({ action: \"init\" })` at session start.",
-  "- MUST record gotchas IMMEDIATELY when a bug/quirk is found.",
-  "- MUST call `kuma_safety({ action: \"verify\" })` after edits to resolve affected tests.",
-  "- MUST NOT call actions outside the core actions.",
+  "## 🔒 Obedience — honest model (issue #39)",
+  "- HARNESS-ENFORCED: MCP schema rejects unknown actions; hooks inject gotchas pre-edit; SessionStart serves the brief; dirty-flags patch the map.",
+  "- AGENT-EXPECTED (~70%): `kuma_context({ action: \"init\" })` first; record gotchas IMMEDIATELY; `kuma_safety({ action: \"verify\" })` after edits.",
+  "- FALLBACKS: init skipped → lazy brief; gotcha skipped → auto-gotcha on repeated failures; verify skipped → CI is the backstop.",
   "</kuma_obedience>",
   "",
   "<kuma_workflow>",

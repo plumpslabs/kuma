@@ -1,5 +1,7 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
 import { execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { getProjectRoot } from "./pathValidator.js";
 import type { GuardWarning } from "../guards/antiPatternDetector.js";
 
@@ -82,6 +84,87 @@ export function getGitDiffStat(timeout = 3000): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * Issue #34 — uncommitted working-tree files only (drift-relevant).
+ * Committed-on-branch diffs are legitimate feature state, NOT drift.
+ */
+export function getUncommittedFiles(timeout = 3000): Set<string> {
+  const files = new Set<string>();
+  try {
+    const root = getProjectRoot();
+    const porcelain = execSync("git status --porcelain", {
+      cwd: root, encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    for (const line of porcelain.split("\n")) {
+      const m = line.match(/^.{3}(.+?)(?:\s+->\s+.+)?$/);
+      if (m && m[1]) files.add(m[1].trim().replace(/^"|"$/g, ""));
+    }
+  } catch { /* not a git repo → empty = nothing to exempt */ }
+  return files;
+}
+
+/**
+ * Issue #34 — committed-on-branch files (informational only, never drift).
+ * Compares current branch tip against merge-base with default branch.
+ */
+export function getBranchCommittedFiles(timeout = 5000): { base: string; files: Set<string> } {
+  const files = new Set<string>();
+  let base = "";
+  try {
+    const root = getProjectRoot();
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd: root, encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    const baseRef = execSync(
+      `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || echo origin/${branch === "main" || branch === "master" ? "HEAD" : "main"}`,
+      { cwd: root, encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"] },
+    ).trim().replace("refs/remotes/", "");
+    const mergeBase = execSync(`git merge-base HEAD ${baseRef} 2>/dev/null || git rev-list --max-parents=0 HEAD`, {
+      cwd: root, encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"],
+    }).trim().split("\n")[0];
+    base = baseRef;
+    if (mergeBase) {
+      const out = execSync(`git diff --name-only ${mergeBase} HEAD`, {
+        cwd: root, encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      for (const f of out.split("\n")) if (f.trim()) files.add(f.trim());
+    }
+  } catch { /* best-effort */ }
+  return { base, files };
+}
+
+const TEST_COMMAND_PATTERN = /(npm|pnpm|yarn|bun)\s+(test|run\s+(test|typecheck|check|lint))|pytest|go\s+test|cargo\s+test|jest|vitest|typecheck|tsc\s+--noEmit/i;
+
+/**
+ * Issue #34 — did verification already happen in-session?
+ * Agents run tests via their OWN native Bash (invisible to kuma toolCalls),
+ * but `kuma hook pre-bash` logs every command to .kuma/injections.jsonl —
+ * so scan it for test/typecheck invocations (last 24h) as evidence.
+ */
+export function hasVerificationEvidence(toolCalls: Array<Record<string, unknown>>): boolean {
+  if (toolCalls.some((c: any) => isTestTool(c.toolName as string))) return true;
+  return hasVerificationInHookLog();
+}
+
+function hasVerificationInHookLog(hours = 24): boolean {
+  try {
+    const fp = path.join(getProjectRoot(), ".kuma", "injections.jsonl");
+    if (!fs.existsSync(fp)) return false;
+    const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    const lines = fs.readFileSync(fp, "utf-8").split("\n");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if ((entry.at || 0) < cutoff) continue;
+        const cmd = String(entry.command || "");
+        if (cmd && TEST_COMMAND_PATTERN.test(cmd)) return true;
+      } catch { /* skip corrupt line */ }
+    }
+  } catch { /* non-critical */ }
+  return false;
 }
 
 /** Count unresolved failures */
@@ -182,7 +265,9 @@ export function getPrioritySuggestion(
   if (!goal) {
     return "No goal set — use goal parameter or setGoal to track intent";
   }
-  if (modifiedFiles === 0) {
+  // Issue #34: verified work (or committed-only branch state) is not
+  // "nothing happened" — don't tell an agent with green checks to explore.
+  if (modifiedFiles === 0 && !hasRunTests) {
     return "Start by exploring what exists before writing code";
   }
   return "On track — continue with current approach";
@@ -191,4 +276,35 @@ export function getPrioritySuggestion(
 /** Count edit-type tool calls */
 export function countEditCalls(toolCalls: Array<Record<string, unknown>>): number {
   return toolCalls.filter((c: any) => isEditTool(c.toolName)).length;
+}
+
+const TEST_FILE_PATTERN = /(\.test\.|\.spec\.|_test\.|__tests__|\/tests?\/)/i;
+const ASSERTION_PATTERN = /\b(expect|assert|toBe|toEqual|toContain|toMatch|ok\(|equal\(|deepEqual\()\b/;
+
+/**
+ * Issue #36 behavioral eval: "test-weakening diff → escalate".
+ * If a test file's working-tree diff REMOVES assertion lines, the change
+ * weakens the safety net itself → needs escalation, not silence.
+ */
+export function detectTestWeakening(files: string[], root?: string): string[] {
+  const weakened: string[] = [];
+  let cwd = "";
+  try {
+    cwd = root || getProjectRoot();
+  } catch { return []; }
+  for (const f of files) {
+    if (!TEST_FILE_PATTERN.test(f)) continue;
+    try {
+      const diff = execSync(`git diff --unified=0 -- "${f}"`, {
+        cwd, encoding: "utf-8", timeout: 4000, stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      if (!diff) continue;
+      const removed = diff.split("\n").filter((l) => l.startsWith("-") && !l.startsWith("---"));
+      const removedAssertions = removed.filter((l) => ASSERTION_PATTERN.test(l)).length;
+      if (removedAssertions > 0 && removed.length > 0 && removedAssertions / removed.length >= 0.5) {
+        weakened.push(`${f} (−${removedAssertions} assertion(s))`);
+      }
+    } catch { /* not a git repo or file untracked → skip */ }
+  }
+  return weakened;
 }

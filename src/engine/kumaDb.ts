@@ -495,7 +495,11 @@ function createSchema(db: SqlJsDatabase): void {
         CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
       last_verified_at INTEGER,
       scope_package TEXT,
-      verified_by TEXT
+      verified_by TEXT,
+      provenance TEXT,
+      tier TEXT NOT NULL DEFAULT 'single'
+        CHECK(tier IN ('human-confirmed','corroborated','single','external')),
+      quarantined INTEGER NOT NULL DEFAULT 0
     );
   `);
 
@@ -521,6 +525,15 @@ function createSchema(db: SqlJsDatabase): void {
     if (!cols.includes("verified_by")) {
       db.run(`ALTER TABLE known_gotchas ADD COLUMN verified_by TEXT`);
     }
+    if (!cols.includes("provenance")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN provenance TEXT`);
+    }
+    if (!cols.includes("tier")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN tier TEXT NOT NULL DEFAULT 'single'`);
+    }
+    if (!cols.includes("quarantined")) {
+      db.run(`ALTER TABLE known_gotchas ADD COLUMN quarantined INTEGER NOT NULL DEFAULT 0`);
+    }
 
     // Check if status constraint needs expansion
     const schema = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='known_gotchas'`);
@@ -543,7 +556,11 @@ function createSchema(db: SqlJsDatabase): void {
           CHECK(status IN ('candidate','active','verified','resolved','deprecated')),
         last_verified_at INTEGER,
         scope_package TEXT,
-        verified_by TEXT
+        verified_by TEXT,
+        provenance TEXT,
+        tier TEXT NOT NULL DEFAULT 'single'
+          CHECK(tier IN ('human-confirmed','corroborated','single','external')),
+        quarantined INTEGER NOT NULL DEFAULT 0
       )`);
       db.run(`INSERT OR IGNORE INTO known_gotchas (id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at) SELECT id, file_path, description, severity, workaround, added_by, created_at, updated_at, content_hash, trigger_command, status, last_verified_at FROM known_gotchas_old`);
       db.run(`DROP TABLE known_gotchas_old`);

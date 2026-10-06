@@ -30,9 +30,16 @@ interface ContextParams {
 
 export async function handleContext(params: ContextParams): Promise<string> {
   // Lazy incremental auto-sync: keep knowledge graph fresh with working tree changes
+  // Issue #38: dirty-flag design — the pre-edit hook marks files dirty; the sync
+  // below patches the map, then dirty flags clear (post-edit incremental update
+  // with zero agent choice involved beyond calling any context action).
+  let dirtySynced = 0;
   try {
+    const { getDirtyFiles, clearDirty } = await import("../engine/cacheFreshness.js");
     const { syncModifiedFiles } = await import("../engine/kumaCodeScanner.js");
+    dirtySynced = getDirtyFiles().length;
     await syncModifiedFiles(30);
+    if (dirtySynced > 0) clearDirty();
   } catch {
     // Non-blocking
   }
@@ -52,7 +59,7 @@ export async function handleContext(params: ContextParams): Promise<string> {
 
   switch (action) {
     case "init": return handleInit(params);
-    case "research": return obediencePrefix + await handleResearch(params);
+    case "research": return obediencePrefix + await handleResearch(params, dirtySynced);
     case "history": return obediencePrefix + await handleHistory(params);
     case "flow": return obediencePrefix + await handleFlow(params);
     case "map": return obediencePrefix + await handleMap(params);
@@ -271,11 +278,15 @@ function sessionFocusAdvice(focus: string): string {
 // RESEARCH — 5-Step Pipeline
 // ============================================================
 
-async function handleResearch(params: ContextParams): Promise<string> {
+async function handleResearch(params: ContextParams, dirtySynced = 0): Promise<string> {
   const scope = params.scope || "project";
   sessionMemory.setGoal(`Researching: ${scope}`);
   sessionMemory.recordToolCall("kuma_context_research", { scope });
   const lines: string[] = [`🔬 **Research: ${scope}**`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, ""];
+  if (dirtySynced > 0) {
+    lines.push(`🗺️ Map patched post-edit: ${dirtySynced} dirty file(s) synced before this research (no rebuild asked).`);
+    lines.push("");
+  }
 
   lines.push("**Step 1/5: Loading Research Cache**");
   const cached = await getResearchCache(scope);
@@ -285,7 +296,18 @@ async function handleResearch(params: ContextParams): Promise<string> {
     const ageSeconds = Math.floor((Date.now() - (record.validatedAt ? new Date(record.validatedAt as string).getTime() : 0)) / 1000);
     const ageStr = ageSeconds > 86400 ? `${Math.floor(ageSeconds / 86400)}d` : ageSeconds > 3600 ? `${Math.floor(ageSeconds / 3600)}h` : `${Math.floor(ageSeconds / 60)}m`;
     lines.push(`  ✅ Found cached research (${ageStr} old)`);
-    if (ageSeconds > 86400) lines.push(`  ${ageSeconds > 604800 ? "🔴" : "🟡"} **Staleness:** Cache is ${ageStr} old — may be stale`);
+    // Issue #38 — decay contract: TTL 7d, consumers see freshness.
+    try {
+      const { isStale, RESEARCH_TTL_MS } = await import("../engine/cacheFreshness.js");
+      const validatedMs = record.validatedAt ? new Date(record.validatedAt as string).getTime() : 0;
+      if (isStale(validatedMs, RESEARCH_TTL_MS)) {
+        lines.push(`  ⏳ **STALE**: older than TTL 7d — re-researching fresh below`);
+        record = null;
+      } else {
+        lines.push(`  ✅ Fresh (TTL 7d)`);
+      }
+    } catch {}
+    if (ageSeconds > 86400 && record) lines.push(`  ${ageSeconds > 604800 ? "🔴" : "🟡"} **Staleness:** Cache is ${ageStr} old — may be stale`);
   } else lines.push("  ⏳ No cached research — starting fresh");
   lines.push("");
 
@@ -495,7 +517,16 @@ async function handleMap(_params: ContextParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_context_map", {});
   const { getWorkspaceInfo, formatWorkspaceMap } = await import("../engine/workspaceIntelligence.js");
   const wsInfo = await getWorkspaceInfo();
-  return formatWorkspaceMap(wsInfo);
+  const base = formatWorkspaceMap(wsInfo);
+  // Pre-computed briefs: refresh alongside the map (zero LLM, bounded).
+  try {
+    const { refreshPackageBriefs } = await import("../engine/packageBriefs.js");
+    const { count } = await refreshPackageBriefs();
+    if (count > 0) {
+      return base + `\n\n📚 **Pre-computed briefs**: ${count} package brief(s) refreshed in \`.kuma/briefs/\` — read instead of grep-walking (saves ~5x discovery tokens).`;
+    }
+  } catch {}
+  return base;
 }
 
 // ============================================================

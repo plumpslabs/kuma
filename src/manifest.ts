@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { handleContext, handleMemory, handleSafety } from "./engine/kumaRouter.js";
 import { ensureInitialized } from "./engine/kumaAutoInit.js";
+import { withCost } from "./engine/costLedger.js";
 
 // ============================================================
 // NAMESPACE NORMALIZER
@@ -64,12 +65,12 @@ export function registerAllTools(server: McpServer): void {
   const contextHandler = async (params: any) => {
     try {
       await ensureInitialized();
-      const text = await handleContext({
+      const { result: text } = await withCost("kuma_context", params.action, () => handleContext({
         action: params.action,
         scope: params.scope,
         target: params.target,
         goal: params.goal,
-      });
+      }));
       return { content: [{ type: "text" as const, text }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error in kuma_context: ${err}` }], isError: true };
@@ -85,11 +86,11 @@ export function registerAllTools(server: McpServer): void {
   const memoryDesc =
     "Persistent knowledge. Record what matters, skip what doesn't. This is what saves time in future sessions. Don't record what grep/glob answers faster (functions, imports, types, components)." +
     CORE_NOTE +
-    "`gotcha` (IMMEDIATELY when you find a bug/quirk), `decision` (when choosing between options), `arch_flow` (after tracing a complete flow, max 5 core files), `research_save` (after exploring an area), `search` (quick lookup of memory + knowledge graph), `gotcha_resolve` (archive fixed bugs).";
+    "`gotcha` (IMMEDIATELY when you find a bug/quirk), `decision` (when choosing between options), `arch_flow` (after tracing a complete flow, max 5 core files), `research_save` (after exploring an area), `search` (quick lookup of memory + knowledge graph), `gotcha_resolve` (archive fixed bugs), `test_outcome` (record changed files + failed tests to train test selection).";
 
   const memorySchema = {
-    action: z.enum(["gotcha", "decision", "arch_flow", "research_save", "search", "gotcha_resolve"]).describe(
-      "gotcha=record bug/quirk, decision=ADR, arch_flow=record architecture flow, research_save=save findings, search=quick memory+graph lookup, gotcha_resolve=archive fixed bug"
+    action: z.enum(["gotcha", "decision", "arch_flow", "research_save", "search", "gotcha_resolve", "test_outcome"]).describe(
+      "gotcha=record bug/quirk, decision=ADR, arch_flow=record architecture flow, research_save=save findings, search=quick memory+graph lookup, gotcha_resolve=archive fixed bug, test_outcome=record test results for predictive selection"
     ),
     scope: z.string().optional().describe("File path for gotcha — or scope for research_save/search"),
     target: z.string().optional().describe("Target file, gotcha ID, or component"),
@@ -112,7 +113,7 @@ export function registerAllTools(server: McpServer): void {
   const memoryHandler = async (params: any) => {
     try {
       await ensureInitialized();
-      const text = await handleMemory({
+      const { result: text } = await withCost("kuma_memory", params.action, () => handleMemory({
         action: params.action,
         scope: params.scope,
         target: params.target,
@@ -130,7 +131,7 @@ export function registerAllTools(server: McpServer): void {
         description: params.description,
         trigger_command: params.trigger_command,
         id: params.id,
-      });
+      }));
       return { content: [{ type: "text" as const, text }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error in kuma_memory: ${err}` }], isError: true };
@@ -146,11 +147,11 @@ export function registerAllTools(server: McpServer): void {
   const safetyDesc =
     "Safety & verification. Use at task boundaries, not on every edit." +
     CORE_NOTE +
-    "`guard` (before risky work: anti-patterns, drift, loops), `verify` (after edits: scoped tests + validation), `checkpoint` + `rollback_label` (the one rollback mechanism: snapshot before risky work, restore after).";
+    "`guard` (before risky work: anti-patterns, drift, loops), `verify` (after edits: scoped tests + validation), `checkpoint` + `rollback_label` (the one rollback mechanism: snapshot before risky work, restore after), `cost` (cost-per-tool ledger).";
 
   const safetySchema = {
-    action: z.enum(["guard", "verify", "checkpoint", "rollback_label"]).describe(
-      "guard=anti-patterns/drift/loops before risky work, verify=scoped tests after edits, checkpoint=labeled snapshot before risky work, rollback_label=restore a labeled snapshot"
+    action: z.enum(["guard", "verify", "checkpoint", "rollback_label", "cost"]).describe(
+      "guard=anti-patterns/drift/loops before risky work, verify=scoped tests after edits, checkpoint=labeled snapshot before risky work, rollback_label=restore a labeled snapshot, cost=cost-per-tool ledger"
     ),
     scope: z.string().optional().describe("Scope for verify (e.g. 'auth', file path)"),
     target: z.string().optional().describe("Target test file or scope for verify"),
@@ -167,7 +168,7 @@ export function registerAllTools(server: McpServer): void {
   const safetyHandler = async (params: any) => {
     try {
       await ensureInitialized();
-      const text = await handleSafety({
+      const { result: text } = await withCost("kuma_safety", params.action, () => handleSafety({
         action: params.action,
         guardGoal: params.guardGoal,
         guardCheck: params.guardCheck,
@@ -179,7 +180,7 @@ export function registerAllTools(server: McpServer): void {
         force: params.force,
         label: params.label,
         description: params.description,
-      });
+      }));
       return { content: [{ type: "text" as const, text }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error in kuma_safety: ${err}` }], isError: true };

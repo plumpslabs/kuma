@@ -11,6 +11,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import fastGlob from "fast-glob";
 import { getProjectRoot, normalizeScope } from "../utils/pathValidator.js";
 import { getDb } from "./kumaDb.js";
@@ -23,6 +24,73 @@ import {
 
 export type ImpactRisk = "low" | "medium" | "high" | "critical";
 
+/** Issue #33/#35 — diff shape: what kind of change is this? */
+export type DiffShape = "runtime-code" | "config-or-docs" | "comment-only";
+
+const RUNTIME_CODE_EXTS = new Set([
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+  ".py", ".go", ".rs", ".java", ".rb", ".php",
+  ".swift", ".kt", ".cs", ".scala", ".vue", ".svelte",
+]);
+
+const COMMENT_PREFIXES: Record<string, string[]> = {
+  ".ts": ["//", "*", "/*"], ".tsx": ["//", "*", "/*"],
+  ".js": ["//", "*", "/*"], ".jsx": ["//", "*", "/*"],
+  ".mjs": ["//", "*", "/*"], ".cjs": ["//", "*", "/*"],
+  ".py": ["#"], ".go": ["//"], ".rs": ["//"],
+  ".java": ["//", "*", "/*"], ".rb": ["#"], ".php": ["//", "#", "*"],
+};
+
+function extOf(target: string): string {
+  const base = path.basename(target);
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(dot).toLowerCase() : "";
+}
+
+function isExampleOrDocName(target: string): boolean {
+  const base = path.basename(target).toLowerCase();
+  return (
+    base.endsWith(".example") || base.startsWith(".env") ||
+    base.endsWith(".md") || base.endsWith(".txt") ||
+    base.endsWith(".rst") || base === "license" ||
+    base.startsWith("license.")
+  );
+}
+
+/**
+ * Issue #33 — classify the diff shape of a target.
+ * - `comment-only`: git diff exists and every changed line is a comment/blank
+ * - `config-or-docs`: non-runtime file (docs, .env*, *.example, etc.)
+ * - `runtime-code`: everything else (full analysis applies)
+ */
+export function classifyDiffShape(target: string, root?: string): { shape: DiffShape; detail: string } {
+  if (isExampleOrDocName(target)) {
+    return { shape: "config-or-docs", detail: "non-runtime file (docs/config/example)" };
+  }
+  const ext = extOf(target);
+  if (ext && !RUNTIME_CODE_EXTS.has(ext)) {
+    return { shape: "config-or-docs", detail: `non-runtime extension (${ext})` };
+  }
+  // Runtime-code file (or extensionless/unknown): check whether the actual
+  // working-tree diff is comment-only.
+  try {
+    const cwd = root || getProjectRoot();
+    const diff = execSync(`git diff --unified=0 -- "${target}"`, {
+      cwd, encoding: "utf-8", timeout: 4000, stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    if (!diff) return { shape: "runtime-code", detail: "no working-tree diff; analyzed by file kind" };
+    const prefixes = COMMENT_PREFIXES[ext] || ["//", "#", "*", "/*", "--"];
+    const changed = diff.split("\n").filter((l) => (l.startsWith("+") || l.startsWith("-")) && !l.startsWith("+++") && !l.startsWith("---"));
+    if (changed.length === 0) return { shape: "runtime-code", detail: "no working-tree diff; analyzed by file kind" };
+    const allTrivial = changed.every((l) => {
+      const body = l.slice(1).trim();
+      return body === "" || prefixes.some((p) => body.startsWith(p));
+    });
+    if (allTrivial) return { shape: "comment-only", detail: `${changed.length} changed line(s), all comments/blank` };
+  } catch { /* git unavailable → fall through to runtime-code */ }
+  return { shape: "runtime-code", detail: "runtime code change" };
+}
+
 export interface DetailedImpactResult {
   target: string;
   targetType: "file" | "package" | "symbol" | "session";
@@ -34,13 +102,21 @@ export interface DetailedImpactResult {
   riskFlags: string[];
   summary: string;
   confidence: number;
+  /** Issue #33/#35: diff shape + file:line evidence behind the verdict. */
+  diffShape?: DiffShape;
+  evidence?: string[];
 }
 
 /**
  * Find files in the repository that import or call a given file/symbol.
  * Graph-First: queries SQLite edges in <1ms, falls back to disk scan if graph is empty.
+ * Returns grounded dependents + file:line evidence (issue #35: every verdict
+ * carries evidence; ungrounded keyword mentions are NEVER returned here).
  */
-async function findImportingFiles(targetFile: string, root: string): Promise<string[]> {
+async function findImportingFiles(
+  targetFile: string,
+  root: string,
+): Promise<{ dependents: string[]; evidence: string[] }> {
   const normTarget = normalizeScope(path.normalize(targetFile)) || path.normalize(targetFile);
 
   // 1. Try Knowledge Graph edges first (blazing fast)
@@ -84,13 +160,13 @@ async function findImportingFiles(targetFile: string, root: string): Promise<str
     callStmt.free();
 
     if (dependents.length > 0) {
-      return dependents;
+      return { dependents, evidence: dependents.map((d) => `${d} (graph edge)`) };
     }
   } catch {
     // Fall back to disk scan
   }
 
-  // 2. Fallback: disk scan via glob & regex
+  // 2. Fallback: disk scan via glob & regex (with file:line evidence)
   const baseName = path.basename(normTarget, path.extname(normTarget));
   const relTarget = path.isAbsolute(normTarget) ? path.relative(root, normTarget) : normTarget;
 
@@ -105,6 +181,7 @@ async function findImportingFiles(targetFile: string, root: string): Promise<str
     );
 
     const dependents: string[] = [];
+    const evidence: string[] = [];
     const importRegex = new RegExp(
       `(?:import|from|require\\s*\\(|export\\s+.*from)\\s*['"][^'"]*\\b${baseName}(?:\\.[a-zA-Z0-9]+)?['"]`,
       "i"
@@ -115,27 +192,34 @@ async function findImportingFiles(targetFile: string, root: string): Promise<str
       const fullPath = path.join(root, f);
       try {
         const content = fs.readFileSync(fullPath, "utf-8");
-        if (importRegex.test(content)) {
+        const lines = content.split("\n");
+        const hitIdx = lines.findIndex((l) => importRegex.test(l));
+        if (hitIdx >= 0) {
           dependents.push(f);
+          evidence.push(`${f}:${hitIdx + 1} (import match)`);
         }
       } catch {}
     }
 
-    return dependents;
+    return { dependents, evidence };
   } catch {
-    return [];
+    return { dependents: [], evidence: [] };
   }
 }
 
 /**
  * Find related test files for a target file or package.
  * Graph-First: queries 'tests' edges in SQLite first, falls back to naming patterns.
+ * Issue #33: stems are FULL basenames only (no 3-char part splitting — that is
+ * what exploded "env.example" into 148 unrelated suites). For non-runtime
+ * shapes only the exact basename matches.
  */
 async function findRelatedTests(
   targetFile: string,
   root: string,
   owningPackage: WorkspacePackage | null,
-  additionalDependents: string[] = []
+  additionalDependents: string[] = [],
+  exactOnly = false,
 ): Promise<string[]> {
   const normTarget = normalizeScope(path.normalize(targetFile)) || path.normalize(targetFile);
 
@@ -170,17 +254,13 @@ async function findRelatedTests(
   const baseName = path.basename(normTarget, path.extname(normTarget));
   const testFiles: string[] = [];
 
-  // Candidate query stems (e.g. "auth-middleware" -> ["auth-middleware", "auth"])
+  // Candidate stems: FULL basenames only (issue #33 — no sub-part splitting).
   const stems = new Set<string>();
   if (baseName) stems.add(baseName);
-  for (const part of baseName.split(/[-_.\s]+/).filter((p) => p.length >= 3)) {
-    stems.add(part);
-  }
-  for (const dep of additionalDependents.slice(0, 3)) {
-    const depBase = path.basename(dep, path.extname(dep));
-    if (depBase) stems.add(depBase);
-    for (const part of depBase.split(/[-_.\s]+/).filter((p) => p.length >= 3)) {
-      stems.add(part);
+  if (!exactOnly) {
+    for (const dep of additionalDependents.slice(0, 3)) {
+      const depBase = path.basename(dep, path.extname(dep));
+      if (depBase) stems.add(depBase);
     }
   }
 
@@ -313,9 +393,41 @@ function assessRisk(
 }
 
 /**
- * Calculate the comprehensive Blast Radius of changing a file, package, or symbol
+ * Issue #35 (EPIC, phase 1) — indexer capability table.
+ * Tier 1 (grounded): knowledge-graph edges (imports/depends_on/calls/tests).
+ * Tier 2 (grounded): ripgrep import-regex fallback with file:line evidence.
+ * Tier 3 (future): per-language LSP/AST indexers (tsserver/gopls/rust-analyzer/
+ * pyright/tree-sitter/ctags). Status is reported honestly so consumers know
+ * which tier produced a verdict.
  */
-export async function calculateBlastRadius(
+export interface IndexerStatus {
+  tier: 1 | 2;
+  graphEdges: boolean;
+  languages: string[];
+  note: string;
+}
+
+export async function getIndexerStatus(): Promise<IndexerStatus> {
+  let graphEdges = false;
+  try {
+    const db = await getDb();
+    const stmt = db.prepare(`SELECT COUNT(*) as cnt FROM edges WHERE type IN ('imports','depends_on','calls','tests')`);
+    if (stmt.step()) graphEdges = Number((stmt.getAsObject() as { cnt: number }).cnt) > 0;
+    stmt.free();
+  } catch { /* graph unavailable → tier 2 */ }
+  return {
+    tier: graphEdges ? 1 : 2,
+    graphEdges,
+    languages: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "rs"],
+    note: graphEdges
+      ? "Tier 1: graph edges grounded the verdict (Tier 2 ripgrep fallback available)"
+      : "Tier 2: ripgrep import-regex fallback (no graph edges; run a scan to reach Tier 1; LSP indexers are future work per #35)",
+  };
+}
+
+/**
+ * Calculate the comprehensive Blast Radius of changing a file, package, or symbol
+ */export async function calculateBlastRadius(
   target: string,
   options: { root?: string } = {}
 ): Promise<DetailedImpactResult> {
@@ -348,79 +460,67 @@ export async function calculateBlastRadius(
     downstreamPackages.push(...rev.map((p) => p.name));
   }
 
-  // 4. Find direct dependents (files importing this)
+  // 4. Find direct dependents (files importing this) — GROUNDED ONLY.
+  // Issue #33: the old keyword/auth-middleware fallback injected ungrounded
+  // mentions that poisoned risk (comment-only .env.example → CRITICAL).
   let directDependents: string[] = [];
+  let evidence: string[] = [];
   if (targetType === "file" || targetType === "symbol") {
-    directDependents = await findImportingFiles(target, root);
+    const found = await findImportingFiles(target, root);
+    directDependents = found.dependents;
+    evidence = found.evidence;
   }
 
-  // Semantic intent and pipeline resolution
-  const normLower = target.toLowerCase();
-  const isUserDestructive = /(user|account|member|customer|profile).*(delet|destro|remov|wipe|terminat)|(delet|destro|remov|wipe|terminat).*(user|account|member|customer|profile)/i.test(target);
-  const isSecurityTopic = /(auth|security|session|permission|jwt|token|middleware)/i.test(target);
+  const { shape: diffShape, detail: shapeDetail } = classifyDiffShape(target, root);
+  const nonRuntime = diffShape !== "runtime-code";
 
-  if (isUserDestructive || isSecurityTopic || directDependents.length === 0) {
-    try {
-      const db = await getDb();
-      // Look for candidate nodes in graph matching tokens
-      const tokens = normLower.split(/[\s_-]+/).filter((t) => t.length >= 3);
-      for (const token of tokens) {
-        const stmt = db.prepare(`SELECT DISTINCT file_path, name FROM nodes WHERE (name LIKE ? OR file_path LIKE ?) LIMIT 5`);
-        stmt.bind([`%${token}%`, `%${token}%`]);
-        while (stmt.step()) {
-          const row = stmt.getAsObject() as { file_path: string; name: string };
-          const fp = row.file_path || row.name;
-          if (fp && !directDependents.includes(fp) && fp !== target) {
-            directDependents.push(fp);
-          }
-        }
-        stmt.free();
-      }
+  // 5. Find affected tests (exact-basename only for non-runtime shapes)
+  const affectedTests = await findRelatedTests(target, root, owningPackage, directDependents, nonRuntime);
 
-      // Check for security/auth middleware in repository
-      const authMiddlewareMatches = await fastGlob(
-        [
-          "**/*auth-middleware*.*",
-          "**/*auth_middleware*.*",
-          "**/*auth.middleware*.*",
-          "**/middleware/*auth*.*",
-          "**/middlewares/*auth*.*",
-          "**/guards/*auth*.*",
-          "**/security/*auth*.*",
-          "**/lib/*auth*.*",
-        ],
-        {
-          cwd: root,
-          ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/.kuma/**"],
-          onlyFiles: true,
-        }
-      );
-      for (const am of authMiddlewareMatches) {
-        if (!directDependents.includes(am) && am !== target) {
-          directDependents.push(am);
-        }
-      }
-    } catch {}
+  // 5b. Predictive ranking (issue: Meta PTS lite) — history beats static order.
+  let testReasons = new Map<string, string>();
+  try {
+    const { rankTestsByHistory } = await import("./testHistory.js");
+    const ranked = await rankTestsByHistory(target, affectedTests);
+    affectedTests.length = 0;
+    for (const r of ranked) {
+      affectedTests.push(r.path);
+      if (r.reason !== "static match") testReasons.set(r.path, r.reason);
+    }
+  } catch {}
+  // 6. Risk assessment — non-runtime shapes are capped at LOW (issue #33).
+  // Ungrounded keyword mentions are NOT consulted at all (deleted fallback).
+  let risk: ImpactRisk;
+  let riskFlags: string[];
+  if (nonRuntime) {
+    risk = "low";
+    riskFlags = [
+      `${diffShape === "comment-only" ? "Comment-only change" : "Non-runtime file"} (${shapeDetail}) — risk capped at LOW`,
+      ...((directDependents.length > 0 || affectedTests.length > 0)
+        ? [`Grounded refs kept for reference: ${directDependents.length} importer(s), ${affectedTests.length} test(s)`]
+        : []),
+    ];
+    // Cap the blast display too: a docs/config change cannot "affect" suites
+    // it does not import or test.
+    directDependents = [];
+    affectedTests.length = 0;
+  } else {
+    ({ risk, riskFlags } = assessRisk(
+      target,
+      targetType,
+      directDependents,
+      downstreamPackages,
+      affectedTests,
+      owningPackage,
+    ));
   }
-
-  // 5. Find affected tests
-  const affectedTests = await findRelatedTests(target, root, owningPackage, directDependents);
-
-  // 6. Risk assessment
-  const { risk, riskFlags } = assessRisk(
-    target,
-    targetType,
-    directDependents,
-    downstreamPackages,
-    affectedTests,
-    owningPackage
-  );
 
   // 7. Format markdown summary
   const summaryLines: string[] = [
     `🎯 **Impact / Blast Radius: \`${target}\`**`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `⚠️ **Risk Level: ${risk.toUpperCase()}**`,
+    `📐 Diff shape: \`${diffShape}\` (${shapeDetail})`,
     owningPackage ? `📦 Owning package: \`${owningPackage.name}\` (${owningPackage.path})` : "",
   ];
 
@@ -451,11 +551,23 @@ export async function calculateBlastRadius(
     }
   }
 
+  if (evidence.length > 0) {
+    summaryLines.push("");
+    summaryLines.push(`🔎 **Evidence (${evidence.length}):**`);
+    for (const e of evidence.slice(0, 3)) {
+      summaryLines.push(`  • \`${e}\``);
+    }
+    if (evidence.length > 3) {
+      summaryLines.push(`  ... and ${evidence.length - 3} more`);
+    }
+  }
+
   if (affectedTests.length > 0) {
     summaryLines.push("");
     summaryLines.push(`🧪 **Affected Test Suites (${affectedTests.length}):**`);
     for (const t of affectedTests.slice(0, 5)) {
-      summaryLines.push(`  • \`${t}\``);
+      const why = testReasons.get(t) ? ` — ${testReasons.get(t)}` : "";
+      summaryLines.push(`  • \`${t}\`${why}`);
     }
     if (affectedTests.length > 5) {
       summaryLines.push(`  ... and ${affectedTests.length - 5} more`);
@@ -475,6 +587,8 @@ export async function calculateBlastRadius(
     risk,
     riskFlags,
     summary: summaryLines.filter(Boolean).join("\n"),
-    confidence: 0.85,
+    confidence: nonRuntime ? 0.95 : 0.85,
+    diffShape,
+    evidence,
   };
 }

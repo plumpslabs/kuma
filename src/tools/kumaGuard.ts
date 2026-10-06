@@ -4,6 +4,8 @@ import { saveSnapshot, formatSnapshot } from "../engine/contextSnapshot.js";
 import {
   getSessionStats,
   getGitDiffStat,
+  getUncommittedFiles,
+  hasVerificationEvidence,
   getUnresolvedCount,
   buildDriftMessages,
   getPrioritySuggestion,
@@ -23,6 +25,8 @@ interface GuardReport {
   onTrack: boolean;
   warnings: GuardWarning[];
   drifts: string[];
+  /** Informational notes — never flip onTrack (issue #34). */
+  info: string[];
   suggestion: string;
   stats: {
     goal: string;
@@ -77,29 +81,69 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     });
   }
 
-  // 3. Drift detection
+  // 3. Drift detection (issue #34: committed branch state is NOT drift;
+  // only uncommitted working-tree edits count, and in-session verification
+  // includes test runs via the agent's own Bash, seen in the hook log)
   const drifts: string[] = [];
+  const info: string[] = [];
+  let verified = stats.hasRunTests;
+  let uncommittedModifiedCount = stats.modifiedFiles.length;
   if (check === "all" || check === "drift") {
     const unresolvedCount = getUnresolvedCount(stats.failedFiles);
     const gitStat = getGitDiffStat();
     const editCalls = stats.toolCalls.filter((c: any) => isEditTool(c.toolName)).length;
+    verified = stats.hasRunTests || hasVerificationEvidence(stats.toolCalls);
+    const uncommitted = getUncommittedFiles();
+    const modifiedPaths = stats.modifiedFiles.map((f: any) => String(f.filePath || f.path || ""));
+    const uncommittedModified = modifiedPaths.filter((p) =>
+      [...uncommitted].some((u) => u === p || u.endsWith(p) || p.endsWith(u)),
+    );
+    const committedOnly = modifiedPaths.length - uncommittedModified.length;
+    uncommittedModifiedCount = uncommittedModified.length;
 
     drifts.push(...buildDriftMessages(
-      stats.modifiedFiles.length,
-      stats.hasRunTests,
+      uncommittedModified.length,
+      verified,
       unresolvedCount,
       gitStat,
     ));
+    if (committedOnly > 0 && uncommittedModified.length === 0) {
+      info.push(`${committedOnly} file(s) differ from base branch but are committed — legitimate feature state, not drift (no action needed)`);
+    }
+    if (verified && uncommittedModified.length > 0) {
+      info.push(`Verification already ran in-session (test/typecheck evidence found) — no re-run demanded`);
+    }
 
-    if (stats.modifiedFiles.length > 0 && !stats.hasRunTests) {
+    if (uncommittedModified.length > 0 && !verified) {
       warnings.push({
         severity: "medium",
         pattern: "no-test-after-edit",
-        message: `${stats.modifiedFiles.length} file(s) modified without running tests`,
+        message: `${uncommittedModified.length} uncommitted file(s) modified without running tests`,
         suggestion: "Run the project's test/typecheck command to verify changes",
       });
     }
 
+    // Issue #36: test-weakening diff → escalate (high, always actionable)
+    try {
+      const { detectTestWeakening } = await import("../utils/kumaShared.js");
+      const weakened = detectTestWeakening(modifiedPaths);
+      for (const w of weakened) {
+        warnings.push({
+          severity: "high",
+          pattern: "test-weakening",
+          message: `Test-weakening diff detected: ${w} — assertions removed without replacement`,
+          suggestion: "Restore removed assertions or justify why the weakened test still guards the behavior",
+        });
+      }
+    } catch {}
+    // Issue #41: doc-drift sensor (info only — bounded batch scan, never flips onTrack)
+    try {
+      const { scanDocDrift, formatDocDrift } = await import("../engine/docDrift.js");
+      const { checked, drifted, skipped } = scanDocDrift();
+      if (drifted.length > 0) {
+        info.push(formatDocDrift(checked, drifted.slice(0, 5), skipped));
+      }
+    } catch {}
     if (editCalls > 5) {
       warnings.push({
         severity: "low",
@@ -191,6 +235,22 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
   }
 
   // 5. Build report
+  // Issue #36: auto-downtier rules over the FP budget before reporting.
+  try {
+    const { recordGuardFlag, getDowntieredRules, demoteSeverity } = await import("../engine/guardLedger.js");
+    for (const w of warnings) {
+      try { await recordGuardFlag(w.pattern); } catch {}
+    }
+    const downtiered = await getDowntieredRules();
+    if (downtiered.size > 0) {
+      for (const w of warnings) {
+        if (downtiered.has(w.pattern) && (w.severity === "high" || w.severity === "medium")) {
+          w.severity = demoteSeverity(w.severity) as typeof w.severity;
+          w.message = `🔻 [auto-downtiered: rule over FP budget] ${w.message}`;
+        }
+      }
+    }
+  } catch {}
   const hasWarnings = warnings.length > 0;
   const hasDrifts = drifts.length > 0;
   const onTrack = !hasWarnings && !hasDrifts;
@@ -201,8 +261,8 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     warnings,
     loop.isLooping,
     getUnresolvedCount(stats.failedFiles),
-    stats.modifiedFiles.length,
-    stats.hasRunTests,
+    uncommittedModifiedCount,
+    verified,
     countEditCalls(stats.toolCalls),
   );
 
@@ -211,6 +271,7 @@ export async function handleKumaGuard(params: GuardParams): Promise<string> {
     onTrack,
     warnings,
     drifts,
+    info,
     suggestion,
     stats: {
       goal: stats.goal,

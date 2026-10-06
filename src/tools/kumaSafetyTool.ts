@@ -1,7 +1,8 @@
 import { sessionMemory } from "../engine/sessionMemory.js";
 import { handleKumaGuard } from "../tools/kumaGuard.js";
+import { getCostStats, formatCostStats } from "../engine/costLedger.js";
 
-type SafetyAction = "guard" | "verify" | "checkpoint" | "rollback_label";
+type SafetyAction = "guard" | "verify" | "checkpoint" | "rollback_label" | "cost";
 
 interface SafetyParams {
   action: SafetyAction;
@@ -35,8 +36,19 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
     case "verify": return prefix + await handleVerify(params);
     case "checkpoint": return prefix + await handleCheckpoint(params);
     case "rollback_label": return prefix + await handleRollbackLabel(params);
-    default: return `Unknown action "${action}". Use: guard, verify, checkpoint, rollback_label`;
+    case "cost": return prefix + await handleCost();
+    default: return `Unknown action "${action}". Use: guard, verify, checkpoint, rollback_label, cost`;
   }
+}
+
+// ============================================================
+// COST — Cost-per-tool ledger (industry instrumentation)
+// ============================================================
+
+async function handleCost(): Promise<string> {
+  sessionMemory.recordToolCall("kuma_safety_cost", {});
+  const stats = await getCostStats();
+  return formatCostStats(stats);
 }
 
 // ============================================================

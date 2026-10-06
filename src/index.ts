@@ -38,6 +38,10 @@ Usage:
   npx @plumpslabs/kuma init --help  Show this help
   npx @plumpslabs/kuma hook pre-edit  Claude Code PreToolUse hook — inject gotcha/decision/history before edits
   npx @plumpslabs/kuma hook pre-bash   Claude Code PreToolUse hook — inject command-triggered gotchas before Bash
+  npx @plumpslabs/kuma hook session-start  SessionStart hook — cached repo brief before the first turn
+  npx @plumpslabs/kuma hook pre-compact    PreCompact hook — survival set (goal + critical gotchas + dirty)
+  npx @plumpslabs/kuma hook post-commit    Git post-commit — periodic incremental map sync (no rebuild)
+  npx @plumpslabs/kuma hook install-git    Install the git post-commit hook (idempotent)
 
 Available config files:
   --claude     CLAUDE.md                    (Claude Code)
@@ -285,6 +289,13 @@ async function main(): Promise<void> {
       // Runs BEFORE dedupe so every edit counts toward the loop signal.
       await trackFileEditLoop(target);
 
+      // Issue #38: dirty-flag design — mark the file dirty at pre-edit time so
+      // the next context call patches the map without being asked.
+      try {
+        const { markDirty } = await import("./engine/cacheFreshness.js");
+        markDirty(target);
+      } catch { /* non-critical */ }
+
       // Issue #32 P2 — auto-checkpoint before the first risky edit
       // (migrations/drizzle/schema). Hook-safe single-file copy; null when N/A.
       try {
@@ -349,8 +360,153 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // ============================================================
+  // CLI MODE: kuma hook pre-compact — PreCompact hook (Claude) /
+  // compact preservation. Emits the survival set as additionalContext.
+  // ============================================================
+  if (args[0] === "hook" && args[1] === "pre-compact") {
+    try {
+      const { getCompactionContext } = await import("./engine/compactionContext.js");
+      const { buildHookResponse } = await import("./engine/kumaInject.js");
+      const context = await getCompactionContext();
+      const body = context.trim()
+        ? `📦 [KUMA survival set — preserve across compaction]\n${context}`
+        : "";
+      process.stdout.write(buildHookResponse(body));
+    } catch {
+      process.stdout.write("{}");
+    }
+    process.exit(0);
+  }
+
+  // ============================================================
+  // CLI MODE: kuma hook post-commit — periodic native mapping.
+  // Installed as a git post-commit hook via `kuma hook install-git`:
+  // after every commit, incrementally re-syncs the map (no rebuild),
+  // refreshes pre-computed briefs, and clears dirty flags.
+  // This is the "continuous sensor" half of issue #38 (the daemon
+  // half — scheduled drift outside task lifecycle — stays future work).
+  // ============================================================
+  if (args[0] === "hook" && args[1] === "post-commit") {
+    try {
+      const { syncModifiedFiles } = await import("./engine/kumaCodeScanner.js");
+      const result = await syncModifiedFiles(50);
+      try {
+        const { refreshPackageBriefs } = await import("./engine/packageBriefs.js");
+        await refreshPackageBriefs();
+      } catch {}
+      try {
+        const { clearDirty } = await import("./engine/cacheFreshness.js");
+        clearDirty();
+      } catch {}
+      process.stdout.write(`🐻 [Kuma] post-commit map sync: ${result.filesScanned} file(s), ${result.nodeCount} nodes, ${result.edgeCount} edges.`);
+    } catch (err) {
+      process.stdout.write(`🐻 [Kuma] post-commit sync skipped: ${err}`);
+    }
+    process.exit(0);
+  }
+
+  // ============================================================
+  // CLI MODE: kuma hook install-git — idempotent git hook installer.
+  // Appends `kuma hook post-commit` to .git/hooks/post-commit (creates
+  // the hook when missing, never clobbers existing hooks).
+  // ============================================================
+  if (args[0] === "hook" && args[1] === "install-git") {
+    try {
+      const fsMod = await import("node:fs");
+      const pathMod = await import("node:path");
+      const { getProjectRoot } = await import("./utils/pathValidator.js");
+      const hookPath = pathMod.join(getProjectRoot(), ".git", "hooks", "post-commit");
+      const line = "kuma hook post-commit >/dev/null 2>&1 || true";
+      if (fsMod.existsSync(hookPath)) {
+        const existing = fsMod.readFileSync(hookPath, "utf-8");
+        if (existing.includes("kuma hook post-commit")) {
+          process.stdout.write("🐻 [Kuma] git post-commit hook already installed.");
+        } else {
+          fsMod.appendFileSync(hookPath, `\n# Kuma periodic mapping (industry auto-map)\n${line}\n`, "utf-8");
+          process.stdout.write("🐻 [Kuma] appended to existing git post-commit hook.");
+        }
+      } else {
+        fsMod.writeFileSync(hookPath, `#!/bin/sh\n# Kuma periodic mapping (industry auto-map)\n${line}\n`, { mode: 0o755 });
+        process.stdout.write("🐻 [Kuma] git post-commit hook installed.");
+      }
+    } catch (err) {
+      process.stdout.write(`🐻 [Kuma] install-git failed: ${err}`);
+    }
+    process.exit(0);
+  }
+
   if (args[0] === "--hook") {
     // Git hook mode — no longer auto-harvests (removed: gimmic)
+    process.exit(0);
+  }
+
+  // ============================================================
+  // CLI MODE: kuma hook session-start — Issue #38 (SessionStart hook)
+  // Serves a cached repo brief BEFORE the first agent turn:
+  // deterministic, zero agent choice involved. Read-only: never
+  // creates the DB; markdown fallback when no DB exists yet.
+  // ============================================================
+  if (args[0] === "hook" && args[1] === "session-start") {
+    try {
+      const { getProjectRoot } = await import("./utils/pathValidator.js");
+      const root = getProjectRoot();
+      const proj = root.split("/").pop() || "unknown";
+      const lines = [`🐻 [Kuma session brief] ${proj}`];
+      try {
+        const { execSync } = await import("node:child_process");
+        const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+          cwd: root, encoding: "utf-8", timeout: 2000, stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+        if (branch) lines.push(`git: ${branch}`);
+      } catch {}
+      // Active gotchas: DB when present, else markdown layer (read-only).
+      try {
+        const fsMod = await import("node:fs");
+        const pathMod = await import("node:path");
+        const dbFile = pathMod.join(root, ".kuma", "kuma.db");
+        if (fsMod.existsSync(dbFile)) {
+          const { getDb } = await import("./engine/kumaDb.js");
+          const db = await getDb();
+          const stmt = db.prepare(
+            `SELECT COUNT(*) as cnt FROM known_gotchas WHERE status IN ('active','verified') AND (quarantined IS NULL OR quarantined = 0)`
+          );
+          if (stmt.step()) lines.push(`active gotchas: ${(stmt.getAsObject() as { cnt: number }).cnt}`);
+          stmt.free();
+          const top = db.prepare(
+            `SELECT file_path, description, severity FROM known_gotchas WHERE status IN ('active','verified') AND (quarantined IS NULL OR quarantined = 0) ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END LIMIT 3`
+          );
+          while (top.step()) {
+            const r = top.getAsObject() as { file_path: string; description: string; severity: string };
+            lines.push(`  [${r.severity}] ${r.file_path} — ${String(r.description).substring(0, 100)}`);
+          }
+          top.free();
+        } else {
+          const { getActiveGotchas } = await import("./engine/domainRules.js");
+          const gotchas = getActiveGotchas().filter((g) => g.severity === "critical" || g.severity === "high").slice(0, 3);
+          lines.push(`active gotchas: ${getActiveGotchas().length} (markdown layer)`);
+          for (const g of gotchas) lines.push(`  [${g.severity}] ${g.filePath} — ${g.description.substring(0, 100)}`);
+        }
+      } catch {}
+      lines.push(`MUST: kuma_context({ action: "init" }) first; record gotchas immediately; verify after edits.`);
+      // Pre-computed briefs: serve the root brief inline when fresh (zero discovery walk).
+      try {
+        const { readBrief, briefFreshness } = await import("./engine/packageBriefs.js");
+        const { getWorkspaceInfo } = await import("./engine/workspaceIntelligence.js");
+        const ws = await getWorkspaceInfo(root);
+        const firstPkg = ws.isWorkspace && ws.packages.length > 0 ? ws.packages[0].name : "root";
+        const fresh = briefFreshness(firstPkg);
+        if (fresh.exists && fresh.fresh) {
+          const brief = readBrief(firstPkg, 800);
+          if (brief) lines.push("", "📚 [cached brief — read, don't re-discover]", brief);
+        } else {
+          lines.push(`📚 No fresh brief (age: ${fresh.age}) — run kuma_context({ action: "map" }) once to pre-compute.`);
+        }
+      } catch {}
+      process.stdout.write(lines.join("\n"));
+    } catch {
+      process.stdout.write("🐻 [Kuma session brief] unavailable — run kuma_context({ action: \"init\" }).");
+    }
     process.exit(0);
   }
 
