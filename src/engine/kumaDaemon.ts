@@ -64,6 +64,13 @@ export async function daemonTick(root?: string): Promise<string> {
   const r = root || getProjectRoot();
   const p = paths(r);
   const notes: string[] = [];
+  // Issue #42: backbone first — daemon start on an empty map builds edges
+  // from second zero instead of leaving cold start empty.
+  try {
+    const { ensureBackbone, formatBackbone } = await import("./mapBackbone.js");
+    const bb = await ensureBackbone();
+    if (bb) notes.push(formatBackbone(bb));
+  } catch {}
   try {
     const { syncModifiedFiles } = await import("./kumaCodeScanner.js");
     const scan = await syncModifiedFiles(50);

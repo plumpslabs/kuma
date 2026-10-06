@@ -406,23 +406,39 @@ export interface IndexerStatus {
   graphEdges: boolean;
   languages: string[];
   note: string;
+  /** Issue #42: true when the map is backbone-only (imports, no symbols). */
+  backboneOnly: boolean;
 }
 
 export async function getIndexerStatus(): Promise<IndexerStatus> {
   let graphEdges = false;
+  let backboneOnly = false;
   try {
     const db = await getDb();
     const stmt = db.prepare(`SELECT COUNT(*) as cnt FROM edges WHERE type IN ('imports','depends_on','calls','tests')`);
     if (stmt.step()) graphEdges = Number((stmt.getAsObject() as { cnt: number }).cnt) > 0;
     stmt.free();
+    // Backbone-only: file nodes exist but zero symbol nodes.
+    const fStmt = db.prepare(`SELECT COUNT(*) as cnt FROM nodes WHERE type = 'file'`);
+    let files = 0;
+    if (fStmt.step()) files = Number((fStmt.getAsObject() as { cnt: number }).cnt) || 0;
+    fStmt.free();
+    const sStmt = db.prepare(`SELECT COUNT(*) as cnt FROM nodes WHERE type IN ('function','class','method','interface')`);
+    let syms = 0;
+    if (sStmt.step()) syms = Number((sStmt.getAsObject() as { cnt: number }).cnt) || 0;
+    sStmt.free();
+    backboneOnly = files > 0 && syms === 0;
   } catch { /* graph unavailable → tier 2 */ }
   return {
     tier: graphEdges ? 1 : 2,
     graphEdges,
+    backboneOnly,
     languages: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "rs"],
-    note: graphEdges
-      ? "Tier 1: graph edges grounded the verdict (Tier 2 ripgrep fallback available)"
-      : "Tier 2: ripgrep import-regex fallback (no graph edges; run a scan to reach Tier 1; LSP indexers are future work per #35)",
+    note: backboneOnly
+      ? "Backbone-tier coverage: import graph only (approximate) — symbols fill in on demand when impact/research touches an area"
+      : graphEdges
+        ? "Tier 1: graph edges grounded the verdict (Tier 2 ripgrep fallback available)"
+        : "Tier 2: ripgrep import-regex fallback (no graph edges; run a scan to reach Tier 1; LSP indexers are future work per #35)",
   };
 }
 
@@ -459,6 +475,15 @@ export async function getIndexerStatus(): Promise<IndexerStatus> {
   if (owningPackage && !owningPackage.isRoot) {
     const rev = getReverseDependencies(owningPackage.name, wsInfo);
     downstreamPackages.push(...rev.map((p) => p.name));
+  }
+
+  // 3b. Issue #42 precision on demand: file target with no symbol
+  // coverage → force-scan exactly that area once, then proceed.
+  if (targetType === "file") {
+    try {
+      const { ensureMapped } = await import("./mapBackbone.js");
+      await ensureMapped([target]);
+    } catch {}
   }
 
   // 4. Find direct dependents (files importing this) — GROUNDED ONLY.

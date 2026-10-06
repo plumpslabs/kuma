@@ -111,6 +111,15 @@ async function handleInit(_params: ContextParams): Promise<string> {
   sessionMemory.setGoal(_params.goal || "Exploring project");
   sessionMemory.recordToolCall("kuma_context_init", {});
 
+  // Issue #42: backbone auto-trigger — map empty → build import backbone now
+  // (seconds), so the first turn never sees an empty map.
+  let backboneNote = "";
+  try {
+    const { ensureBackbone, formatBackbone } = await import("../engine/mapBackbone.js");
+    const bb = await ensureBackbone();
+    if (bb) backboneNote = `\n${formatBackbone(bb)}\n`;
+  } catch {}
+
   const branch = sessionMemory.getCurrentBranch();
   const branchTag = branch ? ` [git: \`${branch}\`]` : "";
   const lines: string[] = [
@@ -120,6 +129,7 @@ async function handleInit(_params: ContextParams): Promise<string> {
     `📁 Project: ${getProjectRoot().split("/").pop() || "unknown"}${branchTag}`,
     "",
   ];
+  if (backboneNote) lines.push(backboneNote);
 
   const branchTransition = sessionMemory.getBranchTransition();
   if (branchTransition?.switched) {
@@ -322,6 +332,15 @@ async function handleResearch(params: ContextParams, dirtySynced = 0): Promise<s
   lines.push("");
 
   lines.push("**Step 3/5: Graph Query + Code Scan**");
+  // Issue #42 precision on demand: file-like scope with no symbol coverage
+  // gets force-scanned once before the graph query runs.
+  try {
+    if (params.scope && (params.scope.includes("/") || params.scope.includes("."))) {
+      const { ensureMapped } = await import("../engine/mapBackbone.js");
+      const { filled } = await ensureMapped([params.scope]);
+      if (filled > 0) lines.push(`  🗺️ Precision tier filled on demand: ${filled} file(s) indexed (no user action needed)`);
+    }
+  } catch {}
   try {
     const graphResult = await searchGraph(scope, 15);
     const graphLines = graphResult.split("\n");

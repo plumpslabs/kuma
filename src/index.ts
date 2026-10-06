@@ -479,6 +479,13 @@ async function main(): Promise<void> {
       const root = getProjectRoot();
       const proj = root.split("/").pop() || "unknown";
       const lines = [`🐻 [Kuma session brief] ${proj}`];
+      // Issue #42: cold start never empty — build the backbone here when the
+      // map has no file nodes yet (seconds, bounded).
+      try {
+        const { ensureBackbone, formatBackbone } = await import("./engine/mapBackbone.js");
+        const bb = await ensureBackbone();
+        if (bb) lines.push(formatBackbone(bb));
+      } catch {}
       try {
         const { execSync } = await import("node:child_process");
         const branch = execSync("git rev-parse --abbrev-ref HEAD", {
