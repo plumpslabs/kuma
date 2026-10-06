@@ -96,8 +96,12 @@ export function getUncommittedFiles(timeout = 3000): Set<string> {
     const root = getProjectRoot();
     const porcelain = execSync("git status --porcelain", {
       cwd: root, encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-    for (const line of porcelain.split("\n")) {
+    });
+    if (!porcelain.trim()) return files;
+    // XY codes are positional — never trim whole lines (see mapBackbone gotcha).
+    for (const rawLine of porcelain.split("\n")) {
+      const line = rawLine.replace(/\s+$/, "");
+      if (!line) continue;
       const m = line.match(/^.{3}(.+?)(?:\s+->\s+.+)?$/);
       if (m && m[1]) files.add(m[1].trim().replace(/^"|"$/g, ""));
     }

@@ -316,3 +316,70 @@ export async function getDriftSummary(): Promise<string> {
 
   return `⚠️ ${staleCount} stale record(s) detected. Use kuma_memory({ action: 'heal' }) to repair.`;
 }
+
+// ============================================================
+// ACTIONABLE DRIFT REPORT — Issue #44 (live work-queue, not wallpaper)
+// ============================================================
+// Counts are noise without items. Each tick writes a bounded report so
+// an agent can open ONE file, see every stale item with reason +
+// suggested action, act, and watch the count decrease next tick
+// (the report is recomputed — resolved items drop off by construction).
+
+export const DRIFT_REPORT_FILE = ".kuma/drift.json";
+export const DRIFT_REPORT_MAX_ITEMS = 20;
+
+export interface DriftActionItem {
+  id: string;
+  kind: string;
+  target: string;
+  reason: string;
+  action: string;
+}
+
+/** Map one stale record to an actionable item (exported for tests). */
+export function toDriftActionItem(r: StaleRecord): DriftActionItem {
+  const stale = r.severity === "stale";
+  const missing = r.severity === "missing";
+  const action =
+    r.source === "research_cache"
+      ? `re-run kuma_context({ action: 'research', scope: '${r.description}' })`
+      : r.filePath
+        ? `rescan '${r.filePath}' (touch via any context call) or run heal`
+        : `run kuma_memory({ action: 'heal' }) to repair`;
+  return {
+    id: `${r.source}#${r.id}`,
+    kind: r.source,
+    target: r.filePath || r.description,
+    reason: missing
+      ? "source gone (file/record missing)"
+      : `content hash mismatch vs current (age ${r.age})`,
+    action: stale || missing ? action : "monitor",
+  };
+}
+
+/** Recompute + persist the report. Returns item count. */
+export async function writeDriftReport(maxItems = DRIFT_REPORT_MAX_ITEMS): Promise<{ items: number; path: string }> {
+  const fp = path.join(getProjectRoot(), DRIFT_REPORT_FILE);
+  const records = await detectDrift();
+  const actionable = records.filter((r) => r.severity === "stale" || r.severity === "missing");
+  const items = actionable.slice(0, maxItems).map(toDriftActionItem);
+  try {
+    fs.writeFileSync(
+      fp,
+      JSON.stringify({ generatedAt: new Date().toISOString(), count: actionable.length, items }, null, 2),
+      "utf-8",
+    );
+  } catch { /* non-critical */ }
+  return { items: items.length, path: fp };
+}
+
+/** Read the last persisted report (for agents that want items, not counts). */
+export function readDriftReport(): { generatedAt: string; count: number; items: DriftActionItem[] } | null {
+  try {
+    const fp = path.join(getProjectRoot(), DRIFT_REPORT_FILE);
+    if (!fs.existsSync(fp)) return null;
+    return JSON.parse(fs.readFileSync(fp, "utf-8"));
+  } catch {
+    return null;
+  }
+}

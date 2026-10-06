@@ -477,6 +477,14 @@ export async function getIndexerStatus(): Promise<IndexerStatus> {
     downstreamPackages.push(...rev.map((p) => p.name));
   }
 
+  // 3c. Issue #43: surface worktree-dirty state so agents weigh it.
+  let worktreeNote = "";
+  try {
+    const { isWorktreeDirty } = await import("./mapBackbone.js");
+    if (targetType === "file" && isWorktreeDirty(target, root)) {
+      worktreeNote = "📝 Uncommitted worktree changes on this target — map reflects work in progress, not committed state";
+    }
+  } catch {}
   // 3b. Issue #42 precision on demand: file target with no symbol
   // coverage → force-scan exactly that area once, then proceed.
   if (targetType === "file") {
@@ -561,6 +569,7 @@ export async function getIndexerStatus(): Promise<IndexerStatus> {
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `⚠️ **Risk Level: ${risk.toUpperCase()}**`,
     `📐 Diff shape: \`${diffShape}\` (${shapeDetail})`,
+    ...(worktreeNote ? [worktreeNote] : []),
     owningPackage ? `📦 Owning package: \`${owningPackage.name}\` (${owningPackage.path})` : "",
   ];
 

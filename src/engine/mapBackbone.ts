@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import fastGlob from "fast-glob";
+import { execSync } from "node:child_process";
 import { getProjectRoot } from "../utils/pathValidator.js";
 import { upsertNode, addEdge } from "./kumaGraph.js";
 import { resolveImportPath } from "./kumaCodeScanner.js";
@@ -190,6 +191,80 @@ export async function ensureBackbone(): Promise<BackboneResult | null> {
 
 export function formatBackbone(r: BackboneResult): string {
   return `🗺️ Backbone: ${r.files} file(s)${r.capped ? ` (capped at ${BACKBONE_MAX_FILES})` : ""}, ${r.edges} import edge(s) in ${r.ms}ms (~${r.filesPerSec} files/s) — approximate tier, symbols fill in on demand.`;
+}
+
+// ============================================================
+// WORKTREE SYNC — Issue #43 (commit-blind daemon)
+// ============================================================
+// mtime-cache syncs mirror committed state; hours of uncommitted work
+// stay invisible. These helpers read the worktree diff explicitly
+// (modified + untracked, ignored files excluded by git itself) so the
+// daemon force-scans exactly what's dirty, and queries surface the flag.
+
+export interface WorktreeFile {
+  file: string;
+  state: "modified" | "untracked";
+}
+
+const WORKTREE_CAP = 50;
+const WORKTREE_EXTS = new Set([
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+  ".py", ".go", ".rs", ".java", ".rb", ".php",
+  ".swift", ".kt", ".cs", ".vue", ".svelte",
+  ".json", ".yml", ".yaml", ".toml", ".md",
+]);
+
+/** Worktree-changed files (modified + untracked), bounded. [] on any error. */
+export function getWorktreeChangedFiles(root?: string, cap = WORKTREE_CAP): WorktreeFile[] {
+  const out: WorktreeFile[] = [];
+  try {
+    const cwd = root || getProjectRoot();
+    const porcelain = execSync("git status --porcelain --untracked-files=all", {
+      cwd, encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (!porcelain.trim()) return out;
+    // NOTE: never trim() whole lines — the XY status codes are positional
+    // (leading space is significant: " M file" vs "M  file").
+    for (const rawLine of porcelain.split("\n")) {
+      if (out.length >= cap) break;
+      const line = rawLine.replace(/\s+$/, "");
+      if (!line) continue;
+      // Rename format: "R  old -> new" — take the new path.
+      const m = line.match(/^(.{2})\s+(.+)$/);
+      if (!m) continue;
+      const code = m[1];
+      let p = m[2].trim();
+      const arrow = p.indexOf(" -> ");
+      if (arrow >= 0) p = p.slice(arrow + 4).trim();
+      p = p.replace(/^"|"$/g, "");
+      if (!p) continue;
+      const ext = p.slice(p.lastIndexOf(".")).toLowerCase();
+      if (!WORKTREE_EXTS.has(ext)) continue;
+      const untracked = code[0] === "?" || code[1] === "?";
+      out.push({ file: p, state: untracked ? "untracked" : "modified" });
+    }
+  } catch { /* not a git repo or timeout → no worktree signal */ }
+  return out;
+}
+
+/** Persist the worktree-dirty set into map-meta (survives restarts). */
+export function updateWorktreeDirty(files: string[], root?: string): void {
+  writeMapMeta({ worktreeDirty: [...new Set(files)].slice(0, WORKTREE_CAP), worktreeDirtyAt: Date.now() }, root);
+}
+
+/** Files dirty at the last sync (for query surfacing). */
+export function readWorktreeDirty(root?: string): string[] {
+  const meta = readMapMeta(root);
+  return Array.isArray(meta.worktreeDirty) ? (meta.worktreeDirty as string[]).filter((f) => typeof f === "string") : [];
+}
+
+/** True when the target carries uncommitted worktree changes. */
+export function isWorktreeDirty(target: string, root?: string): boolean {
+  const norm = target.replace(/\\/g, "/");
+  return readWorktreeDirty(root).some((f) => {
+    const nf = f.replace(/\\/g, "/");
+    return nf === norm || nf.endsWith(`/${norm}`) || norm.endsWith(`/${nf}`);
+  });
 }
 
 /**

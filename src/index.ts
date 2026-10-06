@@ -397,6 +397,13 @@ async function main(): Promise<void> {
         await refreshPackageBriefs();
       } catch {}
       try {
+        // Issue #43: post-commit re-resolves the dirty set — committed files
+        // drop off, remaining worktree changes stay flagged.
+        const { getWorktreeChangedFiles, updateWorktreeDirty } = await import("./engine/mapBackbone.js");
+        const { getProjectRoot } = await import("./utils/pathValidator.js");
+        updateWorktreeDirty(getWorktreeChangedFiles(getProjectRoot(), 50).map((d) => d.file), getProjectRoot());
+      } catch {}
+      try {
         const { clearDirty } = await import("./engine/cacheFreshness.js");
         clearDirty();
       } catch {}

@@ -78,6 +78,22 @@ export async function daemonTick(root?: string): Promise<string> {
   } catch (err) {
     notes.push(`map: skipped (${err})`);
   }
+  // Issue #43: worktree-aware sync — force-scan uncommitted files (mtime
+  // cache is commit-blind) and persist the dirty set for query surfacing.
+  try {
+    const { getWorktreeChangedFiles, updateWorktreeDirty } = await import("./mapBackbone.js");
+    const { scanCodebase } = await import("./kumaCodeScanner.js");
+    const dirty = getWorktreeChangedFiles(r, 50);
+    if (dirty.length > 0) {
+      const res = await scanCodebase({ include: dirty.map((d) => d.file), force: true, maxFiles: dirty.length });
+      updateWorktreeDirty(dirty.map((d) => d.file), r);
+      notes.push(`worktree: ${dirty.length} dirty forced (${res.filesScanned} scanned)`);
+    } else {
+      updateWorktreeDirty([], r);
+    }
+  } catch (err) {
+    notes.push(`worktree: skipped (${err})`);
+  }
   try {
     const { refreshPackageBriefs } = await import("./packageBriefs.js");
     const { count } = await refreshPackageBriefs();
@@ -93,6 +109,12 @@ export async function daemonTick(root?: string): Promise<string> {
   } catch {
     notes.push("drift: skipped");
   }
+  // Issue #44: persist the actionable item list alongside the count.
+  try {
+    const { writeDriftReport } = await import("./kumaDriftDetector.js");
+    const { items } = await writeDriftReport();
+    notes.push(`drift-report: ${items} item(s) → .kuma/drift.json`);
+  } catch {}
   try {
     const { clearDirty } = await import("./cacheFreshness.js");
     clearDirty();
