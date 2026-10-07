@@ -134,6 +134,60 @@ async function pruneGraphIfNeeded(): Promise<{ pruned: boolean; removedNodes: nu
 }
 
 /**
+ * Prune orphan nodes + dangling edges (cure side of the no-orphan guarantee).
+ * - Dangling edges (endpoint node missing) are always removed.
+ * - Orphan nodes (degree 0) are removed ONLY for map types
+ *   (file/function/class/method/interface/test/feature_domain/arch_flow)
+ *   older than `olderThanSec` — knowledge types (gotcha/decision/research/
+ *   session) are never touched, and the age gate protects in-flight writes.
+ */
+export async function pruneOrphans(opts: { olderThanSec?: number; dryRun?: boolean } = {}): Promise<{ orphanNodes: number; danglingEdges: number }> {
+  const olderThanSec = opts.olderThanSec ?? 3600;
+  const dryRun = opts.dryRun ?? false;
+  let orphanNodes = 0;
+  let danglingEdges = 0;
+  try {
+    const db = await getDb();
+    const cutoff = Math.floor(Date.now() / 1000) - olderThanSec;
+
+    const dangling = db.exec(`
+      SELECT COUNT(*) FROM edges e
+      WHERE NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = e.target_id)
+         OR NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = e.source_id)
+    `);
+    danglingEdges = Number(dangling[0]?.values?.[0]?.[0]) || 0;
+    if (!dryRun && danglingEdges > 0) {
+      db.exec(`
+        DELETE FROM edges
+        WHERE NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = edges.target_id)
+           OR NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = edges.source_id)
+      `);
+    }
+
+    const orphans = db.exec(`
+      SELECT COUNT(*) FROM nodes n
+      WHERE n.type IN ('file','function','class','method','interface','test','feature_domain','arch_flow')
+        AND n.updated_at < ${cutoff}
+        AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.source_id = n.id OR e.target_id = n.id)
+    `);
+    orphanNodes = Number(orphans[0]?.values?.[0]?.[0]) || 0;
+    if (!dryRun && orphanNodes > 0) {
+      db.exec(`
+        DELETE FROM nodes
+        WHERE type IN ('file','function','class','method','interface','test','feature_domain','arch_flow')
+          AND updated_at < ${cutoff}
+          AND id NOT IN (SELECT source_id FROM edges UNION SELECT target_id FROM edges)
+      `);
+    }
+
+    if (!dryRun && (orphanNodes > 0 || danglingEdges > 0)) saveDb(db);
+  } catch (err) {
+    console.error(`[KumaGraph] pruneOrphans failed: ${err}`);
+  }
+  return { orphanNodes, danglingEdges };
+}
+
+/**
  * Upsert a node into SQLite.
  */
 export async function upsertNode(node: GraphNode): Promise<void> {
@@ -344,6 +398,12 @@ export async function recordDomainFlow(params: {
 }): Promise<{ nodeCount: number; edgeCount: number }> {
   let nodeCount = 0;
   let edgeCount = 0;
+
+  // No-orphan guarantee: a domain with zero hops would create an edgeless
+  // anchor node — refuse instead of recording a disconnected stub.
+  if (!params.hops || params.hops.length === 0) {
+    return { nodeCount, edgeCount };
+  }
 
   try {
     // 1. Create/update the FeatureDomain anchor node

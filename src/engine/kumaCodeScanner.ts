@@ -638,6 +638,36 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
   // Database operations
   const db = await getDb();
 
+  // No-orphan helpers: ensure a file node exists (minimal stub for real
+  // on-disk files), or check a node exists before linking to it.
+  const ensureFileNode = async (relPath: string): Promise<string> => {
+    const fid = nodeId("file", relPath);
+    try {
+      const chk = db.prepare(`SELECT 1 FROM nodes WHERE id = ? LIMIT 1`);
+      chk.bind([fid]);
+      const exists = chk.step();
+      chk.free();
+      if (!exists) {
+        await upsertNode({ id: fid, type: "file", name: relPath, filePath: relPath, metadata: { backbone: true } });
+        result.nodeCount++;
+      }
+    } catch {}
+    return fid;
+  };
+  const nodeExists = (id: string): boolean => {
+    try {
+      const chk = db.prepare(`SELECT 1 FROM nodes WHERE id = ? LIMIT 1`);
+      chk.bind([id]);
+      const exists = chk.step();
+      chk.free();
+      return exists;
+    } catch {
+      return false;
+    }
+  };
+
+  const pendingCalls: Array<{ fileId: string; callee: string; calleeFile: string; filePath: string }> = [];
+
   for (const parsed of parsedFiles) {
     const { filePath, symbols, imports, calledSymbols, isTest } = parsed;
     const fileId = nodeId("file", filePath);
@@ -703,20 +733,23 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
       });
       result.edgeCount++;
 
-      // Class extends / implements
+      // Class extends / implements — gated: external/unknown parents are
+      // skipped instead of linked (no dangling edges to nonexistent nodes).
       if (sym.extends) {
         const parentFile = symbolMap.get(sym.extends) || filePath;
         const parentId = `class::${parentFile}::${sym.extends}`;
-        await addEdge({ sourceId: symId, targetId: parentId, type: "extends" });
-        result.edgeCount++;
+        if (nodeExists(parentId)) {
+          await addEdge({ sourceId: symId, targetId: parentId, type: "extends" });
+          result.edgeCount++;
+        }
       }
     }
 
-    // 4. Resolve & link imports
+    // 4. Resolve & link imports (target file node ensured — no dangling)
     for (const imp of imports) {
       const resolved = resolveImportPath(filePath, imp.source, root);
       if (resolved) {
-        const targetFileId = nodeId("file", resolved);
+        const targetFileId = await ensureFileNode(resolved);
         // Edge: file -> imports -> targetFile
         await addEdge({
           sourceId: fileId,
@@ -738,21 +771,24 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
       }
     }
 
-    // 5. Connect function calls
+    // 5. Collect calls for the second pass (after ALL symbols exist —
+    // order-independent, and gated so no dangling edge is ever created).
     for (const callee of calledSymbols) {
       const calleeFile = symbolMap.get(callee);
       if (calleeFile && calleeFile !== filePath) {
-        const calleeId = `function::${calleeFile}::${callee}`;
-        await addEdge({
-          sourceId: fileId,
-          targetId: calleeId,
-          type: "calls",
-        });
-        result.edgeCount++;
+        pendingCalls.push({ fileId, callee, calleeFile, filePath });
       }
     }
 
     result.filesScanned++;
+  }
+
+  // 6. Second pass: link calls only when the callee node really exists.
+  for (const p of pendingCalls) {
+    const calleeId = `function::${p.calleeFile}::${p.callee}`;
+    if (!nodeExists(calleeId)) continue;
+    await addEdge({ sourceId: p.fileId, targetId: calleeId, type: "calls" });
+    result.edgeCount++;
   }
 
   saveDb(db);

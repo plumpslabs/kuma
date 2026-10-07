@@ -115,6 +115,14 @@ export async function daemonTick(root?: string): Promise<string> {
     const { items } = await writeDriftReport();
     notes.push(`drift-report: ${items} item(s) → .kuma/drift.json`);
   } catch {}
+  // No-orphan guarantee: sweep disconnected nodes + dangling edges.
+  try {
+    const { pruneOrphans } = await import("./kumaGraph.js");
+    const { orphanNodes, danglingEdges } = await pruneOrphans({ olderThanSec: 3600 });
+    if (orphanNodes > 0 || danglingEdges > 0) {
+      notes.push(`orphans: -${orphanNodes}n/-${danglingEdges}e pruned`);
+    }
+  } catch {}
   try {
     const { clearDirty } = await import("./cacheFreshness.js");
     clearDirty();
