@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { handleContext, handleMemory, handleSafety } from "./engine/kumaRouter.js";
@@ -192,4 +193,39 @@ export function registerAllTools(server: McpServer): void {
 
   console.error("[Manifest] Registered 3 core tools with universal dual-prefix aliases (kuma_* and kuma_kuma_*).");
   console.error("[Manifest] Auto-init hooks installed on all tools.");
+
+  // ------------------------------------------------------------
+  // STRICT-CLIENT COMPAT (OpenCode): the MCP SDK emits a `$schema`
+  // meta key inside every tool's `inputSchema` (via zodToJsonSchema).
+  // The MCP tool meta-schema forbids `$schema`, and strict clients
+  // such as OpenCode reject the `tools/list` response with
+  // "The request contains invalid parameters. Check the request body
+  // for any errors or inconsistencies." — which crashes Kuma on load.
+  // Strip the non-arg keys so the advertised schema is spec-compliant.
+  // ------------------------------------------------------------
+  const baseServer = server.server as unknown as {
+    _requestHandlers?: Map<string, (req: unknown, extra: unknown) => unknown>;
+    removeRequestHandler: (m: string) => void;
+    setRequestHandler: (s: unknown, h: (req: unknown, extra: unknown) => unknown) => void;
+  };
+  const existingListHandler = baseServer._requestHandlers?.get("tools/list");
+  if (existingListHandler) {
+    const stripSchemaMeta = (schema: Record<string, unknown> | undefined): void => {
+      if (!schema || typeof schema !== "object") return;
+      for (const key of ["$schema", "$id", "id", "title", "definitions", "$defs"]) {
+        delete schema[key];
+      }
+    };
+    baseServer.removeRequestHandler("tools/list");
+    baseServer.setRequestHandler(ListToolsRequestSchema, async (request: unknown, extra: unknown) => {
+      const result = (await existingListHandler(request, extra)) as
+        | { tools?: Array<{ inputSchema?: Record<string, unknown>; outputSchema?: Record<string, unknown> }> }
+        | undefined;
+      for (const tool of result?.tools ?? []) {
+        stripSchemaMeta(tool.inputSchema);
+        stripSchemaMeta(tool.outputSchema);
+      }
+      return result as unknown;
+    });
+  }
 }

@@ -56,13 +56,18 @@ describe("Multi-Provider Agent Compliance & Init", () => {
     expect(fs.existsSync(path.join(tmpDir, ".opencode/skills/kuma/SKILL.md"))).toBe(true);
 
     const pluginContent = fs.readFileSync(path.join(tmpDir, ".opencode/plugins/kuma.js"), "utf-8");
+    // OpenCode plugins are async functions returning a hooks object
+    // (https://opencode.ai/docs/plugins). The `export default { id, setup }`
+    // shape is NOT a valid OpenCode plugin and crashes load ("invalid
+    // parameters"), so kuma must export a named async function instead.
     expect(pluginContent).toContain("KumaPlugin");
+    expect(pluginContent).toContain("export const KumaPlugin = async");
     expect(pluginContent).toContain("tool.execute.before");
-    // Server runtime requires a default definition with id + sync setup
-    // (no async effect — an unresolved effect hangs plugin load).
-    expect(pluginContent).toContain("export default");
-    expect(pluginContent).toContain('id: "kuma"');
-    expect(pluginContent).toContain("setup:");
+    expect(pluginContent).toContain("critical");
+    expect(pluginContent).toContain("file.edited");
+    // Must NOT use the invalid default-object shape.
+    expect(pluginContent).not.toContain("export default");
+    expect(pluginContent).not.toContain("setup:");
     expect(pluginContent).not.toContain("effect:");
     // Risk-sensitive: throws only on critical/high (no console.warn spam path)
     expect(pluginContent).toContain("critical");
