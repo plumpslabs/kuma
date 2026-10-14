@@ -503,8 +503,9 @@ function opencodePluginTemplate(): string {
     "",
     "export default {",
     '  id: "kuma",',
-    "  setup: async () => kumaHooks,",
-    "  effect: async () => kumaHooks,",
+    "  // NOTE: setup must return hooks synchronously — never an async",
+    "  // effect/event-loop. An async effect never resolves and hangs load.",
+    "  setup: () => kumaHooks,",
     "};",
     "",
   ].join("\n");

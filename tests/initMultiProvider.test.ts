@@ -58,9 +58,12 @@ describe("Multi-Provider Agent Compliance & Init", () => {
     const pluginContent = fs.readFileSync(path.join(tmpDir, ".opencode/plugins/kuma.js"), "utf-8");
     expect(pluginContent).toContain("KumaPlugin");
     expect(pluginContent).toContain("tool.execute.before");
-    // Server runtime requires a default definition with id + setup/effect
+    // Server runtime requires a default definition with id + sync setup
+    // (no async effect — an unresolved effect hangs plugin load).
     expect(pluginContent).toContain("export default");
     expect(pluginContent).toContain('id: "kuma"');
+    expect(pluginContent).toContain("setup:");
+    expect(pluginContent).not.toContain("effect:");
     // Risk-sensitive: throws only on critical/high (no console.warn spam path)
     expect(pluginContent).toContain("critical");
     expect(pluginContent).toContain("file.edited");
