@@ -805,9 +805,12 @@ async function main(): Promise<void> {
       version: SERVER_VERSION,
     },
     {
+      // GDPR of capabilities: only declare what we actually implement.
+      // Declaring `resources: {}` without any registered resource handler makes
+      // `resources/list` return -32601 "Method not found", which fails MCP
+      // conformance probes (e.g. the Glama registry inspector).
       capabilities: {
         tools: {},
-        resources: {},
       },
     },
   );

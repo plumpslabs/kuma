@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.25] — 2026-10-21
+
+### 🔧 MCP Conformance Fix
+
+- **Capability honesty (`index.ts`)**: removed the undeclared-but-unimplemented `resources` capability from the server handshake. Declaring `resources: {}` without any registered handler made `resources/list` return `-32601 Method not found`, which failed registry conformance probes (Glama MCP inspector) during published-server builds. The server now only declares `tools`, which is fully implemented.
+
 ## [2.4.23] — 2026-10-21
 
 ### 🩺 Gotcha Lifecycle & Memory Maturity
