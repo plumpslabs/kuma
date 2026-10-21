@@ -19,8 +19,15 @@ describe("Kuma Context Actions (Map & Impact)", () => {
     expect(res).toContain("@kuma/studio");
   });
 
-  it("executes action: 'research' and includes Step 4 Blast Radius", async () => {
+  it("executes action: 'research' and reports task budget (heavy steps skipped for trivial tasks)", async () => {
     const res = await handleContext({ action: "research", scope: "sessionMemory" });
-    expect(res).toContain("Step 4/5: Impact Analysis (Blast Radius)");
+    // Task budget (proportionality): in a clean tree the task is trivial, so heavy
+    // steps (impact/decision) are skipped for token efficiency. Either the full
+    // Step 4 ran (non-trivial) or the trivial-skip notice is present.
+    expect(
+      res.includes("Step 4/5: Impact Analysis (Blast Radius)") ||
+      res.includes("Trivial task — heavy steps (impact/decision) skipped")
+    ).toBe(true);
+    expect(res).toContain("Task budget");
   });
 });
