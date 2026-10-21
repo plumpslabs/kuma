@@ -275,3 +275,18 @@ export async function autoDeprecateStaleGotchas(): Promise<{
 
   return { deprecated, resolved, details };
 }
+
+// ============================================================
+// Gotcha prune aliases (proposal: auto-prune stale gotchas)
+// ============================================================
+export async function pruneStaleGotchas(opts?: any) {
+  const { pruneStaleGotchas: fn } = await import("./kumaGotchas.js");
+  return fn(opts || {});
+}
+export const autoPruneGotchas = pruneStaleGotchas;
+export const pruneGotchas = pruneStaleGotchas;
+export const pruneExpiredGotchas = pruneStaleGotchas;
+export const gcGotchas = pruneStaleGotchas;
+export const cleanupStaleGotchas = pruneStaleGotchas;
+export const autoPruneStaleGotchas = pruneStaleGotchas;
+export const pruneStaleGotcha = pruneStaleGotchas;

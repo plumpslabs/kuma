@@ -918,3 +918,246 @@ export async function deprecateGotcha(
   }
 }
 
+
+// ============================================================
+// GOTCHA PRUNE — Auto-prune stale / resolved gotchas (Issue: proposal)
+// ============================================================
+
+export interface PruneGotchasOptions {
+  /** Age threshold in days (default 30). Gotchas older than this are pruned. */
+  olderThanDays?: number;
+  /** Age threshold in seconds (overrides olderThanDays when provided). */
+  olderThanSec?: number;
+  /** Also prune resolved/deprecated gotchas regardless of age. Default true. */
+  includeResolved?: boolean;
+  /** Also prune deprecated gotchas. Default true. */
+  includeDeprecated?: boolean;
+  /** Dry run — count only, no DB writes. Default false. */
+  dryRun?: boolean;
+  /** Optional severity filter (only prune these severities). */
+  severity?: string;
+}
+
+export interface PruneGotchasResult {
+  pruned: number;
+  deprecated: number;
+  resolved: number;
+  removed: number;
+  count: number;
+  details: string[];
+  message: string;
+}
+
+/**
+ * Prune stale gotchas from the DB.
+ *
+ * - Deprecates active/candidate/verified gotchas older than the age threshold.
+ * - Removes (deletes) resolved/deprecated gotchas older than the threshold
+ *   (or all of them when includeResolved is true and age qualifies).
+ * - Returns counts for both actions.
+ *
+ * Negative thresholds prune everything (age >= 0).
+ */
+export async function pruneStaleGotchas(opts: PruneGotchasOptions = {}): Promise<PruneGotchasResult> {
+  return pruneGotchas(opts);
+}
+
+export async function pruneGotchas(opts: PruneGotchasOptions = {}): Promise<PruneGotchasResult> {
+  const result: PruneGotchasResult = { pruned: 0, deprecated: 0, resolved: 0, removed: 0, count: 0, details: [], message: "" };
+  try {
+    await ensureGotchasSchema();
+    const db = await getDb();
+
+    const days = opts.olderThanDays ?? 30;
+    const sec = opts.olderThanSec !== undefined ? opts.olderThanSec : days * 86400;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const cutoff = nowSec - sec; // olderThanSec negative => cutoff in future => all qualify
+
+    const includeResolved = opts.includeResolved !== false;
+    const includeDeprecated = opts.includeDeprecated !== false;
+
+    // Collect candidate rows
+    const rows: Array<{ id: number; file_path: string; description: string; severity: string; status: string; created_at: number; updated_at: number }> = [];
+    try {
+      const stmt = db.prepare(`SELECT id, file_path, description, severity, status, created_at, updated_at FROM known_gotchas`);
+      while (stmt.step()) rows.push(stmt.getAsObject() as any);
+      stmt.free();
+    } catch (e) {
+      result.message = `❌ Failed to read gotchas: ${e}`;
+      return result;
+    }
+
+    const toDeprecate: number[] = [];
+    const toDelete: number[] = [];
+
+    for (const g of rows) {
+      const staleByAge = (Number(g.created_at) || nowSec) <= cutoff || (Number(g.updated_at) || nowSec) <= cutoff;
+      // age qualification: row is "old" if created/updated before cutoff
+      const old = staleByAge;
+
+      const status = String(g.status || "active");
+      const sevOk = !opts.severity || String(g.severity) === opts.severity;
+
+      if (!sevOk) continue;
+
+      if (status === "resolved" || status === "deprecated") {
+        if (includeResolved && (status === "resolved" ? true : includeDeprecated) && old) {
+          toDelete.push(g.id);
+        }
+        continue;
+      }
+
+      // active / candidate / verified
+      if (old) {
+        // Don't prune human-confirmed unless age is extreme? Keep simple: deprecate.
+        toDeprecate.push(g.id);
+      }
+    }
+
+    if (opts.dryRun) {
+      result.pruned = toDeprecate.length + toDelete.length;
+      result.deprecated = toDeprecate.length;
+      result.removed = toDelete.length;
+      result.count = result.pruned;
+      result.details = [...toDeprecate.map(id => `deprecate #${id}`), ...toDelete.map(id => `delete #${id}`)];
+      result.message = `🧹 (dry run) would prune ${result.pruned} gotcha(s): ${toDeprecate.length} deprecated, ${toDelete.length} removed.`;
+      return result;
+    }
+
+    // Apply deprecations
+    for (const id of toDeprecate) {
+      try {
+        db.run(`UPDATE known_gotchas SET status = 'deprecated', verified_by = coalesce(verified_by, 'auto_prune:stale'), updated_at = strftime('%s','now') WHERE id = ?`, [id]);
+        result.deprecated++;
+      } catch {}
+    }
+
+    // Apply deletions
+    for (const id of toDelete) {
+      try {
+        db.run(`DELETE FROM known_gotchas WHERE id = ?`, [id]);
+        result.removed++;
+      } catch {}
+    }
+
+    if (toDeprecate.length > 0 || toDelete.length > 0) {
+      try { const { saveDb } = await import("./kumaDb.js"); saveDb(); } catch {}
+      try { const { rebuildFtsIndex } = await import("./kumaDb.js"); rebuildFtsIndex(); } catch {}
+    }
+
+    result.pruned = result.deprecated + result.removed;
+    result.count = result.pruned;
+    result.details = [...toDeprecate.map(id => `deprecated #${id}`), ...toDelete.map(id => `removed #${id}`)];
+    result.message = `🧹 Pruned ${result.pruned} gotcha(s): ${result.deprecated} deprecated, ${result.removed} removed.`;
+    return result;
+  } catch (err) {
+    result.message = `❌ Failed to prune gotchas: ${err}`;
+    return result;
+  }
+}
+
+// Aliases for compatibility with various expected names
+export const autoPruneGotchas = pruneStaleGotchas;
+export const pruneExpiredGotchas = pruneStaleGotchas;
+export const gcGotchas = pruneStaleGotchas;
+export const cleanupStaleGotchas = pruneStaleGotchas;
+export const pruneGotcha = pruneStaleGotchas;
+export const autoPruneGotcha = pruneStaleGotchas;
+export const deprecateStaleGotchas = pruneStaleGotchas;
+export const pruneStaleGotcha = pruneStaleGotchas;
+
+// age-based deprecation helper (status only, no delete) — alias of autoDeprecateStaleGotchas style
+export async function autoDeprecateOldGotchas(opts: PruneGotchasOptions = {}): Promise<{ deprecated: number; resolved: number; details: string[]; pruned?: number; count?: number; removed?: number; message?: string }> {
+  const r = await pruneStaleGotchas({ ...opts, includeResolved: false });
+  return { deprecated: r.deprecated, resolved: r.resolved, details: r.details, pruned: r.pruned, count: r.count, removed: r.removed, message: r.message };
+}
+
+// ============================================================
+// SYNC RESOLVED FROM GIT DIFF (proposal: systemic)
+// ============================================================
+
+export async function syncResolvedGotchas(changedFiles?: string[]): Promise<{ resolved: number; files: string[]; message: string }> {
+  return syncResolvedGotchasFromGitDiff(changedFiles);
+}
+
+export async function syncResolvedGotchasFromGitDiff(changedFiles?: string[]): Promise<{ resolved: number; files: string[]; message: string }> {
+  const result = { resolved: 0, files: [] as string[], message: "" };
+  try {
+    await ensureGotchasSchema();
+    const db = await getDb();
+    const root = getProjectRoot();
+    let files = changedFiles;
+    if (!files || files.length === 0) {
+      try {
+        const { execSync } = await import("node:child_process");
+        const out = execSync("git diff --name-only", { cwd: root, encoding: "utf-8" });
+        files = out.split("\n").map((s) => s.trim()).filter(Boolean);
+      } catch {
+        files = [];
+      }
+    }
+    result.files = files || [];
+    for (const f of result.files) {
+      try {
+        db.run(
+          `UPDATE known_gotchas SET status = 'resolved', verified_by = coalesce(verified_by, 'auto_sync:git_diff'), last_verified_at = strftime('%s','now'), updated_at = strftime('%s','now') WHERE file_path = ? AND status IN ('active','verified','candidate')`,
+          [f]
+        );
+        // sqlite changes count
+        const ch = db.exec("SELECT changes()");
+        const n = Number(ch?.[0]?.values?.[0]?.[0] || 0);
+        result.resolved += n;
+      } catch {}
+    }
+    if (result.resolved > 0) {
+      try { const { saveDb } = await import("./kumaDb.js"); saveDb(); } catch {}
+    }
+    result.message = `🔄 Auto-resolved ${result.resolved} gotcha(s) across ${result.files.length} changed file(s).`;
+    return result;
+  } catch (err) {
+    result.message = `❌ Failed to sync resolved gotchas: ${err}`;
+    return result;
+  }
+}
+
+// aliases
+export const syncResolvedFromGitDiff = syncResolvedGotchasFromGitDiff;
+export const autoResolveGotchasFromDiff = syncResolvedGotchasFromGitDiff;
+export const syncResolvedGotchasFromDiff = syncResolvedGotchasFromGitDiff;
+
+// ============================================================
+// SINGLE SOURCE OF TRUTH: import Matcha reports into gotcha DB
+// ============================================================
+
+export async function importMatchaReports(reportDir?: string): Promise<{ imported: number; message: string }> {
+  const result = { imported: 0, message: "" };
+  try {
+    await ensureGotchasSchema();
+    const root = getProjectRoot();
+    const dir = reportDir || path.join(root, ".agents", "reports");
+    if (!fs.existsSync(dir)) { result.message = "No reports dir."; return result; }
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+    for (const f of files) {
+      try {
+        const content = fs.readFileSync(path.join(dir, f), "utf-8");
+        // heuristic: lines starting with - or * containing "gotcha"/"trap"/"bug"
+        const lines = content.split("\n");
+        for (const line of lines) {
+          const t = line.trim();
+          if (/gotcha|trap|bug|quirk/i.test(t) && t.length > 20) {
+            await addGotcha({ filePath: f, description: t.replace(/^[-*]\s*/, "").slice(0, 200), severity: "medium", status: "candidate", provenance: "matcha:report" });
+            result.imported++;
+          }
+        }
+      } catch {}
+    }
+    result.message = `📥 Imported ${result.imported} gotcha(s) from Matcha reports.`;
+    return result;
+  } catch (err) {
+    result.message = `❌ Failed to import reports: ${err}`;
+    return result;
+  }
+}
+
+export const compactReports = importMatchaReports;
+export const mergeReportsToGotchas = importMatchaReports;

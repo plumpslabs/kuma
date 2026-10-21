@@ -697,13 +697,8 @@ export async function scanCodebase(options: ScanOptions = {}): Promise<ScanResul
     }
 
     // 3. Upsert symbols (functions, classes, interfaces)
-    // High-Signal Filter: Only index public API contracts (exported symbols)
-    // to keep knowledge graph clean, impactful, and noise-free for agents.
-    let highSignalSymbols = symbols.filter((s) => s.isExported);
-    if (highSignalSymbols.length === 0 && symbols.length > 0 && !isTest) {
-      // If file has no exports (e.g. CLI entrypoint script), index only main entrypoints
-      highSignalSymbols = symbols.filter((s) => s.name === "main" || !s.name.startsWith("_")).slice(0, 3);
-    }
+    // Deep indexing: index all symbols (capped) for maximum search relevance.
+    let highSignalSymbols = symbols;
 
     for (const sym of highSignalSymbols) {
       const symId = `${sym.kind}::${filePath}::${sym.name}`;

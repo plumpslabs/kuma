@@ -44,10 +44,26 @@ export async function maybeRunAutoCleanup(): Promise<string> {
     const gcResult = await runGarbageCollection();
     const { autoDeprecateStaleGotchas } = await import("./kumaSelfHeal.js");
     const deprecateRes = await autoDeprecateStaleGotchas();
+    let pruneRes: { pruned?: number } = { pruned: 0 };
+    try {
+      const { pruneStaleGotchas } = await import("./kumaGotchas.js");
+      pruneRes = await pruneStaleGotchas({ olderThanDays: 90, includeResolved: true });
+    } catch {}
+    try {
+      const { syncResolvedGotchasFromGitDiff } = await import("./kumaGotchas.js");
+      await syncResolvedGotchasFromGitDiff();
+    } catch {}
+    try {
+      const { importMatchaReports } = await import("./kumaGotchas.js");
+      await importMatchaReports();
+    } catch {}
 
     let summary = gcResult.replace(/\n/g, " ").substring(0, 80);
     if (deprecateRes.deprecated > 0) {
       summary += ` (${deprecateRes.deprecated} gotcha(s) auto-deprecated)`;
+    }
+    if ((pruneRes.pruned || 0) > 0) {
+      summary += ` (${pruneRes.pruned} gotcha(s) pruned)`;
     }
     return `🧹 ${summary}`;
   } catch {

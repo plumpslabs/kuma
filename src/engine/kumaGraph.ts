@@ -215,7 +215,9 @@ export async function upsertNode(node: GraphNode): Promise<void> {
 
     // Maintain token inverted index for fast search
     try {
-      const terms = `${normName} ${normFilePath || ""} ${metadata}`
+      const raw = `${normName} ${normFilePath || ""} ${metadata}`;
+      const terms = raw
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
         .toLowerCase()
         .split(/[\s,.;:!?()\[\]{}"'\/\\|@#$%^&*+=<>~`_-]+/)
         .filter(t => t.length > 2 && t.length < 40);
@@ -1170,6 +1172,7 @@ export async function searchGraph(query: string, limit: number = 20): Promise<st
     // Try node_tokens inverted index first (instant token lookup)
     try {
       const cleanTokens = query
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
         .toLowerCase()
         .split(/[\s,.;:!?()\[\]{}"'\/\\|@#$%^&*+=<>~`_-]+/)
         .filter((t) => t.length >= 2);

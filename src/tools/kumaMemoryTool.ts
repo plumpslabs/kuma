@@ -14,6 +14,7 @@ const MEMORY_ALIASES: Record<string, string> = {
   "search": "search", "find": "search", "query": "search", "lookup": "search",
   "arch_flow": "arch_flow", "arch-flow": "arch_flow", "architecture": "arch_flow",
   "gotcha": "gotcha", "gotchas": "gotcha", "quirk": "gotcha",
+  "gotcha_prune": "gotcha", "gotcha-prune": "gotcha", "prune": "gotcha", "prune_gotcha": "gotcha", "prune-gotcha": "gotcha", "gc": "gotcha", "gotcha_gc": "gotcha",
   "resolve_gotcha": "gotcha", "resolve-gotcha": "gotcha", "resolve": "gotcha",
   "gotcha_resolve": "gotcha", "gotcha-resolve": "gotcha",
   "deprecate_gotcha": "gotcha", "deprecate-gotcha": "gotcha", "deprecate": "gotcha",
@@ -290,6 +291,20 @@ async function handleGotchaAction(params: MemoryParams): Promise<string> {
       target,
       params.content || params.rationale || params.description
     );
+    sessionMemory.recordMemoryAction("gotcha");
+    return res.message;
+  }
+
+  const isPrune = rawStatus === "prune" || rawStatus === "gc" || rawStatus === "cleanup" || rawAction.includes("prune") || rawAction.includes("gc") || rawAction === "gotcha_prune" || rawAction === "gotcha-prune" || rawAction === "gotcha_gc";
+  if (isPrune) {
+    const { pruneStaleGotchas } = await import("../engine/kumaGotchas.js");
+    const days = (params as any).olderThanDays || (params as any).days;
+    const sec = (params as any).olderThanSec || (params as any).olderThan;
+    const res = await pruneStaleGotchas({
+      olderThanDays: days,
+      olderThanSec: sec,
+      dryRun: rawStatus === "dry" || (params as any).dryRun === true,
+    });
     sessionMemory.recordMemoryAction("gotcha");
     return res.message;
   }

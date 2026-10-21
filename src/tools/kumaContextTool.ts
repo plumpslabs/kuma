@@ -48,25 +48,16 @@ export async function handleContext(params: ContextParams): Promise<string> {
   const resolvedAction = CONTEXT_ALIASES[rawAction.toLowerCase()] || rawAction;
   const action = resolvedAction as ContextAction;
 
-  // Issue #32 P1 — obedience nudge (non-blocking): any non-init action
-  // without a prior init gets a reminder prefix.
-  let obediencePrefix = "";
-  if (action !== "init" && !sessionMemory.hasToolCall("kuma_context_init")) {
-    obediencePrefix =
-      `⚠️ **Obedience nudge**: \`kuma_context({ action: "init" })\` was not called yet this session. ` +
-      `Run it first so project brief + fresh gotchas are loaded. Continuing anyway…\n\n`;
-  }
-
   switch (action) {
     case "init": return handleInit(params);
-    case "research": return obediencePrefix + await handleResearch(params, dirtySynced);
-    case "history": return obediencePrefix + await handleHistory(params);
-    case "flow": return obediencePrefix + await handleFlow(params);
-    case "map": return obediencePrefix + await handleMap(params);
-    case "impact": return obediencePrefix + await handleImpact(params);
-    case "cluster": return obediencePrefix + await handleCluster(params);
-    case "skeleton": return obediencePrefix + await handleSkeleton(params);
-    case "reuse": return obediencePrefix + await handleReuse(params);
+    case "research": return await handleResearch(params, dirtySynced);
+    case "history": return await handleHistory(params);
+    case "flow": return await handleFlow(params);
+    case "map": return await handleMap(params);
+    case "impact": return await handleImpact(params);
+    case "cluster": return await handleCluster(params);
+    case "skeleton": return await handleSkeleton(params);
+    case "reuse": return await handleReuse(params);
     default: return `Unknown action "${action}". Use: init, research, history, flow, map, impact, cluster, skeleton, reuse`;
   }
 }
@@ -162,8 +153,7 @@ async function handleInit(_params: ContextParams): Promise<string> {
 
   const summary = sessionMemory.getSummary();
   lines.push("**Session State**");
-  lines.push(`  🎯 Goal: ${(summary.currentGoal as string) || "not set"}`);
-  lines.push(`  📝 Modified: ${(summary.modifiedFiles as unknown[])?.length || 0} file(s) · 🛠️ ${summary.toolCallCount} calls`);
+  lines.push(`  🎯 Goal: ${(summary.currentGoal as string) || "not set"} · 📝 Modified: ${(summary.modifiedFiles as unknown[])?.length || 0} file(s) · 🛠️ ${summary.toolCallCount} calls`);
   lines.push("");
 
   const memories = getProactiveMemories();
@@ -203,15 +193,18 @@ async function handleInit(_params: ContextParams): Promise<string> {
       countStmt.free();
 
       if (collectedGotchas.length < 5) {
+        const cutoffInit = Math.floor(Date.now() / 1000) - 30 * 86400;
         const stmt = db.prepare(`
           SELECT file_path, description, severity
           FROM known_gotchas
           WHERE status IN ('active', 'verified')
+            AND (severity IN ('high','critical') OR updated_at >= ? OR created_at >= ?)
           ORDER BY
             CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
             updated_at DESC
           LIMIT 10
         `);
+        stmt.bind([cutoffInit, cutoffInit]);
         while (stmt.step()) {
           const row = stmt.getAsObject() as { file_path: string; description: string; severity: string };
           const key = `${row.file_path}::${row.description.substring(0, 30)}`;
@@ -290,9 +283,29 @@ function sessionFocusAdvice(focus: string): string {
 
 async function handleResearch(params: ContextParams, dirtySynced = 0): Promise<string> {
   const scope = params.scope || "project";
+  const skipHeavy = (params as any).skipHeavy === true;
+  let autoSkipHeavy = skipHeavy;
   sessionMemory.setGoal(`Researching: ${scope}`);
   sessionMemory.recordToolCall("kuma_context_research", { scope });
   const lines: string[] = [`🔬 **Research: ${scope}**`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, ""];
+  // Task budget (proposal: proportionality) — derived from current git diff.
+  try {
+    const { execSync } = await import("node:child_process");
+    const { getProjectRoot } = await import("../utils/pathValidator.js");
+    const root = getProjectRoot();
+    const stat = execSync("git diff --stat", { cwd: root, encoding: "utf-8" });
+    const files = (stat.match(/\d+ files? changed/)?.[0] || "").match(/\d+/)?.[0];
+    const ins = stat.match(/(\d+) insertions?/)?.[1];
+    const del = stat.match(/(\d+) deletions?/)?.[1];
+    const changedFiles = files ? parseInt(files, 10) : 0;
+    const changedLines = (ins ? parseInt(ins, 10) : 0) + (del ? parseInt(del, 10) : 0);
+    const { getTokenBudget } = await import("../engine/taskBudget.js");
+    const budget = getTokenBudget({ changedFiles, changedLines });
+    autoSkipHeavy = (skipHeavy || budget === "trivial") && (params as any).force !== true;
+    lines.push(`📊 **Task budget**: ${budget} (changed: ${changedFiles} file(s), ${changedLines} line(s))`);
+    if (autoSkipHeavy) lines.push("⚡ Trivial task — heavy steps (impact/decision) skipped for token efficiency.");
+    lines.push("");
+  } catch {}
   if (dirtySynced > 0) {
     lines.push(`🗺️ Map patched post-edit: ${dirtySynced} dirty file(s) synced before this research (no rebuild asked).`);
     lines.push("");
@@ -341,12 +354,20 @@ async function handleResearch(params: ContextParams, dirtySynced = 0): Promise<s
       if (filled > 0) lines.push(`  🗺️ Precision tier filled on demand: ${filled} file(s) indexed (no user action needed)`);
     }
   } catch {}
+  // Scan codebase first so the graph is populated before querying (proposal: research/graph should return relevant nodes).
+  try {
+    const { scanCodebase } = await import("../engine/kumaCodeScanner.js");
+    const scanResult = await scanCodebase({ scope, maxFiles: 100 });
+    if (scanResult.nodeCount > 0 || scanResult.edgeCount > 0) lines.push(`  🔬 Auto-scanned ${scanResult.filesScanned} files → ${scanResult.nodeCount} nodes, ${scanResult.edgeCount} edges`);
+  } catch {}
   try {
     const graphResult = await searchGraph(scope, 15);
     const graphLines = graphResult.split("\n");
+    const countMatch = graphResult.match(/Graph Search — (\d+) result/);
+    const nodeCount = countMatch ? parseInt(countMatch[1], 10) : graphLines.filter(l => l.includes("**")).length;
     if (graphLines.length > 1 && !graphResult.includes("No results")) {
-      lines.push(`  📊 ${graphLines.filter(l => l.includes("•")).length} relevant node(s) found`);
-      for (const l of graphLines.slice(0, 8)) { if (l.includes("•")) lines.push(`  ${l}`); }
+      lines.push(`  📊 ${nodeCount} relevant node(s) found`);
+      for (const l of graphLines.slice(0, 8)) { if (l.includes("**")) lines.push(`  ${l}`); }
     } else {
       lines.push("  ⏳ No graph data — searching codebase...");
       try {
@@ -362,16 +383,12 @@ async function handleResearch(params: ContextParams, dirtySynced = 0): Promise<s
       } catch { lines.push("  ⏳ No graph data yet — build by using more tools"); }
     }
   } catch { lines.push("  ⚠️ Graph query failed"); }
-  try {
-    const { scanCodebase } = await import("../engine/kumaCodeScanner.js");
-    const scanResult = await scanCodebase({ scope, maxFiles: 100 });
-    if (scanResult.nodeCount > 0 || scanResult.edgeCount > 0) lines.push(`  🔬 Auto-scanned ${scanResult.filesScanned} files → ${scanResult.nodeCount} nodes, ${scanResult.edgeCount} edges`);
-  } catch {}
   lines.push("");
 
-  lines.push("**Step 4/5: Impact Analysis (Blast Radius)**");
-  try {
-    const impact = await analyzeImpact(scope);
+  if (!autoSkipHeavy) {
+    lines.push("**Step 4/5: Impact Analysis (Blast Radius)**");
+    try {
+      const impact = await analyzeImpact(scope);
     lines.push(`  📊 ${impact.references} reference(s) across ${impact.files} file(s)`);
     if (impact.packageName) lines.push(`  📦 Package: \`${impact.packageName}\``);
     if (impact.downstreamPackages && impact.downstreamPackages.length > 0) {
@@ -383,16 +400,18 @@ async function handleResearch(params: ContextParams, dirtySynced = 0): Promise<s
       for (const rf of impact.riskFlags) lines.push(`     • ${rf}`);
     }
     if (impact.entryPoints && impact.entryPoints.length > 0) lines.push(`  🎯 Entry: ${impact.entryPoints.slice(0, 3).join(", ")}`);
-  } catch { lines.push("  ⚠️ Impact analysis unavailable"); }
-  lines.push("");
-
-  lines.push("**Step 5/5: Decision & Context Lookup**");
-  try {
-    const memories = scoreMemoryRelevance(scope, 3);
+    } catch { lines.push("  ⚠️ Impact analysis unavailable"); }
+    lines.push("");
+  }
+  if (!autoSkipHeavy) {
+    lines.push("**Step 5/5: Decision & Context Lookup**");
+    try {
+      const memories = scoreMemoryRelevance(scope, 3);
     if (memories.length > 0) { lines.push("  📝 Relevant decisions/memories:"); for (const m of memories) lines.push(`    • ${m.topic} (${m.score}% match)`); }
     else lines.push("  ✅ No previous decisions found for this scope");
-  } catch { lines.push("  ⚠️ Memory lookup failed"); }
-  lines.push("");
+    } catch { lines.push("  ⚠️ Memory lookup failed"); }
+    lines.push("");
+  }
 
   try {
     const { formatPathRules } = await import("../engine/kumaPathRules.js");
@@ -537,15 +556,50 @@ async function handleMap(_params: ContextParams): Promise<string> {
   const { getWorkspaceInfo, formatWorkspaceMap } = await import("../engine/workspaceIntelligence.js");
   const wsInfo = await getWorkspaceInfo();
   const base = formatWorkspaceMap(wsInfo);
+  // Augment with graph index stats so the map is more useful than ls/glob.
+  let extra = "";
+  try {
+    const { getDb } = await import("../engine/kumaDb.js");
+    const db = await getDb();
+    const nodeRow = db.exec("SELECT COUNT(*) FROM nodes");
+    const edgeRow = db.exec("SELECT COUNT(*) FROM edges");
+    const nodes = nodeRow?.[0]?.values?.[0]?.[0] ?? 0;
+    const edges = edgeRow?.[0]?.values?.[0]?.[0] ?? 0;
+    if (nodes > 0) {
+      extra += `\n\n🗺️ **Graph index**: ${nodes} node(s), ${edges} edge(s).`;
+    }
+    // Top connected files
+    try {
+      const stmt = db.prepare(`SELECT file_path, COUNT(*) as c FROM edges GROUP BY file_path ORDER BY c DESC LIMIT 5`);
+      const top: string[] = [];
+      while (stmt.step()) {
+        const r = stmt.getAsObject() as { file_path: string; c: number };
+        if (r.file_path) top.push(`${r.file_path} (${r.c})`);
+      }
+      stmt.free();
+      if (top.length > 0) extra += `\n🔗 **Top connected**: ${top.join(", ")}.`;
+    } catch {}
+    // Symbol-level top (functions/classes with most connections)
+    try {
+      const stmt = db.prepare(`SELECT n.name, n.file_path, COUNT(e.target_id) as c FROM nodes n LEFT JOIN edges e ON e.target_id = n.id WHERE n.type IN ('function','class') GROUP BY n.id ORDER BY c DESC LIMIT 5`);
+      const syms: string[] = [];
+      while (stmt.step()) {
+        const r = stmt.getAsObject() as { name: string; file_path: string; c: number };
+        if (r.name) syms.push(`${r.name}${r.file_path ? ` (${r.file_path})` : ""}`);
+      }
+      stmt.free();
+      if (syms.length > 0) extra += `\n⚡ **Top symbols**: ${syms.join(", ")}.`;
+    } catch {}
+  } catch {}
   // Pre-computed briefs: refresh alongside the map (zero LLM, bounded).
   try {
     const { refreshPackageBriefs } = await import("../engine/packageBriefs.js");
     const { count } = await refreshPackageBriefs();
     if (count > 0) {
-      return base + `\n\n📚 **Pre-computed briefs**: ${count} package brief(s) refreshed in \`.kuma/briefs/\` — read instead of grep-walking (saves ~5x discovery tokens).`;
+      extra += `\n📚 **Pre-computed briefs**: ${count} package brief(s) refreshed in \`.kuma/briefs/\`.`;
     }
   } catch {}
-  return base;
+  return base + extra;
 }
 
 // ============================================================

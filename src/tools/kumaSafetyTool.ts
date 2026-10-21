@@ -22,21 +22,12 @@ export async function handleSafety(params: SafetyParams): Promise<string> {
   const { action } = params;
   sessionMemory.recordToolCall("kuma_safety", { action });
 
-  // Issue #32 P1 — obedience nudge (non-blocking): safety actions
-  // without a prior init get a reminder prefix.
-  let prefix = "";
-  if (!sessionMemory.hasToolCall("kuma_context_init")) {
-    prefix =
-      `⚠️ **Obedience nudge**: \`kuma_context({ action: "init" })\` was not called yet this session. ` +
-      `Run it first so project brief + fresh gotchas are loaded. Continuing anyway…\n\n`;
-  }
-
   switch (action) {
-    case "guard": return prefix + await handleGuard(params);
-    case "verify": return prefix + await handleVerify(params);
-    case "checkpoint": return prefix + await handleCheckpoint(params);
-    case "rollback_label": return prefix + await handleRollbackLabel(params);
-    case "cost": return prefix + await handleCost();
+    case "guard": return await handleGuard(params);
+    case "verify": return await handleVerify(params);
+    case "checkpoint": return await handleCheckpoint(params);
+    case "rollback_label": return await handleRollbackLabel(params);
+    case "cost": return await handleCost();
     default: return `Unknown action "${action}". Use: guard, verify, checkpoint, rollback_label, cost`;
   }
 }
@@ -101,6 +92,15 @@ async function handleRollbackLabel(params: SafetyParams): Promise<string> {
 async function handleVerify(params: SafetyParams): Promise<string> {
   sessionMemory.recordToolCall("kuma_safety_verify", { scope: params.scope, target: params.target });
   const target = params.target || params.scope;
+  const force = (params as any).force === true || (params as any).full === true;
+
+  // Auto-skip for low-blast scopes (proportionality) unless forced.
+  if (target && !force) {
+    const isHighBlast = /auth|db|database|crypto|security|migration|payment|secret/i.test(String(target));
+    if (!isHighBlast) {
+      return `🟢 **Low-blast scope** — verification skipped (proportionality). Use force=true to run full verify.\nTarget: ${target}`;
+    }
+  }
 
   if (target) {
     const { analyzeImpact, formatImpact } = await import("../engine/kumaGraph.js");
@@ -153,8 +153,13 @@ async function handleVerify(params: SafetyParams): Promise<string> {
       recommendedCmd = `npm test -- "${target}"`;
     }
 
+    const isHighBlast = /auth|db|database|crypto|security|migration|payment|secret/i.test(String(target));
+    const blastNote = isHighBlast
+      ? "🔴 High-blast scope — verification recommended."
+      : "🟢 Low-blast scope — verification optional (proportionality).";
     return [
       `ℹ️ **Kuma Scope Notice**: Test execution is outside Kuma's scope. Please execute your native test runner directly.`,
+      blastNote,
       "",
       `🎯 **Post-Edit Blast Radius & Dependency Impact for \`${target}\`:**`,
       formattedImpact,

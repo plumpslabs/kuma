@@ -10,7 +10,7 @@ describe("kumaSafetyTool — Decoupled from Test Execution", () => {
   it("verify with target provides post-edit blast radius without running test subprocesses", async () => {
     const res = await handleSafety({
       action: "verify",
-      target: "src/tools/kumaSafetyTool.ts",
+      target: "src/engine/kumaDb.ts",
     });
     expect(res).toContain("Post-Edit Blast Radius & Dependency Impact");
     expect(res).toContain("Test execution is outside Kuma's scope");

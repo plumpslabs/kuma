@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.4.23] — 2026-10-21
+
+### 🩺 Gotcha Lifecycle & Memory Maturity
+
+- **Auto-prune stale gotchas (`kumaGotchas.ts`)**: age/resolved-based pruning with `dryRun`, severity filter, and deprecate-vs-remove split. Integrated into daily auto-GC maintenance.
+- **Deep AST symbol indexing (`kumaCodeScanner.ts`)**: cap removed — every symbol is indexed so graph search returns relevant nodes for any query.
+- **CamelCase-aware token index (`kumaGraph.ts`)**: symbol and query tokenization split camelCase, improving graph search recall for `sessionMemory`-style tokens.
+- **Auto-sync resolved gotchas from git diff (`kumaGotchas.ts`)**: files changed via git diff auto-mark their active gotchas as resolved; also triggered by maintenance.
+- **Report(s) single source of truth (`kumaGotchas.ts` + `kumaMaintenance.ts`)**: auto-imports Matcha report gotcha/trap lines into the Kuma gotcha DB.
+- **Lean init brief (`kumaContextTool.ts`)**: only high/critical + fresh gotchas surface in init; 1-line session state.
+- **Soft nudge removed (`kumaContextTool.ts` / `kumaSafetyTool.ts`)**: no more mid-session obedience nudges.
+- **Verify proportionality (`kumaSafetyTool.ts`)**: low-blast scopes auto-skip full verify (`force=true` to override), high-blast (auth/DB/crypto/migration) still gets blast radius.
+- **Task budget (new engine `taskBudget.ts`)**: trivial/small/medium/large classification; research auto-skips heavy steps (impact/decision lookup) for trivial tasks, reducing token overhead.
+- **Map enrichment (`kumaContextTool.ts`)**: adds graph index stats, top connected files, and top symbols to the map output.
+- **Fennec onboarding doc (`docs/FENNEC.md`)**: documents when to (and not to) use the database helper.
+
 ## [2.4.12] — 2026-09-15
 
 ### 🛡️ Monorepo Integrity Hardening & Semantic Blast Radius
